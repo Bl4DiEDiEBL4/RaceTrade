@@ -384,7 +384,7 @@ Now configure a site for racing:
    - In the top-left **"IRC Sections"** list, select that section (e.g., "TV-1080P")
    - In the top-middle **"Cbftp Sections"** list, select the matching CBFTP section (e.g., "TV-1080P" or "MOVIES-HD")
    - Click **"Map"**
-   - In **"Mapping trigger (regex)"** enter: `.*/i` (match everything)
+   - In **"Mapping trigger (regex)"** enter: `.*` (match everything)
    - Leave Section Rules and Tag Rules empty for now
    - Click **"Save"** in the site editor
 
@@ -662,7 +662,7 @@ Trigger regex & rules decide which releases go into which mapping.
      - Select an IRC section
      - Select a CBFTP section
      - Click "Map"
-     - Set "Mapping trigger (regex)" – start with `.*/i` for "everything"
+     - Set "Mapping trigger (regex)" – start with `.*` for "everything"
      - Click "Save" (next to trigger)
    - Add Section Rules (bottom-right) for IRC section-wide filters
    - Add Tag Rules in "CBFTP Mapping Rules" box for mapping-specific filters
@@ -927,7 +927,7 @@ X264-HD-1080P is Enabled
 - Select IRC Section: X264-HD-1080P
 - Select CBFTP Section: MOVIES-HD
 - Click "Map" → shows in "Mapped Section"
-- Mapping trigger (regex): .*/i
+- Mapping trigger (regex): .*
 ```
 
 **Section Rules (for IRC section X264-HD-1080P):**
@@ -967,7 +967,7 @@ X264-HD is Enabled
 - Select IRC Section: X264-HD
 - Select CBFTP Section: MOVIES-HD
 - Click "Map"
-- Mapping trigger (regex): .*/i
+- Mapping trigger (regex): .*
 ```
 
 **Section Rules (for IRC section X264-HD):**
@@ -1007,13 +1007,13 @@ Movie.Name.2025.720p.WEB.H264-GROUP   → ALLOWED → MOVIES-HD
 - ✅ Is the IRC section present in "IRC Sections"?
 - ✅ Is that section **Enabled** in "Race Sections (irc)"?
 - ✅ Is there at least one mapping in "Mapped Section" for that IRC section?
-- ✅ Does the mapping's trigger regex match? (try `.*/i`)
+- ✅ Does the mapping's trigger regex match? (try `.*`)
 - ✅ Are Section DROP rules blocking everything?
 - ✅ Did you click all the "Save" buttons (trigger save + site save)?
 
 **Fix:**
 - Temporarily remove all rules
-- Use `.*/i` as trigger
+- Use `.*` as trigger
 - Enable Debug Mode and watch Application + Race logs
 
 ---
@@ -1021,7 +1021,7 @@ Movie.Name.2025.720p.WEB.H264-GROUP   → ALLOWED → MOVIES-HD
 ### Problem: Releases going to wrong CBFTP section
 
 - Check the order of mappings (first trigger that matches wins)
-- Make specific triggers first, catch-all mapping with `.*/i` last
+- Make specific triggers first, catch-all mapping with `.*` last
 - Check logs for which mapping was selected
 
 ---
