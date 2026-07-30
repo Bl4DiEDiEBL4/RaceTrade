@@ -440,19 +440,44 @@ namespace RaceTrader
 
                     case FilterStatus.Duplicate:
                         AppendResult($"WARNING: Release already processed", Color.Yellow);
+                        allPassed = false;
                         break;
 
                     case FilterStatus.NoSites:
                     case FilterStatus.InsufficientSites:
                         AppendResult($"WARNING: {filterResult.Message}", Color.Yellow);
+                        allPassed = false;
+                        break;
+
+                    case FilterStatus.GloballyBlacklisted:
+                        AppendResult($"ERROR: {filterResult.Message}", Color.Red);
+                        allPassed = false;
+                        AppendResult("", Color.White);
+                        AppendResult("===============================================================", Color.Gray);
+                        AppendResult("FAILED: GLOBAL SKIPLIST MATCH - Release would be blocked", Color.Red);
+                        AppendResult("===============================================================", Color.Gray);
+                        return;
+
+                    case FilterStatus.Error:
+                        AppendResult($"ERROR: {filterResult.Message}", Color.Red);
+                        allPassed = false;
                         break;
 
                     default:
                         AppendResult($"ERROR: {filterResult.Message}", Color.Red);
+                        allPassed = false;
                         break;
                 }
 
                 AppendResult("", Color.White);
+
+                if (filterResult.Status != FilterStatus.Success)
+                {
+                    AppendResult("===============================================================", Color.Gray);
+                    AppendResult("FAILED: SITE FILTERING FAILED - Release would be blocked", Color.Red);
+                    AppendResult("===============================================================", Color.Gray);
+                    return;
+                }
 
                 // ═════════════════════════════════════════════════════════════
                 // STEP 4 & 5: IMDB/TVMaze (uses existing helpers)

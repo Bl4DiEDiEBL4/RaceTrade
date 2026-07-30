@@ -47,7 +47,7 @@ TABLE OF CONTENTS
 Version 1.0.8b (Current - Beta)
 --------------------------------
 Released: July 9, 2026
-Updated: July 17, 2026
+Updated: July 30, 2026
 
 BUG FIXES & THEMING:
 
@@ -131,6 +131,7 @@ BUG FIXES & THEMING:
   - Enforced IMDb quick filters for No Documentary, No Music, No Comedy, and Movies Only
   - Fixed TVMaze filters to block when rating or show type is missing but that filter is configured
   - Updated Test Release validation to show IMDb search title/year and TVMaze show type results
+  - Fixed Test Release so global skiplist/blacklist matches stop validation and cannot end as ""ALL CHECKS PASSED""
 
 - IRC / FiSH fixes
   - Chat IRC now joins configured channels Chan1 through Chan20
