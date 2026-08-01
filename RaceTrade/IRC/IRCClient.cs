@@ -603,6 +603,32 @@ public class IRCClient
     }
 
 
+    // Announce-path regex cache. Patterns come from the site config and change
+    // only on config edits, so compiling them once and reusing removes per-line
+    // pattern parsing from the critical path.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Regex> AnnounceRegexCache =
+        new System.Collections.Concurrent.ConcurrentDictionary<string, Regex>();
+
+    private static Regex GetCachedRegex(string pattern)
+    {
+        if (string.IsNullOrEmpty(pattern))
+            return null;
+
+        return AnnounceRegexCache.GetOrAdd(pattern, p =>
+        {
+            try
+            {
+                return new Regex(p, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            }
+            catch
+            {
+                // Invalid user pattern: fall back to interpreted so a bad regex
+                // surfaces as a normal match failure instead of crashing.
+                return new Regex(Regex.Escape(p), RegexOptions.IgnoreCase);
+            }
+        });
+    }
+
     // Returns the ZNC network to attach to: explicit configured network first,
     // else the "/network" suffix on the username. "" when neither is present.
     private static string ResolveNetwork(string configuredNetwork, string configuredUsername)
@@ -936,13 +962,15 @@ public class IRCClient
             if (PreOrSite?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true)
             {
                 var linkedSiteName = siteConfig.SiteSettings.Sitename;
-                var linkedSiteFile = Path.Combine("sites", $"{linkedSiteName}.json");
                 if (MainApp.DebugEnabled)
                 {
                     AppendOutput($"[INFO] Using Global PreBot '{PreOrSite}' for capturing releases. Linked to site: '{linkedSiteName}'.", Color.Green);
                 }
-                linkedSiteConfig = LoadConfiguration(linkedSiteFile);
-                if (linkedSiteConfig == null)
+
+                // Use the shared, cached config instead of re-reading and
+                // re-deserializing the site JSON from disk on every announce.
+                // The cache is invalidated whenever a site is saved.
+                if (!SiteConfigManager.TryGetSiteConfig(linkedSiteName, out linkedSiteConfig) || linkedSiteConfig == null)
                 {
                     AppendOutput($"[ERROR] Failed to load linked site configuration for '{linkedSiteName}'. Skipping processing.", Color.Red);
                     return;
@@ -969,13 +997,11 @@ public class IRCClient
                 releasePattern = siteConfig.SiteSettings.ReleaseRegexPattern;
             }
 
-            var effectiveSectionRegex = !string.IsNullOrEmpty(sectionPattern)
-                ? new Regex(sectionPattern, RegexOptions.IgnoreCase)
-                : null;
-
-            var effectiveReleaseRegex = !string.IsNullOrEmpty(releasePattern)
-                ? new Regex(releasePattern, RegexOptions.IgnoreCase)
-                : null;
+            // Compiled-and-cached: building a Regex per announce re-parses the
+            // pattern on the hot path for every single line. These patterns change
+            // only when the site config changes, so cache them by pattern text.
+            var effectiveSectionRegex = GetCachedRegex(sectionPattern);
+            var effectiveReleaseRegex = GetCachedRegex(releasePattern);
 
             if (MainApp.DebugEnabled)
             {
@@ -1034,21 +1060,37 @@ public class IRCClient
             // Store pretime immediately (BEFORE ANY CHECKS!)
             if (PreOrSite?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true)
             {
+                // The pretime write stays awaited: the value is used by the pretime
+                // rules further down. The read-back exists only to log whether we
+                // were the first PreBot, so it runs off the critical path — it must
+                // never delay the cbftp command.
                 await PreBotManager.StorePretimeAsync(releaseName, section);
 
-                var storedPretime = await SQLiteHelper.GetPretimeAsync(releaseName);
-                if (storedPretime.HasValue)
+                var announceSiteName = siteName;
+                var announceRelease = releaseName;
+                // Stamp the announce time HERE, not inside the background task, or
+                // the "first PreBot" measurement would include thread-pool delay.
+                var announceAt = DateTime.UtcNow;
+                _ = Task.Run(async () =>
                 {
-                    var diff = (DateTime.UtcNow - storedPretime.Value).TotalMilliseconds;
-                    if (diff < 100)
+                    try
                     {
-                        LogManager.Success($"[{siteName}] FIRST PreBot to announce [{releaseName}]");
+                        var storedPretime = await SQLiteHelper.GetPretimeAsync(announceRelease);
+                        if (storedPretime.HasValue)
+                        {
+                            var diff = (announceAt - storedPretime.Value).TotalMilliseconds;
+                            if (diff < 100)
+                            {
+                                LogManager.Success($"[{announceSiteName}] FIRST PreBot to announce [{announceRelease}]");
+                            }
+                            else
+                            {
+                                LogManager.Debug($"[{announceSiteName}] PreBot announced [{announceRelease}] {diff:F0}ms after first PreBot");
+                            }
+                        }
                     }
-                    else
-                    {
-                        LogManager.Debug($"[{siteName}] PreBot announced [{releaseName}] {diff:F0}ms after first PreBot");
-                    }
-                }
+                    catch { }
+                });
             }
 
             LogManager.LogRace(RaceStatus.Detected, releaseName, siteName, quality: section);
@@ -1063,7 +1105,10 @@ public class IRCClient
             // Check: Section allowed? (Skip for Global PreBots)
             if (PreOrSite?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) != true)
             {
-                if (!RaceHelper.IsAllowedSection(section, JObject.FromObject(linkedSiteConfig)))
+                // Not a Global PreBot here, so linkedSiteConfig == siteConfig and the
+                // JObject built once in the constructor applies. Re-serializing the
+                // whole config graph per announce was pure hot-path overhead.
+                if (!RaceHelper.IsAllowedSection(section, siteConfigJson))
                 {
                     LogManager.LogRace(RaceStatus.Filtered, releaseName, siteName, filterReason: $"Section '{section}' disabled");
                     return;
@@ -1083,7 +1128,7 @@ public class IRCClient
             string cbftpSection = RaceHelper.GetMappedCbftpSection(
                 section,
                 releaseName,
-                JObject.FromObject(siteConfig),
+                siteConfigJson,
                 mapSectionPrefix,
                 mapSectionSuffix,
                 (msg, color) => { });

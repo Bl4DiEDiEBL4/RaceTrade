@@ -369,6 +369,11 @@ public static class RaceHelper
             var dlOnlySites = new List<string>();
             var releaseGroup = ExtractGroupFromRelease(releaseName);
 
+            // Pretime is a property of the release, not of the site: query once and
+            // reuse for every site's threshold comparison.
+            int cachedPretimeDiff = -1;
+            bool pretimeQueried = false;
+
             // Per-call engine: rules are (re)loaded per site immediately before Evaluate.
             var rulesEngine = new RulesEngine();
 
@@ -468,12 +473,21 @@ public static class RaceHelper
                         maxPretimeSeconds = sitePretime;
                     }
 
-                    // If max pretime is configured, check it
-                    if (maxPretimeSeconds.HasValue)
+                    // If max pretime is configured, check it.
+                    // The pretime of a release is the same for every site — only the
+                    // threshold differs — so the DB is queried once per release
+                    // instead of opening a connection per site.
+                    if (maxPretimeSeconds.HasValue && maxPretimeSeconds.Value > 0)
                     {
-                        var (allowed, pretimeSeconds, reason) = await PreBotManager.CheckMaxPretimeAsync(
-                            releaseName,
-                            maxPretimeSeconds);
+                        if (!pretimeQueried)
+                        {
+                            cachedPretimeDiff = await SQLiteHelper.GetPretimeDifferenceSecondsAsync(releaseName);
+                            pretimeQueried = true;
+                        }
+
+                        int pretimeSeconds = cachedPretimeDiff;
+                        // -1 means "no pretime found" → allow (same as CheckMaxPretimeAsync)
+                        bool allowed = pretimeSeconds == -1 || pretimeSeconds <= maxPretimeSeconds.Value;
 
                         if (!allowed)
                         {

@@ -443,6 +443,13 @@ namespace RaceTrade
 
         private LogManagerCore() { }
 
+        // Trim in blocks instead of one entry at a time. Removing a single element
+        // from the front of a List is an O(n) memmove of the whole buffer, and it ran
+        // inside the global log lock on EVERY log call once the buffer was full —
+        // with dozens of log lines per announce that lock is on the race path.
+        // Amortising the shift over 10% of the buffer makes it effectively free.
+        private const int LogTrimChunkDivisor = 10;
+
         public void AddLogEntry(LogEntry entry)
         {
             lock (_logLock)
@@ -450,7 +457,10 @@ namespace RaceTrade
                 _allLogs.Add(entry);
                 if (_allLogs.Count > _maxLogEntries)
                 {
-                    _allLogs.RemoveRange(0, _allLogs.Count - _maxLogEntries);
+                    int chunk = Math.Max(1, _maxLogEntries / LogTrimChunkDivisor);
+                    int excess = _allLogs.Count - _maxLogEntries;
+                    int toRemove = Math.Min(_allLogs.Count, Math.Max(excess, chunk));
+                    _allLogs.RemoveRange(0, toRemove);
                 }
             }
 

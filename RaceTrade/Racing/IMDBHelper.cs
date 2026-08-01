@@ -452,6 +452,12 @@ namespace RaceTrader
                 : "Tiffara";
         }
 
+        // Cached provider: this was read + JSON-parsed from disk on every movie
+        // lookup, which sits on the race path. Re-read only when settings.json
+        // actually changes (checked via last-write time, no parse on the hot path).
+        private static string _cachedMovieProvider;
+        private static DateTime _cachedMovieProviderStamp;
+
         public static string GetSelectedMovieProvider()
         {
             try
@@ -459,11 +465,19 @@ namespace RaceTrader
                 if (!File.Exists(SETTINGS_FILE))
                     return ProviderTiffara;
 
+                var stamp = File.GetLastWriteTimeUtc(SETTINGS_FILE);
+                var cached = _cachedMovieProvider;
+                if (cached != null && stamp == _cachedMovieProviderStamp)
+                    return cached;
+
                 var settings = JObject.Parse(File.ReadAllText(SETTINGS_FILE));
                 var provider = settings["movie_api_provider"]?.ToString()
                                ?? settings["imdb_api_provider"]?.ToString();
 
-                return NormalizeMovieProvider(provider);
+                var normalized = NormalizeMovieProvider(provider);
+                _cachedMovieProvider = normalized;
+                _cachedMovieProviderStamp = stamp;
+                return normalized;
             }
             catch (Exception ex)
             {

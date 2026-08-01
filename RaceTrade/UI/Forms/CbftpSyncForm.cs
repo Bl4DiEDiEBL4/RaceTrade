@@ -200,6 +200,9 @@ namespace RaceTrade
                     // Save to file
                     Directory.CreateDirectory("sites");
                     AtomicFile.WriteAllText(filePath, JsonConvert.SerializeObject(siteConfig, Formatting.Indented));
+                    // Drop the cached copy, otherwise the racer keeps serving the
+                    // pre-import config until the app is restarted.
+                    SiteConfigManager.Invalidate(site.Name);
 
                     // Collect all section names for sections.json
                     foreach (var section in site.Sections)
@@ -228,6 +231,12 @@ namespace RaceTrade
                 {
                     LogManager.Error($"Error updating cbftp_sections.json: {ex.Message}");
                 }
+            }
+
+            // Refresh the racer's snapshot so imported sites are usable immediately.
+            if (imported > 0)
+            {
+                try { RaceHelper.LoadAllSiteConfigs(); } catch { }
             }
 
             string summary = $"Import complete!\n\nImported: {imported}\nSkipped: {skipped}\nErrors: {errors}";

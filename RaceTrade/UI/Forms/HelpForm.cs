@@ -44,7 +44,34 @@ TABLE OF CONTENTS
 ================================================================================
 1. CHANGELOG
 ================================================================================
-Version 1.0.8b (Current - Beta)
+Version 1.0.9b (Current - Beta)
+--------------------------------
+Released: August 1, 2026
+
+PERFORMANCE & RACE-PATH FIXES:
+
+- CBFTP race command speedups
+  - Reused CBFTP HTTP clients per endpoint/password so spreadjob commands keep connections warm
+  - Reduced spreadjob request timeout to fail faster when a CBFTP endpoint is dead
+  - Disabled Expect100Continue and Nagle buffering at startup for lower POST latency
+  - Raised the default connection limit so concurrent races are not serialized behind two HTTP connections
+
+- IRC announce processing speedups
+  - Cached announce regexes instead of rebuilding them for every IRC line
+  - Reused cached linked site configs for Global PreBot announce processing
+  - Avoided re-serializing site config JSON on the hot announce path
+  - Moved first-PreBot diagnostic logging off the critical race path
+
+- Filtering and cache fixes
+  - Cached selected movie provider settings until settings.json changes
+  - Reused one pretime database lookup across all site threshold checks for a release
+  - Trimmed log buffers in chunks to reduce lock time during heavy announce bursts
+  - Invalidated site config cache after CBFTP site sync imports
+  - Reloaded racer site snapshots after successful CBFTP imports so imported sites are usable immediately
+  - Updated app version text under the logo to v1.0.9b
+
+
+Version 1.0.8b (Beta)
 --------------------------------
 Released: July 9, 2026
 Updated: July 30, 2026

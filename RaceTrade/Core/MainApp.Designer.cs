@@ -137,7 +137,7 @@ namespace RaceTrade
             this.label1.Name = "label1";
             this.label1.Size = new System.Drawing.Size(44, 15);
             this.label1.TabIndex = 2;
-            this.label1.Text = "v1.0.8b";
+            this.label1.Text = "v1.0.9b";
             // 
             // statusCard
             // 
@@ -612,7 +612,7 @@ namespace RaceTrade
             this.MinimumSize = new System.Drawing.Size(964, 560);
             this.Name = "MainApp";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            this.Text = "RaceTrade (2026) v1.0.8b  ▂▃▅▇█▓▒░۩۞۩ HiGH VOLTAGE ۩۞۩░▒▓█▇▅▃▂ ";
+            this.Text = "RaceTrade (2026) v1.0.9b  ▂▃▅▇█▓▒░۩۞۩ HiGH VOLTAGE ۩۞۩░▒▓█▇▅▃▂ ";
             this.Load += new System.EventHandler(this.Form1_Load);
             this.sidebarPanel.ResumeLayout(false);
             this.sidebarPanel.PerformLayout();

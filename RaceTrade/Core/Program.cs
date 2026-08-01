@@ -20,6 +20,8 @@ namespace WinFormsTraderApp
             // a different working directory doesn't create a second empty config tree.
             System.IO.Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
+            ConfigureNetworkForLowLatency();
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             ConfigureAntdUi();
@@ -45,6 +47,34 @@ namespace WinFormsTraderApp
 
             RaceHelper.LoadAllSiteConfigs();
             Application.Run(new RaceTrade.MainApp());
+        }
+
+        /// <summary>
+        /// Race latency depends entirely on how fast the cbftp command leaves this
+        /// process, so the .NET Framework network defaults have to be turned off:
+        ///  - Expect100Continue: makes every POST wait a full round trip (or the
+        ///    350ms ContinueTimeout) before the body is even sent.
+        ///  - Nagle: buffers our small POST body waiting for more data, interacting
+        ///    with delayed ACK for up to ~200ms of pure delay.
+        ///  - DefaultConnectionLimit (2): serializes concurrent races to the same
+        ///    cbftp host behind two connections.
+        /// Also enlarge the static Regex cache (default 15) since the announce path
+        /// rotates through more distinct patterns than that, causing re-parsing.
+        /// </summary>
+        private static void ConfigureNetworkForLowLatency()
+        {
+            try
+            {
+                System.Net.ServicePointManager.Expect100Continue = false;
+                System.Net.ServicePointManager.UseNagleAlgorithm = false;
+                System.Net.ServicePointManager.DefaultConnectionLimit = 64;
+                System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+                System.Text.RegularExpressions.Regex.CacheSize = 64;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to apply low-latency network settings: {ex.Message}");
+            }
         }
 
         private static void ConfigureAntdUi()

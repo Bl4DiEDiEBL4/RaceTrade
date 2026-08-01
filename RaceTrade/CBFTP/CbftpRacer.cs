@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -671,32 +672,35 @@ public class CbftpRacer
         }
     }
 
-    /// <summary>
-    /// Starts a spreadjob transfer on CBFTP.
-    /// </summary>
-    public static async Task<TransferResult> StartSpreadjobTransfer(
-        Dictionary<string, object> payload,
-        string host,
-        string port,
-        string password,
-        string serverName,
-        string release,
-        string section)
+    // One HttpClient per cbftp endpoint, kept alive for the process lifetime.
+    // Creating a client per race meant every single race paid a TCP handshake plus
+    // a full TLS handshake before the command bytes could leave — pure lost race
+    // time. Reusing the client keeps the connection warm (keep-alive) so a race
+    // command usually goes out in a single round trip.
+    private static readonly ConcurrentDictionary<string, HttpClient> CbftpClients =
+        new ConcurrentDictionary<string, HttpClient>();
+
+    // Long enough that a healthy-but-busy cbftp still answers (avoiding a fallback
+    // to the next server, which would submit the same spreadjob twice), short
+    // enough that a dead cbftp doesn't hold the race hostage for half a minute.
+    private const int SpreadjobTimeoutSeconds = 8;
+
+    private static HttpClient GetCbftpClient(string endpoint, string password, string host)
     {
-        string endpoint = null;
-
-        try
+        var key = endpoint + "\n" + password;
+        return CbftpClients.GetOrAdd(key, _ =>
         {
-            bool allowInsecureSsl = MainApp.AllowInsecureSsl;
-
-            using var handler = new HttpClientHandler
+            // Note: the callback reads MainApp.AllowInsecureSsl live rather than
+            // capturing it, so toggling the setting takes effect without having to
+            // rebuild the cached client.
+            var handler = new HttpClientHandler
             {
                 ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) =>
                 {
                     if (sslPolicyErrors == System.Net.Security.SslPolicyErrors.None)
                         return true;
 
-                    if (allowInsecureSsl)
+                    if (MainApp.AllowInsecureSsl)
                     {
                         if (MainApp.DebugEnabled)
                         {
@@ -719,15 +723,36 @@ public class CbftpRacer
                 }
             };
 
-            using var client = new HttpClient(handler)
+            var c = new HttpClient(handler)
             {
-                Timeout = TimeSpan.FromSeconds(30)
+                Timeout = TimeSpan.FromSeconds(SpreadjobTimeoutSeconds)
             };
 
             var byteArray = Encoding.ASCII.GetBytes(":" + password);
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(byteArray));
-            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            c.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(byteArray));
+            c.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            c.DefaultRequestHeaders.ConnectionClose = false;
 
+            return c;
+        });
+    }
+
+    /// <summary>
+    /// Starts a spreadjob transfer on CBFTP.
+    /// </summary>
+    public static async Task<TransferResult> StartSpreadjobTransfer(
+        Dictionary<string, object> payload,
+        string host,
+        string port,
+        string password,
+        string serverName,
+        string release,
+        string section)
+    {
+        string endpoint = null;
+
+        try
+        {
             if (host.Contains("://"))
             {
                 endpoint = host.EndsWith($":{port}") ? host : $"{host}:{port}";
@@ -736,6 +761,9 @@ public class CbftpRacer
             {
                 endpoint = $"https://{host}:{port}";
             }
+
+            // Reused, connection-warm client (see GetCbftpClient).
+            var client = GetCbftpClient(endpoint, password, host);
 
             var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
@@ -835,12 +863,12 @@ public class CbftpRacer
         {
             LogManager.LogCBFTP(
                 CBFTPEventType.Error,
-                "Request timeout (30 seconds)",
+                $"Request timeout ({SpreadjobTimeoutSeconds} seconds)",
                 releaseName: release,
                 targetSite: serverName
             );
 
-            return TransferResult.Failed(endpoint ?? host, "Request timeout (30 seconds)");
+            return TransferResult.Failed(endpoint ?? host, $"Request timeout ({SpreadjobTimeoutSeconds} seconds)");
         }
         catch (HttpRequestException ex)
         {
