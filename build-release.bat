@@ -5,13 +5,17 @@ set "ROOT=%~dp0"
 set "SOLUTION=!ROOT!RaceTrade.sln"
 set "PROJECT_DIR=!ROOT!RaceTrade"
 set "ASSEMBLY_INFO=!PROJECT_DIR!\Properties\AssemblyInfo.cs"
+set "PACKAGES_CONFIG=!PROJECT_DIR!\Resources\packages.config"
+set "PACKAGES_DIR=!ROOT!packages"
 set "RAR_EXE=C:\Program Files\WinRAR\Rar.exe"
 set "WORK_DIR=!ROOT!work"
+set "NUGET_EXE=!WORK_DIR!\nuget.exe"
 
 set "CONFIGURATION=Release"
 set "PLATFORM=x64"
 
 if /I "%~1"=="--install-build-tools" goto install_build_tools_only
+if /I "%~1"=="--restore" goto restore_only
 if /I "%~1"=="--self-test" goto self_test
 
 if not "%~1"=="" set "CONFIGURATION=%~1"
@@ -21,6 +25,9 @@ if not exist "!SOLUTION!" goto missing_solution
 if not exist "!ASSEMBLY_INFO!" goto missing_assembly_info
 
 call :find_msbuild
+if errorlevel 1 exit /b !errorlevel!
+
+call :restore_packages
 if errorlevel 1 exit /b !errorlevel!
 
 call :read_version
@@ -57,6 +64,10 @@ if not exist "!RAR_FILE!" goto missing_rar_output
 echo Built RAR: !RAR_FILE!
 exit /b 0
 
+REM ---------------------------------------------------------------------------
+REM MSBuild discovery
+REM ---------------------------------------------------------------------------
+
 :find_msbuild
 if "!MSBUILD_PATH!"=="" goto find_known_msbuild
 set "MSBUILD=!MSBUILD_PATH!"
@@ -86,42 +97,37 @@ exit /b 1
 call :search_msbuild_with_vswhere
 if not errorlevel 1 exit /b 0
 
-call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\MSBuild\Current\Bin\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
-if not errorlevel 1 exit /b 0
-call :try_msbuild "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
-if not errorlevel 1 exit /b 0
+REM Probe every edition under BOTH Program Files roots. VS2022 Build Tools
+REM normally land in the 64-bit root, VS2019 and some Build Tools installs in
+REM the x86 root, so checking only one root silently misses a valid install.
+for %%R in ("%ProgramFiles%" "%ProgramFiles(x86)%") do (
+    for %%Y in (2022 2019) do (
+        for %%E in (Enterprise Professional Community BuildTools) do (
+            call :try_msbuild "%%~R\Microsoft Visual Studio\%%Y\%%E\MSBuild\Current\Bin\amd64\MSBuild.exe"
+            if not errorlevel 1 exit /b 0
+            call :try_msbuild "%%~R\Microsoft Visual Studio\%%Y\%%E\MSBuild\Current\Bin\MSBuild.exe"
+            if not errorlevel 1 exit /b 0
+        )
+    )
+)
 
+REM Last resort: PATH. Skip the .NET Framework MSBuild (v4.0.30319) because it
+REM exists on every Windows box but cannot build this solution (no VS toolchain), so
+REM using it produces confusing errors instead of a clear "not installed".
 for /f "delims=" %%M in ('where MSBuild.exe 2^>nul') do (
-    set "MSBUILD=%%M"
-    exit /b 0
+    echo %%M | find /i "\Microsoft.NET\Framework" >nul
+    if errorlevel 1 (
+        set "MSBUILD=%%M"
+        exit /b 0
+    )
 )
 
 exit /b 1
 
 :search_msbuild_with_vswhere
-call :try_vswhere "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+call :try_vswhere "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not errorlevel 1 exit /b 0
-call :try_vswhere "C:\Program Files\Microsoft Visual Studio\Installer\vswhere.exe"
+call :try_vswhere "%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not errorlevel 1 exit /b 0
 exit /b 1
 
@@ -129,12 +135,13 @@ exit /b 1
 set "VSWHERE=%~1"
 if not exist "!VSWHERE!" exit /b 1
 
-for /f "usebackq delims=" %%M in (`"!VSWHERE!" -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\amd64\MSBuild.exe" 2^>nul`) do (
+REM -prerelease so a Preview-only install is still found.
+for /f "usebackq delims=" %%M in (`"!VSWHERE!" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\amd64\MSBuild.exe" 2^>nul`) do (
     set "MSBUILD=%%M"
     if exist "!MSBUILD!" exit /b 0
 )
 
-for /f "usebackq delims=" %%M in (`"!VSWHERE!" -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" 2^>nul`) do (
+for /f "usebackq delims=" %%M in (`"!VSWHERE!" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" 2^>nul`) do (
     set "MSBUILD=%%M"
     if exist "!MSBUILD!" exit /b 0
 )
@@ -154,6 +161,70 @@ if not "!VERSION!"=="" exit /b 0
 echo Could not read AssemblyVersion from: !ASSEMBLY_INFO!
 exit /b 1
 
+REM ---------------------------------------------------------------------------
+REM NuGet restore
+REM ---------------------------------------------------------------------------
+
+:restore_only
+call :find_msbuild
+if errorlevel 1 exit /b !errorlevel!
+call :restore_packages
+exit /b !errorlevel!
+
+:restore_packages
+if /I "!RACETRADE_NO_RESTORE!"=="1" goto restore_skipped
+
+REM This is a packages.config project: the .csproj hard-fails when
+REM packages\Costura.Fody\... is missing, so packages must be on disk before
+REM MSBuild runs. MSBuild /t:Restore does NOT handle packages.config, hence
+REM nuget.exe.
+if not exist "!WORK_DIR!" mkdir "!WORK_DIR!"
+
+call :ensure_nuget
+if errorlevel 1 exit /b !errorlevel!
+
+echo Restoring NuGet packages...
+"!NUGET_EXE!" restore "!SOLUTION!" -PackagesDirectory "!PACKAGES_DIR!" -NonInteractive
+if errorlevel 1 goto restore_failed
+
+REM packages.config lives under Resources\, which solution-level restore does
+REM not always pick up, so restore it explicitly as well.
+if exist "!PACKAGES_CONFIG!" (
+    "!NUGET_EXE!" restore "!PACKAGES_CONFIG!" -PackagesDirectory "!PACKAGES_DIR!" -NonInteractive
+    if errorlevel 1 goto restore_failed
+)
+
+echo NuGet restore complete.
+exit /b 0
+
+:restore_skipped
+echo Skipping NuGet restore ^(RACETRADE_NO_RESTORE=1^).
+exit /b 0
+
+:restore_failed
+echo NuGet restore failed.
+exit /b 1
+
+:ensure_nuget
+if exist "!NUGET_EXE!" exit /b 0
+
+where nuget.exe >nul 2>&1
+if not errorlevel 1 (
+    for /f "delims=" %%N in ('where nuget.exe 2^>nul') do (
+        set "NUGET_EXE=%%N"
+        exit /b 0
+    )
+)
+
+echo Downloading nuget.exe...
+call :download_file "https://dist.nuget.org/win-x86-commandline/latest/nuget.exe" "!NUGET_EXE!"
+if errorlevel 1 exit /b 1
+exit /b 0
+
+REM ---------------------------------------------------------------------------
+REM Visual Studio Build Tools install
+REM ---------------------------------------------------------------------------
+
 :install_build_tools_only
 call :install_build_tools
 exit /b !errorlevel!
@@ -167,7 +238,6 @@ if errorlevel 1 exit /b !errorlevel!
 
 set "VS_BOOTSTRAPPER_URL=https://aka.ms/vs/17/release/vs_BuildTools.exe"
 set "VS_BOOTSTRAPPER=!WORK_DIR!\vs_BuildTools.exe"
-set "VS_INSTALL_PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools"
 
 if not exist "!WORK_DIR!" mkdir "!WORK_DIR!"
 
@@ -176,9 +246,21 @@ call :download_file "!VS_BOOTSTRAPPER_URL!" "!VS_BOOTSTRAPPER!"
 if errorlevel 1 exit /b !errorlevel!
 
 echo Running Visual Studio Build Tools installer...
-echo This installs: Microsoft.VisualStudio.Workload.ManagedDesktopBuildTools
 echo This is Build Tools only, not the Visual Studio IDE.
-start /wait "" "!VS_BOOTSTRAPPER!" --installPath "!VS_INSTALL_PATH!" --add Microsoft.VisualStudio.Workload.ManagedDesktopBuildTools --passive --wait --norestart
+echo Installing: managed desktop build tools + .NET Framework 4.8 targeting pack.
+echo.
+
+REM No --installPath: let the installer use its own default location, which is
+REM also where vswhere reports it. Forcing a path (especially the x86 one) is
+REM how an install ends up somewhere the discovery step never looks.
+REM The 4.8 targeting pack is required; without it the build fails with
+REM "reference assemblies for .NETFramework,Version=v4.8 were not found".
+start /wait "" "!VS_BOOTSTRAPPER!" ^
+    --add Microsoft.VisualStudio.Workload.ManagedDesktopBuildTools ^
+    --add Microsoft.Net.Component.4.8.SDK ^
+    --add Microsoft.Net.Component.4.8.TargetingPack ^
+    --add Microsoft.VisualStudio.Component.NuGet ^
+    --passive --wait --norestart
 set "VS_INSTALL_EXIT=!ERRORLEVEL!"
 
 if "!VS_INSTALL_EXIT!"=="0" exit /b 0
@@ -212,6 +294,10 @@ exit /b 1
 :admin_elevation_failed
 echo Could not request elevation. Right-click build-release.bat and choose Run as administrator.
 exit /b 1
+
+REM ---------------------------------------------------------------------------
+REM Helpers
+REM ---------------------------------------------------------------------------
 
 :download_file
 set "DOWNLOAD_URL=%~1"
@@ -259,6 +345,15 @@ if errorlevel 1 goto self_test_failed
 
 del /f /q "!TEST_FILE!" >nul 2>&1
 rd "!TEST_DIR!" >nul 2>&1
+
+echo Checking MSBuild discovery...
+call :search_msbuild
+if errorlevel 1 (
+    echo   MSBuild: NOT FOUND ^(build-release.bat would install Build Tools^)
+) else (
+    echo   MSBuild: !MSBUILD!
+)
+
 echo Self-test OK.
 exit /b 0
 
@@ -276,6 +371,8 @@ exit /b 1
 
 :missing_rar
 echo WinRAR Rar.exe not found: !RAR_EXE!
+echo Install WinRAR, or set RAR_EXE in this script to your Rar.exe path.
+echo A non-Release build ^(build-release.bat Debug^) does not need WinRAR.
 exit /b 1
 
 :missing_exe
