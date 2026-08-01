@@ -151,32 +151,34 @@ exit /b 1
 :download_file
 set "DOWNLOAD_URL=%~1"
 set "DOWNLOAD_OUT=%~2"
-if exist "%DOWNLOAD_OUT%" (
-    for %%F in ("%DOWNLOAD_OUT%") do (
-        if %%~zF GTR 0 (
-            echo Using cached download: %DOWNLOAD_OUT%
-            exit /b 0
-        )
-    )
-    del /f /q "%DOWNLOAD_OUT%" >nul 2>&1
-)
+set "DOWNLOAD_SIZE=0"
+if not exist "!DOWNLOAD_OUT!" goto download_missing
+for %%F in ("!DOWNLOAD_OUT!") do set "DOWNLOAD_SIZE=%%~zF"
+if not "!DOWNLOAD_SIZE!"=="0" goto download_cached
+del /f /q "!DOWNLOAD_OUT!" >nul 2>&1
+
+:download_missing
 
 where curl.exe >nul 2>&1
 if errorlevel 1 goto download_with_powershell
 
-echo Downloading: %DOWNLOAD_URL%
-curl.exe -L --fail --output "%DOWNLOAD_OUT%" "%DOWNLOAD_URL%"
-if not errorlevel 1 if exist "%DOWNLOAD_OUT%" exit /b 0
+echo Downloading: !DOWNLOAD_URL!
+curl.exe -L --fail --output "!DOWNLOAD_OUT!" "!DOWNLOAD_URL!"
+if not errorlevel 1 if exist "!DOWNLOAD_OUT!" exit /b 0
 
 :download_with_powershell
-echo Downloading: %DOWNLOAD_URL%
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%DOWNLOAD_URL%' -OutFile '%DOWNLOAD_OUT%'"
+echo Downloading: !DOWNLOAD_URL!
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '!DOWNLOAD_URL!' -OutFile '!DOWNLOAD_OUT!'"
 if errorlevel 1 goto download_failed
-if exist "%DOWNLOAD_OUT%" exit /b 0
+if exist "!DOWNLOAD_OUT!" exit /b 0
 
 :download_failed
-echo Failed to download: %DOWNLOAD_URL%
+echo Failed to download: !DOWNLOAD_URL!
 exit /b 1
+
+:download_cached
+echo Using cached download: !DOWNLOAD_OUT!
+exit /b 0
 
 :missing_solution
 echo Solution not found: %SOLUTION%
