@@ -83,14 +83,33 @@ echo A reboot may be required. Run build-release.bat again after reboot.
 exit /b 1
 
 :search_msbuild
-set "MSBUILD=C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\MSBuild.exe"
-if exist "!MSBUILD!" exit /b 0
-set "MSBUILD=C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe"
-if exist "!MSBUILD!" exit /b 0
-set "MSBUILD=C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\MSBuild.exe"
-if exist "!MSBUILD!" exit /b 0
-set "MSBUILD=C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
-if exist "!MSBUILD!" exit /b 0
+call :search_msbuild_with_vswhere
+if not errorlevel 1 exit /b 0
+
+call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\MSBuild\Current\Bin\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+if not errorlevel 1 exit /b 0
+call :try_msbuild "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
+if not errorlevel 1 exit /b 0
 
 for /f "delims=" %%M in ('where MSBuild.exe 2^>nul') do (
     set "MSBUILD=%%M"
@@ -98,6 +117,35 @@ for /f "delims=" %%M in ('where MSBuild.exe 2^>nul') do (
 )
 
 exit /b 1
+
+:search_msbuild_with_vswhere
+call :try_vswhere "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+if not errorlevel 1 exit /b 0
+call :try_vswhere "C:\Program Files\Microsoft Visual Studio\Installer\vswhere.exe"
+if not errorlevel 1 exit /b 0
+exit /b 1
+
+:try_vswhere
+set "VSWHERE=%~1"
+if not exist "!VSWHERE!" exit /b 1
+
+for /f "usebackq delims=" %%M in (`"!VSWHERE!" -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\amd64\MSBuild.exe" 2^>nul`) do (
+    set "MSBUILD=%%M"
+    if exist "!MSBUILD!" exit /b 0
+)
+
+for /f "usebackq delims=" %%M in (`"!VSWHERE!" -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" 2^>nul`) do (
+    set "MSBUILD=%%M"
+    if exist "!MSBUILD!" exit /b 0
+)
+
+exit /b 1
+
+:try_msbuild
+set "MSBUILD_CANDIDATE=%~1"
+if not exist "!MSBUILD_CANDIDATE!" exit /b 1
+set "MSBUILD=!MSBUILD_CANDIDATE!"
+exit /b 0
 
 :read_version
 set "VERSION="
@@ -111,6 +159,9 @@ call :install_build_tools
 exit /b !errorlevel!
 
 :install_build_tools
+call :search_msbuild
+if not errorlevel 1 goto build_tools_already_installed
+
 call :ensure_admin
 if errorlevel 1 exit /b !errorlevel!
 
@@ -135,6 +186,11 @@ if "!VS_INSTALL_EXIT!"=="3010" goto build_tools_restart_required
 
 echo Visual Studio Build Tools installer failed with exit code !VS_INSTALL_EXIT!.
 exit /b !VS_INSTALL_EXIT!
+
+:build_tools_already_installed
+echo MSBuild.exe was found. Skipping Visual Studio Build Tools installer.
+echo MSBuild: !MSBUILD!
+exit /b 0
 
 :build_tools_restart_required
 echo Visual Studio Build Tools installed, but Windows wants a reboot.
