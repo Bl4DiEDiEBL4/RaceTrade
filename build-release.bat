@@ -6,6 +6,7 @@ set "SOLUTION=%ROOT%RaceTrade.sln"
 set "PROJECT_DIR=%ROOT%RaceTrade"
 set "ASSEMBLY_INFO=%PROJECT_DIR%\Properties\AssemblyInfo.cs"
 set "RAR_EXE=C:\Program Files\WinRAR\Rar.exe"
+set "WORK_DIR=%ROOT%work"
 
 set "CONFIGURATION=Release"
 set "PLATFORM=x64"
@@ -21,8 +22,9 @@ if not exist "%ASSEMBLY_INFO%" goto missing_assembly_info
 call :find_msbuild
 if errorlevel 1 exit /b %errorlevel%
 
-call :read_version
-if errorlevel 1 exit /b %errorlevel%
+set "VERSION="
+for /f "tokens=2 delims=()" %%V in ('findstr /r /c:"AssemblyVersion" "%ASSEMBLY_INFO%"') do set "VERSION=%%~V"
+if "%VERSION%"=="" goto missing_version
 
 if /I "%CONFIGURATION%"=="Release" if not exist "%RAR_EXE%" goto missing_rar
 
@@ -106,16 +108,18 @@ call :ensure_admin
 if errorlevel 1 exit /b %errorlevel%
 
 set "VS_BOOTSTRAPPER_URL=https://aka.ms/vs/17/release/vs_BuildTools.exe"
-set "VS_BOOTSTRAPPER=%TEMP%\vs_BuildTools.exe"
+set "VS_BOOTSTRAPPER=%WORK_DIR%\vs_BuildTools.exe"
 set "VS_INSTALL_PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools"
 
-echo Downloading Visual Studio Build Tools bootstrapper...
+if not exist "%WORK_DIR%" mkdir "%WORK_DIR%"
+
+echo Checking Visual Studio Build Tools bootstrapper...
 call :download_file "%VS_BOOTSTRAPPER_URL%" "%VS_BOOTSTRAPPER%"
 if errorlevel 1 exit /b %errorlevel%
 
 echo Running Visual Studio Build Tools installer...
 echo This installs: Microsoft.VisualStudio.Workload.ManagedDesktopBuildTools
-start /wait "" "%VS_BOOTSTRAPPER%" --installPath "%VS_INSTALL_PATH%" --add Microsoft.VisualStudio.Workload.ManagedDesktopBuildTools --includeRecommended --passive --wait --norestart
+start /wait "" "%VS_BOOTSTRAPPER%" --installPath "%VS_INSTALL_PATH%" --add Microsoft.VisualStudio.Workload.ManagedDesktopBuildTools --passive --wait --norestart
 set "VS_INSTALL_EXIT=%ERRORLEVEL%"
 
 if "%VS_INSTALL_EXIT%"=="0" exit /b 0
@@ -147,15 +151,25 @@ exit /b 1
 :download_file
 set "DOWNLOAD_URL=%~1"
 set "DOWNLOAD_OUT=%~2"
-if exist "%DOWNLOAD_OUT%" del /f /q "%DOWNLOAD_OUT%" >nul 2>&1
+if exist "%DOWNLOAD_OUT%" (
+    for %%F in ("%DOWNLOAD_OUT%") do (
+        if %%~zF GTR 0 (
+            echo Using cached download: %DOWNLOAD_OUT%
+            exit /b 0
+        )
+    )
+    del /f /q "%DOWNLOAD_OUT%" >nul 2>&1
+)
 
 where curl.exe >nul 2>&1
 if errorlevel 1 goto download_with_powershell
 
+echo Downloading: %DOWNLOAD_URL%
 curl.exe -L --fail --output "%DOWNLOAD_OUT%" "%DOWNLOAD_URL%"
 if not errorlevel 1 if exist "%DOWNLOAD_OUT%" exit /b 0
 
 :download_with_powershell
+echo Downloading: %DOWNLOAD_URL%
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%DOWNLOAD_URL%' -OutFile '%DOWNLOAD_OUT%'"
 if errorlevel 1 goto download_failed
 if exist "%DOWNLOAD_OUT%" exit /b 0
@@ -164,24 +178,16 @@ if exist "%DOWNLOAD_OUT%" exit /b 0
 echo Failed to download: %DOWNLOAD_URL%
 exit /b 1
 
-:read_version
-set "VERSION="
-for /f "tokens=2 delims=()" %%V in ('findstr /r /c:"AssemblyVersion" "!ASSEMBLY_INFO!"') do (
-    set "VERSION=%%~V"
-    goto version_done
-)
-
-:version_done
-if not "%VERSION%"=="" exit /b 0
-echo Could not read AssemblyVersion from: %ASSEMBLY_INFO%
-exit /b 1
-
 :missing_solution
 echo Solution not found: %SOLUTION%
 exit /b 1
 
 :missing_assembly_info
 echo AssemblyInfo.cs not found: %ASSEMBLY_INFO%
+exit /b 1
+
+:missing_version
+echo Could not read AssemblyVersion from: %ASSEMBLY_INFO%
 exit /b 1
 
 :missing_rar
