@@ -84,16 +84,15 @@
     <CodeAnalysisRuleSet>CppCoreCheckRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <PropertyGroup>
-    <ManifestCertificateThumbprint>39A783A259A049BF7428C4EEB46FBF1CC8D45F35</ManifestCertificateThumbprint>
-  </PropertyGroup>
-  <PropertyGroup>
-    <ManifestKeyFile>RaceTrade_TemporaryKey.pfx</ManifestKeyFile>
-  </PropertyGroup>
-  <PropertyGroup>
+    <!-- ClickOnce manifest signing is disabled: GenerateManifests is false, so no
+         manifest is produced and there is nothing to sign. It used to reference a
+         certificate thumbprint that only existed in one developer's Windows
+         certificate store (with RaceTrade_TemporaryKey.pfx deliberately not in the
+         repo), so every other machine failed the build with:
+           error MSB3323: Unable to find manifest signing certificate in the certificate store
+         Note: this is unrelated to Authenticode signing of RaceTrade.exe. -->
     <GenerateManifests>false</GenerateManifests>
-  </PropertyGroup>
-  <PropertyGroup>
-    <SignManifests>true</SignManifests>
+    <SignManifests>false</SignManifests>
   </PropertyGroup>
   <PropertyGroup>
     <TargetZone>LocalIntranet</TargetZone>

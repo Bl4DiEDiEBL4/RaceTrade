@@ -364,3 +364,4 @@ FodyWeavers.xsd
 
 # RaceTrade local build cache
 work/
+Release/

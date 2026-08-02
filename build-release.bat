@@ -16,6 +16,7 @@ set "PLATFORM=x64"
 
 if /I "%~1"=="--install-build-tools" goto install_build_tools_only
 if /I "%~1"=="--restore" goto restore_only
+if /I "%~1"=="--unblock" goto unblock_only
 if /I "%~1"=="--self-test" goto self_test
 
 if not "%~1"=="" set "CONFIGURATION=%~1"
@@ -27,6 +28,9 @@ if not exist "!ASSEMBLY_INFO!" goto missing_assembly_info
 call :find_msbuild
 if errorlevel 1 exit /b !errorlevel!
 
+call :unblock_sources
+if errorlevel 1 exit /b !errorlevel!
+
 call :restore_packages
 if errorlevel 1 exit /b !errorlevel!
 
@@ -35,15 +39,26 @@ if errorlevel 1 exit /b !errorlevel!
 
 if /I "!CONFIGURATION!"=="Release" if not exist "!RAR_EXE!" goto missing_rar
 
+if not exist "!WORK_DIR!" mkdir "!WORK_DIR!"
+set "BUILD_LOG=!WORK_DIR!\msbuild.log"
+
 echo RaceTrade build
 echo   Version:       !VERSION!
 echo   Configuration: !CONFIGURATION!
 echo   Platform:      !PLATFORM!
 echo   MSBuild:       !MSBUILD!
+echo   Log:           !BUILD_LOG!
 echo.
 
-"!MSBUILD!" "!SOLUTION!" /t:Build /p:Configuration=!CONFIGURATION! /p:Platform=!PLATFORM! /verbosity:minimal
-if errorlevel 1 exit /b !errorlevel!
+REM Always write a detailed log. With only /verbosity:minimal on the console the
+REM actual error can scroll past (or vanish when the window closes on a
+REM double-click), which makes a failed build impossible to diagnose.
+REM Keep manifest signing disabled from the command line too. Older local files
+REM or stale project metadata can otherwise fail with "MSB3323: Unable to find
+REM manifest signing certificate", while GenerateManifests is false anyway.
+"!MSBUILD!" "!SOLUTION!" /t:Build /p:Configuration=!CONFIGURATION! /p:Platform=!PLATFORM! /p:SignManifests=false /nologo /verbosity:minimal /m /fl "/flp:LogFile=!BUILD_LOG!;Verbosity=detailed;Encoding=UTF-8"
+set "BUILD_EXIT=!ERRORLEVEL!"
+if not "!BUILD_EXIT!"=="0" goto build_failed
 
 if /I "!PLATFORM!"=="AnyCPU" goto bin_anycpu
 set "BIN_DIR=!PROJECT_DIR!\bin\!PLATFORM!\!CONFIGURATION!"
@@ -60,8 +75,97 @@ if not exist "!EXE_FILE!" goto missing_exe
 echo Built EXE: !EXE_FILE!
 
 if /I not "!CONFIGURATION!"=="Release" exit /b 0
+
+call :copy_to_release
+if errorlevel 1 exit /b !errorlevel!
+
 if not exist "!RAR_FILE!" goto missing_rar_output
 echo Built RAR: !RAR_FILE!
+exit /b 0
+
+REM ---------------------------------------------------------------------------
+REM Copy the distributable output to <root>\Release
+REM ---------------------------------------------------------------------------
+
+:copy_to_release
+if /I "!RACETRADE_NO_RELEASE_COPY!"=="1" exit /b 0
+
+set "RELEASE_DIR=!ROOT!Release"
+
+REM Only the redistributable files are copied. The bin folder ALSO contains the
+REM live runtime data (sites\, cbftp\, settings\, db\, pre_bots\) which holds
+REM site logins and cbftp passwords; copying those into a folder that gets
+REM zipped and shared would leak credentials. The app recreates these folders on
+REM first start, so they are not needed for distribution.
+if not exist "!RELEASE_DIR!" mkdir "!RELEASE_DIR!"
+
+copy /y "!BIN_DIR!\RaceTrade.exe" "!RELEASE_DIR!\" >nul
+if errorlevel 1 goto release_copy_failed
+
+if exist "!BIN_DIR!\RaceTrade.exe.config" (
+    copy /y "!BIN_DIR!\RaceTrade.exe.config" "!RELEASE_DIR!\" >nul
+    if errorlevel 1 goto release_copy_failed
+)
+
+for %%D in ("!BIN_DIR!\*.dll") do (
+    copy /y "%%~fD" "!RELEASE_DIR!\" >nul
+    if errorlevel 1 goto release_copy_failed
+)
+
+echo Copied release files to: !RELEASE_DIR!
+exit /b 0
+
+:release_copy_failed
+echo Failed to copy build output to: !RELEASE_DIR!
+exit /b 1
+
+:build_failed
+echo.
+echo ===========================================================
+echo  BUILD FAILED  ^(MSBuild exit code !BUILD_EXIT!^)
+echo ===========================================================
+if not exist "!BUILD_LOG!" goto build_failed_nolog
+
+set /a ERR_SHOWN=0
+echo Errors found in the build log:
+echo.
+for /f "usebackq tokens=* delims=" %%L in (`findstr /i /r /c:"error [A-Z]*[0-9]" /c:"error :" "!BUILD_LOG!" 2^>nul`) do (
+    set /a ERR_SHOWN+=1
+    if !ERR_SHOWN! leq 25 echo   %%L
+)
+
+if !ERR_SHOWN!==0 (
+    echo   ^(no lines matched "error"; showing the last lines of the log^)
+    echo.
+    for /f "usebackq tokens=* delims=" %%L in (`powershell -NoProfile -Command "Get-Content -LiteralPath '!BUILD_LOG!' -Tail 25" 2^>nul`) do echo   %%L
+) else (
+    if !ERR_SHOWN! gtr 25 echo   ... and !ERR_SHOWN! errors in total.
+)
+
+echo.
+echo Full log: !BUILD_LOG!
+echo.
+echo Common causes:
+echo   - MSB3821 mark-of-the-web  ^: run build-release.bat --unblock
+echo   - Missing NuGet packages   ^: run build-release.bat --restore
+echo   - Missing .NET Framework 4.8 targeting pack ^: rerun --install-build-tools
+echo   - Antivirus locking bin\ or obj\ during the build
+call :pause_if_double_clicked
+exit /b !BUILD_EXIT!
+
+:build_failed_nolog
+echo MSBuild produced no log file at: !BUILD_LOG!
+echo Rerun and check the console output above.
+call :pause_if_double_clicked
+exit /b !BUILD_EXIT!
+
+REM Keep the window open when the script was double-clicked (cmd /c), so the
+REM error is readable. When run from an existing console or CI, do nothing.
+:pause_if_double_clicked
+echo %CMDCMDLINE% | find /i "/c" >nul
+if errorlevel 1 exit /b 0
+echo.
+pause
 exit /b 0
 
 REM ---------------------------------------------------------------------------
@@ -160,6 +264,33 @@ for /f "tokens=2 delims=()" %%V in ('findstr /r /c:"AssemblyVersion" "!ASSEMBLY_
 if not "!VERSION!"=="" exit /b 0
 echo Could not read AssemblyVersion from: !ASSEMBLY_INFO!
 exit /b 1
+
+REM ---------------------------------------------------------------------------
+REM Mark of the Web
+REM ---------------------------------------------------------------------------
+
+:unblock_only
+call :unblock_sources
+exit /b !errorlevel!
+
+:unblock_sources
+if /I "!RACETRADE_NO_UNBLOCK!"=="1" goto unblock_skipped
+
+REM When the repo is downloaded as a ZIP, every extracted file carries a
+REM Zone.Identifier ("mark of the web"). MSBuild then refuses to compile .resx
+REM files with "error MSB3821: ... in the Internet or Restricted zone", which is
+REM the single most common reason a fresh download fails to build.
+REM Unblock-File only strips that marker; it changes no file content.
+echo Removing mark-of-the-web from source files...
+set "RACETRADE_UNBLOCK_ROOT=!ROOT!"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$r = $env:RACETRADE_UNBLOCK_ROOT; Get-ChildItem -LiteralPath $r -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '\\(work|\.git)\\' } | Unblock-File -ErrorAction SilentlyContinue" 2>nul
+
+exit /b 0
+
+:unblock_skipped
+echo Skipping mark-of-the-web removal ^(RACETRADE_NO_UNBLOCK=1^).
+exit /b 0
 
 REM ---------------------------------------------------------------------------
 REM NuGet restore
