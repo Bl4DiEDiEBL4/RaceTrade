@@ -1,0 +1,40 @@
+@page "/login"
+@layout RaceTrade.Web.Components.Layout.EmptyLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [AllowAnonymous]
+@inject WebSecurityOptions Security
+
+<PageTitle>Sign in - RaceTrade</PageTitle>
+
+<div class="login-wrap">
+    <form class="login-card" action="/auth/login" method="post">
+        <span class="brand-name">RACETRADE</span>
+
+        @if (!Security.HasPassword)
+        {
+            <p class="hint warn">
+                No admin password is configured. Run <code>RaceTrade --set-password</code>
+                and put the generated values in <code>appsettings.json</code>.
+            </p>
+        }
+
+        @if (Error == "1")
+        {
+            <p class="hint err">Incorrect password.</p>
+        }
+        else if (Error == "locked")
+        {
+            <p class="hint err">
+                Too many failed attempts. Try again in @Security.LoginLockoutMinutes minutes.
+            </p>
+        }
+
+        <input type="password" name="password" placeholder="Password" autofocus />
+        <button type="submit">Sign in</button>
+    </form>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+}

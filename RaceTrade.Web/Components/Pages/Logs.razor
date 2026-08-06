@@ -1,0 +1,89 @@
+@page "/logs"
+@implements IDisposable
+@inject UiLogSink Sink
+
+<PageTitle>Logs - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="logs" Size="18" />Logs</h1>
+</div>
+
+@* The WinForms build had separate docked log windows (App / IRC / Race / Cbftp).
+   Here it is one stream with a channel filter, which keeps a single scrollback and
+   lets you correlate an announce with the race it triggered. *@
+<div class="panel">
+    <div class="toolbar">
+        <select @bind="_channel" @bind:after="Refresh">
+            <option value="">All channels</option>
+            @foreach (var c in Enum.GetValues<LogChannel>())
+            {
+                <option value="@c">@c</option>
+            }
+        </select>
+
+        <select @bind="_minLevel" @bind:after="Refresh">
+            <option value="">All levels</option>
+            @foreach (var l in Enum.GetValues<LogLevel>())
+            {
+                <option value="@l">@l and up</option>
+            }
+        </select>
+
+        <label class="chk"><input type="checkbox" @bind="_follow" /> Live</label>
+
+        <span class="spacer"></span>
+        <span class="hint">@_entries.Count shown</span>
+    </div>
+
+    @if (_entries.Count == 0)
+    {
+        <div class="empty">Nothing logged yet.</div>
+    }
+    else
+    {
+        <table class="grid logs">
+            <tbody>
+                @foreach (var e in _entries)
+                {
+                    <tr class="lvl-@e.Level.ToString().ToLowerInvariant()">
+                        <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
+                        <td class="ch">@e.Channel</td>
+                        <td class="site">@e.Site</td>
+                        <td class="msg">@e.Message</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<LogEvent> _entries = Array.Empty<LogEvent>();
+    private string _channel = "";
+    private string _minLevel = "";
+    private bool _follow = true;
+
+    protected override void OnInitialized()
+    {
+        Sink.Changed += OnSinkChanged;
+        Refresh();
+    }
+
+    private void OnSinkChanged()
+    {
+        if (!_follow) return;
+
+        // Changed fires on the sink's timer thread; hop to the circuit before touching
+        // component state.
+        InvokeAsync(() => { Refresh(); StateHasChanged(); });
+    }
+
+    private void Refresh()
+    {
+        LogChannel? ch = string.IsNullOrEmpty(_channel) ? null : Enum.Parse<LogChannel>(_channel);
+        LogLevel? lvl = string.IsNullOrEmpty(_minLevel) ? null : Enum.Parse<LogLevel>(_minLevel);
+        _entries = Sink.Snapshot(300, ch, lvl);
+    }
+
+    public void Dispose() => Sink.Changed -= OnSinkChanged;
+}

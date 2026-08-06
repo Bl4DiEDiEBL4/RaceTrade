@@ -1,0 +1,217 @@
+@page "/help"
+
+<PageTitle>Help - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="help" Size="18" />Help</h1>
+</div>
+
+<div class="doc-page">
+    <section class="doc-hero">
+        <div>
+            <span class="doc-kicker">RaceTrade WebUI</span>
+            <h2>Correct guide for the new web build</h2>
+            <p>
+                RaceTrade is now one executable: the racing engine runs inside the same
+                process as this local web UI. You configure it in the browser, but your
+                sites, cbftp servers, prebots, sections and databases are still normal files
+                in the data folder shown under Settings.
+            </p>
+        </div>
+        <a class="btn primary doc-hero-action" href="settings"><Icon Name="settings" Size="13" /><span>Settings</span></a>
+    </section>
+
+    <section class="doc-grid">
+        <article class="doc-card">
+            <div class="card-title">QUICK START</div>
+            <ol class="doc-steps">
+                <li>Add a CBFTP server under <a href="servers">CBFTP servers</a> and press Save.</li>
+                <li>Use <strong>Import sites from CBFTP</strong> to fetch site names and section mappings.</li>
+                <li>Open each imported site under <a href="sites">Sites</a> and fill ZNC, bot and channel details.</li>
+                <li>In the Sections tab, enable the IRC sections that should race.</li>
+                <li>Use <a href="test">Test release</a> before starting the trader.</li>
+                <li>Use <a href="fxp">FXP Client</a> for manual CBFTP browsing and FXP jobs.</li>
+                <li>Press Start on the left when the configuration validates.</li>
+            </ol>
+        </article>
+
+        <article class="doc-card">
+            <div class="card-title">DATA FOLDER</div>
+            <p>
+                The engine reads relative folders such as <code>sites</code>, <code>cbftp</code>,
+                <code>pre_bots</code>, <code>sections</code>, <code>settings</code> and <code>db</code>
+                from the configured data folder.
+            </p>
+            <p>
+                Do not guess the folder location. Open Settings and check <strong>Data folder</strong>.
+                Copy old WinForms configs into that folder if you are migrating.
+            </p>
+        </article>
+    </section>
+
+    <section class="doc-section">
+        <h2>CBFTP servers and site import</h2>
+        <p>
+            The CBFTP servers page writes <code>cbftp/cbftp_config.json</code>. Passwords typed in
+            the browser are encrypted before they reach disk.
+        </p>
+        <ul class="doc-list">
+            <li><strong>Add server</strong> creates a new CBFTP API endpoint.</li>
+            <li><strong>Save</strong> stores the server list and reloads the racer configuration.</li>
+            <li><strong>Import sites from CBFTP</strong> fetches sites and sections from CBFTP.</li>
+            <li>Imported sites include IRC section names, CBFTP mappings and enabled race sections.</li>
+            <li>You still need to configure each site's ZNC host, network, channel and announce bot.</li>
+        </ul>
+    </section>
+
+    <section class="doc-section">
+        <h2>Site editor tabs</h2>
+        <div class="doc-grid compact">
+            <article class="doc-card">
+                <h3>General</h3>
+                <p>Site name, bot nick, mode, max pretime and basic site flags.</p>
+            </article>
+            <article class="doc-card">
+                <h3>ZNC</h3>
+                <p>ZNC host, port, username, network and password. Network keeps joins on the right ZNC network.</p>
+            </article>
+            <article class="doc-card">
+                <h3>Channels</h3>
+                <p>IRC channels and optional Blowfish keys for this site's network.</p>
+            </article>
+            <article class="doc-card">
+                <h3>Announce</h3>
+                <p>Regex patterns and test buttons for detecting new releases, sections and release names.</p>
+            </article>
+            <article class="doc-card">
+                <h3>Sections</h3>
+                <p>Master-detail editor for routing IRC sections to CBFTP sections and filters.</p>
+            </article>
+            <article class="doc-card">
+                <h3>Affils, Blacklist, Requests</h3>
+                <p>Group download-only rules, wildcard skip patterns and request auto-fill settings.</p>
+            </article>
+            <article class="doc-card">
+                <h3>CBFTP Site</h3>
+                <p>Direct link to the CBFTP-side site editor and SITE RULES modal for the same sitename.</p>
+            </article>
+        </div>
+    </section>
+
+    <section class="doc-section">
+        <h2>Requests tab</h2>
+        <p>
+            Request auto-fill parses <code>SITE REQUESTS</code> output with your
+            <strong>Request line regex</strong>. Use named groups <code>(?&lt;id&gt;)</code>,
+            <code>(?&lt;name&gt;)</code> and optionally <code>(?&lt;user&gt;)</code>.
+        </p>
+        <p>
+            <strong>Fill command template</strong> supports <code>{id}</code> and
+            <code>{name}</code>. <strong>Dst path template</strong> supports
+            <code>{id}</code>, <code>{name}</code>, <code>{user}</code>,
+            <code>{release}</code> and <code>{sitename}</code>.
+        </p>
+    </section>
+
+    <section class="doc-section">
+        <h2>CBFTP Site editor</h2>
+        <p>
+            RaceTrade site configs and CBFTP site configs are different things. The <strong>Sites</strong>
+            list has <strong>Edit CBFTP Site</strong>, and each site editor has a <strong>CBFTP Site</strong>
+            tab. Use it for CBFTP addresses, login, base path, transfer flags, affils, section paths and skiplist.
+        </p>
+        <p>
+            <strong>Get Site Rules</strong> sends <code>SITE RULES</code> to CBFTP and shows the result in a modal.
+        </p>
+    </section>
+
+    <section class="doc-section">
+        <h2>Sections tab</h2>
+        <p>
+            Sections are now shown as a list on the left and a single editor on the right.
+            This is the important flow:
+        </p>
+        <ol class="doc-steps">
+            <li>Select the IRC section on the left.</li>
+            <li>Tick <strong>Enabled for racing</strong>, or click the <strong>Racing/Off</strong> label in the left list.</li>
+            <li>Add one or more CBFTP mappings. Empty trigger regex means fallback/default.</li>
+            <li>Add <strong>CBFTP Mapping Rules</strong> under a mapping when only that CBFTP target needs extra filtering.</li>
+            <li>Add <strong>Section Rules</strong> when every mapping in this IRC section should use the same filter.</li>
+            <li>Enable IMDB or TVMaze filters only when that section needs lookup checks; their genre, network and show type lists are under <strong>Lookup filters</strong>.</li>
+            <li>Save the site after changing routing or filters.</li>
+        </ol>
+        <p>
+            Rule syntax is the same as the old WinForms editor, for example
+            <code>[release] contains INTERNAL DROP</code>,
+            <code>[group] isin BadGroup1,BadGroup2 DROP</code>, or
+            <code>[release] contains 1080p ALLOW</code>. Section DROP rules run before
+            mapping rules; mapping DROP rules run before mapping ALLOW rules.
+        </p>
+    </section>
+
+    <section class="doc-grid">
+        <article class="doc-card">
+            <div class="card-title">PREBOTS</div>
+            <p>
+                PreBots have their own page. <strong>Add prebot</strong> creates the ZNC and parsing
+                config. Paste a real pre line into <strong>Test parsing</strong> to confirm the
+                captured section and release before saving. <strong>Import releases</strong> imports
+                the latest 100 releases from predb.club into the pretime database.
+            </p>
+        </article>
+
+        <article class="doc-card">
+            <div class="card-title">PRE MANAGER</div>
+            <p>
+                The Pre page restores the old Affil Spread &amp; Pre Manager flow: fetch CBFTP sites,
+                configure affil directories and sections, refresh releases, distribute with FXP,
+                check completion, delete releases and send SITE PRE.
+            </p>
+        </article>
+
+        <article class="doc-card">
+            <div class="card-title">FXP CLIENT</div>
+            <p>
+                The FXP Client is the dual-pane CBFTP browser. Pick source and destination sites,
+                browse paths, select items, queue left-to-right or right-to-left FXP jobs, and delete
+                selected entries when needed.
+            </p>
+        </article>
+
+        <article class="doc-card">
+            <div class="card-title">CHAT</div>
+            <p>
+                Chat uses separate IRC connections from the trader. Connecting chat does not start
+                racing, and stopping the trader does not disconnect chat.
+            </p>
+        </article>
+
+        <article class="doc-card">
+            <div class="card-title">LOGS</div>
+            <p>
+                Logs are split by Application, IRC, CBFTP and Race. Use Logs for live diagnosis,
+                and use Test release to confirm why a release would race or be skipped.
+            </p>
+        </article>
+
+        <article class="doc-card">
+            <div class="card-title">REMOTE ACCESS</div>
+            <p>
+                By default the WebUI listens on loopback only. To expose it to another machine,
+                set a password with <code>RaceTrade --set-password</code> first, then change
+                <code>Web:BindAddress</code> in <code>appsettings.json</code>.
+            </p>
+        </article>
+    </section>
+
+    <section class="doc-section">
+        <h2>Troubleshooting</h2>
+        <ul class="doc-list">
+            <li>If a site does not race, check that its IRC section is enabled in the Sections tab.</li>
+            <li>If CBFTP says a section is disabled, compare the IRC section and CBFTP mapping names.</li>
+            <li>If chat joins channels on the wrong network, check the ZNC Network field and channel list.</li>
+            <li>If settings seem missing, confirm the data folder under Settings.</li>
+            <li>If the app will not start, another RaceTrade may already be using the configured port.</li>
+        </ul>
+    </section>
+</div>

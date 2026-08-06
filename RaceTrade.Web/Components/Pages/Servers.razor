@@ -1,0 +1,339 @@
+@page "/servers"
+@inject CbftpStore Store
+@inject SiteStore SiteStore
+
+<PageTitle>CBFTP servers - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="servers" Size="18" />CBFTP servers</h1>
+    <button class="btn primary" @onclick="AddRow"><Icon Name="plus" Size="13" /><span>Add server</span></button>
+</div>
+
+@if (_error is not null)
+{
+    <p class="hint err">@_error</p>
+}
+
+<div class="panel server-panel">
+    @if (_config.CbftpServers.Count == 0)
+    {
+        <div class="empty">
+            No cbftp servers configured. Add one - without it there is nowhere to send
+            race jobs.
+        </div>
+    }
+    else
+    {
+        <table class="grid">
+            <thead>
+                <tr><th>ID</th><th>NAME</th><th>HOST</th><th>PORT</th><th>PASSWORD</th><th>PROFILE</th><th></th></tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < _config.CbftpServers.Count; i++)
+                {
+                    var idx = i;
+                    var s = _config.CbftpServers[idx];
+                    <tr>
+                        <td><input type="text" value="@s.Id" @oninput="e => s.Id = e.Value?.ToString()" placeholder="1" class="w-xs" /></td>
+                        <td><input type="text" value="@s.Name" @oninput="e => s.Name = e.Value?.ToString()" placeholder="local" /></td>
+                        <td><input type="text" value="@s.Host" @oninput="e => s.Host = e.Value?.ToString()" placeholder="127.0.0.1" /></td>
+                        <td><input type="text" value="@s.Port" @oninput="e => s.Port = e.Value?.ToString()" placeholder="55477" class="w-xs" /></td>
+                        <td>
+                            <input type="password" value="@_passwords[idx]"
+                                   @oninput="e => SetPassword(idx, e.Value?.ToString())"
+                                   placeholder="@(HasStoredPassword(idx) ? "(unchanged)" : "")" />
+                        </td>
+                        <td><input type="text" value="@s.Profile" @oninput="e => s.Profile = e.Value?.ToString()" placeholder="default" /></td>
+                        <td class="right"><button class="btn danger" @onclick="() => RemoveRow(idx)"><Icon Name="trash" Size="13" /><span>Remove</span></button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <div class="form-actions">
+        <button class="btn primary" @onclick="Save"><Icon Name="save" Size="13" /><span>Save</span></button>
+        <button class="btn" @onclick="Reload"><Icon Name="refresh" Size="13" /><span>Reload</span></button>
+    </div>
+</div>
+
+<div class="panel form import-panel">
+    <h2><Icon Name="download" Size="14" />IMPORT SITES FROM CBFTP</h2>
+    <p class="fh">
+        Fetches sites and CBFTP sections from the selected server, then creates matching
+        RaceTrade site configs. You still configure IRC host, bot nick and channels after import.
+    </p>
+
+    <div class="import-toolbar">
+        <select @bind="_selectedServerId" disabled="@(!_config.CbftpServers.Any() || _fetching || _importing)">
+            @foreach (var server in _config.CbftpServers)
+            {
+                <option value="@server.Id">@DisplayServer(server)</option>
+            }
+        </select>
+        <button class="btn" @onclick="FetchSites" disabled="@(!_config.CbftpServers.Any() || _fetching || _importing)">
+            <Icon Name="refresh" Size="13" />
+            <span>@(_fetching ? "Fetching..." : "Fetch sites")</span>
+        </button>
+        <label class="check-inline">
+            <input type="checkbox" @bind="_overwriteExisting" disabled="@(_fetching || _importing)" />
+            <span>Overwrite existing site files</span>
+        </label>
+    </div>
+
+    @if (_syncError is not null)
+    {
+        <p class="hint err">@_syncError</p>
+    }
+    @if (_syncStatus is not null)
+    {
+        <p class="hint ok">@_syncStatus</p>
+    }
+
+    @if (_fetchedSites.Count > 0)
+    {
+        <div class="import-actions">
+            <span class="fh">@SelectedCount site(s) selected from @_fetchedSites.Count fetched.</span>
+            <button class="btn" @onclick="() => SelectFetched(true)" disabled="@(_importing)">Select all</button>
+            <button class="btn" @onclick="() => SelectFetched(false)" disabled="@(_importing)">Select none</button>
+            <button class="btn primary" @onclick="ImportSelected" disabled="@(SelectedCount == 0 || _importing)">
+                <Icon Name="download" Size="13" />
+                <span>@(_importing ? "Importing..." : "Import selected sites")</span>
+            </button>
+        </div>
+
+        <table class="grid import-table">
+            <thead>
+                <tr><th></th><th>SITE</th><th>ADDRESS</th><th>SECTIONS</th><th>STATUS</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _fetchedSites)
+                {
+                    <tr>
+                        <td><input type="checkbox" @bind="row.Selected" disabled="@(_importing)" /></td>
+                        <td class="site">@row.Site.Name</td>
+                        <td>@row.Address</td>
+                        <td>@row.SectionCount</td>
+                        <td>
+                            @if (row.Exists)
+                            {
+                                <span class="pill warn">exists</span>
+                            }
+                            else
+                            {
+                                <span class="pill on">new</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private sealed class ImportSiteRow
+    {
+        public required CbftpSite Site { get; init; }
+        public bool Selected { get; set; } = true;
+        public bool Exists { get; set; }
+        public string Address => $"{Site.PrimaryAddress}:{Site.Port}";
+        public int SectionCount => Site.Sections?.Count ?? 0;
+    }
+
+    private Config _config = new();
+    private List<string> _passwords = new();
+    private List<string> _storedPasswords = new();
+    private string? _error;
+    private string? _syncError;
+    private string? _syncStatus;
+    private string _selectedServerId = "";
+    private bool _fetching;
+    private bool _importing;
+    private bool _overwriteExisting;
+    private readonly List<ImportSiteRow> _fetchedSites = new();
+
+    private int SelectedCount => _fetchedSites.Count(s => s.Selected);
+
+    protected override void OnInitialized() => Reload();
+
+    private void Reload()
+    {
+        try
+        {
+            _error = null;
+            _config = Store.Load();
+
+            // Stored (encrypted) passwords are kept aside and never rendered; the input
+            // starts empty and only overwrites the stored value when something is typed.
+            _storedPasswords = _config.CbftpServers.Select(s => s.Password ?? "").ToList();
+            _passwords = _config.CbftpServers.Select(_ => "").ToList();
+
+            if (!_config.CbftpServers.Any(s => string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase)))
+                _selectedServerId = _config.CbftpServers.FirstOrDefault()?.Id ?? "";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void SetPassword(int i, string? value) => _passwords[i] = value ?? "";
+
+    private bool HasStoredPassword(int i) =>
+        i < _storedPasswords.Count && !string.IsNullOrEmpty(_storedPasswords[i]);
+
+    private void AddRow()
+    {
+        _config.CbftpServers.Add(new CbftpServer
+        {
+            Id = (_config.CbftpServers.Count + 1).ToString(),
+            Port = "55477"
+        });
+        _passwords.Add("");
+        _storedPasswords.Add("");
+        _selectedServerId = _config.CbftpServers.Last().Id ?? "";
+    }
+
+    private void RemoveRow(int i)
+    {
+        _config.CbftpServers.RemoveAt(i);
+        _passwords.RemoveAt(i);
+        _storedPasswords.RemoveAt(i);
+        if (!_config.CbftpServers.Any(s => string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase)))
+            _selectedServerId = _config.CbftpServers.FirstOrDefault()?.Id ?? "";
+    }
+
+    private void Save()
+    {
+        try
+        {
+            _error = null;
+
+            for (var i = 0; i < _config.CbftpServers.Count; i++)
+            {
+                _config.CbftpServers[i].Password = string.IsNullOrEmpty(_passwords[i])
+                    ? _storedPasswords[i]   // untouched: keep what was already stored
+                    : _passwords[i];        // newly typed: SaveAsync encrypts it
+            }
+
+            Store.Save(_config);
+            Reload();
+            RefreshFetchedExisting();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task FetchSites()
+    {
+        var server = SelectedServer();
+        if (server is null)
+        {
+            _syncError = "Select a CBFTP server first.";
+            return;
+        }
+
+        try
+        {
+            _fetching = true;
+            _syncError = null;
+            _syncStatus = $"Connecting to {server.Host}:{server.Port}...";
+            _fetchedSites.Clear();
+
+            var password = string.IsNullOrWhiteSpace(server.Password) ? "" : SecureConfig.Decrypt(server.Password);
+            var result = await CbftpSync.FetchSitesFromCbftp(server.Host ?? "", server.Port ?? "", password);
+
+            if (!result.IsSuccess)
+            {
+                _syncStatus = null;
+                _syncError = $"Failed to fetch sites: {result.ErrorMessage}";
+                return;
+            }
+
+            var existing = ExistingSiteNames();
+            _fetchedSites.AddRange(result.Sites
+                .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(s => new ImportSiteRow
+                {
+                    Site = s,
+                    Exists = existing.Contains(s.Name),
+                    Selected = true
+                }));
+
+            _syncStatus = _fetchedSites.Count == 0
+                ? "No sites found in CBFTP."
+                : $"Found {_fetchedSites.Count} site(s). Select what you want to import.";
+        }
+        catch (Exception ex)
+        {
+            _syncStatus = null;
+            _syncError = ex.Message;
+        }
+        finally
+        {
+            _fetching = false;
+        }
+    }
+
+    private void SelectFetched(bool selected)
+    {
+        foreach (var row in _fetchedSites)
+            row.Selected = selected;
+    }
+
+    private void ImportSelected()
+    {
+        var selected = _fetchedSites.Where(r => r.Selected).Select(r => r.Site).ToList();
+        if (selected.Count == 0)
+        {
+            _syncError = "Select at least one site to import.";
+            return;
+        }
+
+        try
+        {
+            _importing = true;
+            _syncError = null;
+
+            var result = SiteStore.ImportFromCbftpSites(selected, _overwriteExisting);
+            _syncStatus = $"Import complete: {result.Imported} imported, {result.Skipped} skipped, {result.Errors} errors, {result.SectionsAdded} section(s) added.";
+
+            if (result.Errors > 0)
+                _syncError = string.Join(" ", result.Messages);
+
+            RefreshFetchedExisting();
+        }
+        catch (Exception ex)
+        {
+            _syncStatus = null;
+            _syncError = ex.Message;
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private CbftpServer? SelectedServer() =>
+        _config.CbftpServers.FirstOrDefault(s => string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase))
+        ?? _config.CbftpServers.FirstOrDefault();
+
+    private HashSet<string> ExistingSiteNames() =>
+        SiteStore.ListNames().ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private void RefreshFetchedExisting()
+    {
+        var existing = ExistingSiteNames();
+        foreach (var row in _fetchedSites)
+            row.Exists = existing.Contains(row.Site.Name);
+    }
+
+    private static string DisplayServer(CbftpServer server)
+    {
+        var name = string.IsNullOrWhiteSpace(server.Name) ? server.Id : server.Name;
+        return $"{name} - {server.Host}:{server.Port}";
+    }
+}

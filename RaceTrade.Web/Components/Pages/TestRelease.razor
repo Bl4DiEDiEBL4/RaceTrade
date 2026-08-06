@@ -1,0 +1,151 @@
+﻿@page "/test"
+@inject SiteStore Sites
+@using Newtonsoft.Json.Linq
+
+<PageTitle>Test release - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="test" Size="18" />Test release</h1>
+</div>
+
+<div class="panel form">
+    <div class="form-grid wide">
+        <label>Announcing site</label>
+        <select @bind="_site">
+            <option value="">-- pick a site --</option>
+            @foreach (var s in _siteNames)
+            {
+                <option value="@s">@s</option>
+            }
+        </select>
+
+        <label>IRC section</label>
+        <input type="text" @bind="_section" placeholder="TV-HD" @bind:event="oninput" />
+
+        <label>Release name</label>
+        <input type="text" @bind="_release" placeholder="Some.Release.2026.1080p.WEB-GRP" @bind:event="oninput" />
+    </div>
+
+    <div class="form-actions">
+        <button class="btn primary" @onclick="Run" disabled="@_running">
+            @(_running ? "Testing..." : "Run test")
+        </button>
+    </div>
+</div>
+
+@if (_results.Count > 0)
+{
+    <h2>RESULT</h2>
+    <div class="panel">
+        <table class="grid logs">
+            <tbody>
+                @foreach (var r in _results)
+                {
+                    <tr class="lvl-@r.Level">
+                        <td class="msg">@r.Text</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private sealed record Line(string Text, string Level);
+
+    private List<string> _siteNames = new();
+    private List<Line> _results = new();
+    private string _site = "";
+    private string _section = "";
+    private string _release = "";
+    private bool _running;
+
+    protected override void OnInitialized() => _siteNames = Sites.ListNames().ToList();
+
+    private void Add(string text, string level = "info") => _results.Add(new Line(text, level));
+
+    private async Task Run()
+    {
+        _results.Clear();
+
+        if (string.IsNullOrWhiteSpace(_site) || string.IsNullOrWhiteSpace(_section) ||
+            string.IsNullOrWhiteSpace(_release))
+        {
+            Add("Pick a site and fill in both the section and the release name.", "warning");
+            return;
+        }
+
+        _running = true;
+        try
+        {
+            // Same pipeline the racer uses, so the outcome here matches a real announce.
+            RaceHelper.LoadAllSiteConfigs();
+
+            var cfg = Sites.Load(_site);
+            var json = JObject.Parse(Newtonsoft.Json.JsonConvert.SerializeObject(cfg));
+
+            Add($"Site: {_site}   Section: {_section}   Release: {_release}");
+
+            // 1. section -> cbftp mapping
+            var cbftpSection = RaceHelper.GetMappedCbftpSection(
+                _section, _release, json,
+                cfg.SiteSettings?.SectionPrefix,
+                cfg.SiteSettings?.SectionSuffix);
+
+            if (string.IsNullOrEmpty(cbftpSection) || cbftpSection.StartsWith("[ERROR]"))
+            {
+                Add($"No CBFTP mapping for IRC section '{_section}'. Add it under the site's Sections tab.", "error");
+                return;
+            }
+
+            Add($"Mapped to CBFTP section: {cbftpSection}", "success");
+
+            // 2. which sites would race it
+            var raceSections = cfg.RaceSectionsEnabled?.ToDictionary(s => s, _ => string.Empty)
+                               ?? new Dictionary<string, string>();
+
+            var result = await RaceHelper.FilterAllowedSites(
+                raceSections,
+                new Dictionary<string, string>(),
+                cfg.GlobalBlacklist ?? new List<string>(),
+                cbftpSection,
+                _release,
+                _release,
+                cfg.SiteSettings?.SectionPrefix,
+                cfg.SiteSettings?.SectionSuffix,
+                _site,
+                _section);
+
+            switch (result.Status)
+            {
+                case FilterStatus.Success:
+                    var dl = result.DlOnlySites ?? new List<string>();
+                    Add($"{result.AllowedSites.Count} site(s) would race:", "success");
+                    foreach (var s in result.AllowedSites)
+                    {
+                        var isDl = dl.Contains(s, StringComparer.OrdinalIgnoreCase);
+                        Add(isDl ? $"   {s}   [DL-only: affil]" : $"   {s}", isDl ? "warning" : "info");
+                    }
+                    break;
+
+                case FilterStatus.InsufficientSites:
+                    Add(result.Message, "warning");
+                    foreach (var s in result.AllowedSites ?? new List<string>())
+                        Add($"   {s}");
+                    break;
+
+                default:
+                    Add(result.Message, "warning");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Add($"Test failed: {ex.Message}", "error");
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+}

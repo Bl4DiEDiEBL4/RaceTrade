@@ -1,0 +1,16 @@
+@using Microsoft.AspNetCore.Components.Authorization
+
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(RaceTrade.Web.Components.Layout.MainLayout)">
+            <NotAuthorized>
+                @* Not signed in: bounce to the login page rather than showing anything.
+                   Every page except /login is behind [Authorize] via _Imports + the
+                   fallback policy, so site credentials are never rendered to an
+                   unauthenticated visitor. *@
+                <RedirectToLogin />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

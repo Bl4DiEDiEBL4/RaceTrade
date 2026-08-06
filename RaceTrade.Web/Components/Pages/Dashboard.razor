@@ -1,0 +1,128 @@
+@page "/"
+@implements IDisposable
+@inject UiLogSink Sink
+
+<PageTitle>Dashboard - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="dashboard" Size="18" />Dashboard</h1>
+</div>
+
+@* Stat tiles first, then the action cards that mirror the WinForms dashboard
+   (CBFTP SERVERS / SITES / PREBOTS / LOGS / TOOLS). *@
+<div class="card-grid">
+    <div class="card">
+        <div class="card-title">RACES SEEN</div>
+        <div class="stat"><span class="stat-value">@_races</span><span class="stat-label">detected</span></div>
+    </div>
+    <div class="card">
+        <div class="card-title">WARNINGS</div>
+        <div class="stat"><span class="stat-value warn">@_warnings</span><span class="stat-label">recent</span></div>
+    </div>
+    <div class="card">
+        <div class="card-title">ERRORS</div>
+        <div class="stat"><span class="stat-value err">@_errors</span><span class="stat-label">recent</span></div>
+    </div>
+    <div class="card">
+        <div class="card-title">SITES</div>
+        <div class="stat"><span class="stat-value ok">@_siteCount</span><span class="stat-label">configured</span></div>
+    </div>
+</div>
+
+<h2>SHORTCUTS</h2>
+<div class="card-grid">
+    <div class="card">
+        <div class="card-title">CBFTP SERVERS</div>
+        <div class="card-actions">
+            <a class="btn primary" href="servers"><Icon Name="servers" Size="13" /><span>Manage servers</span></a>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title">SITES</div>
+        <div class="card-actions">
+            <a class="btn primary" href="sites/new">Add site</a>
+            <a class="btn" href="sites"><Icon Name="folder" Size="13" /><span>Manage</span></a>
+            <a class="btn" href="cbftp-site"><Icon Name="servers" Size="13" /><span>CBFTP site</span></a>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title">PRE</div>
+        <div class="card-actions">
+            <a class="btn" href="pre"><Icon Name="flag" Size="13" /><span>Pre manager</span></a>
+            <a class="btn" href="prebots"><Icon Name="prebots" Size="13" /><span>Manage prebots</span></a>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title">TOOLS</div>
+        <div class="card-actions">
+            <a class="btn" href="test"><Icon Name="test" Size="13" /><span>Test release</span></a>
+            <a class="btn" href="fxp"><Icon Name="fxp" Size="13" /><span>FXP Client</span></a>
+            <a class="btn" href="logs"><Icon Name="logs" Size="13" /><span>Logs</span></a>
+            <a class="btn" href="chat"><Icon Name="chat" Size="13" /><span>Chat</span></a>
+        </div>
+    </div>
+</div>
+
+<h2>LATEST ACTIVITY</h2>
+<div class="panel">
+    @if (_recent.Count == 0)
+    {
+        <div class="empty">
+            No engine activity yet. Press <strong>Start</strong> in the sidebar once the
+            engine is wired up.
+        </div>
+    }
+    else
+    {
+        <table class="grid logs">
+            <tbody>
+                @foreach (var e in _recent)
+                {
+                    <tr class="lvl-@e.Level.ToString().ToLowerInvariant()">
+                        <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
+                        <td class="ch">@e.Channel</td>
+                        <td class="site">@e.Site</td>
+                        <td class="msg">@e.Message</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<LogEvent> _recent = Array.Empty<LogEvent>();
+    private int _errors, _warnings, _races, _siteCount;
+
+    protected override void OnInitialized()
+    {
+        Sink.Changed += OnSinkChanged;
+        _siteCount = CountSites();
+        Refresh();
+    }
+
+    private void OnSinkChanged() => InvokeAsync(() => { Refresh(); StateHasChanged(); });
+
+    private void Refresh()
+    {
+        var all = Sink.Snapshot(1000);
+        _errors = all.Count(e => e.Level == LogLevel.Error);
+        _warnings = all.Count(e => e.Level == LogLevel.Warning);
+        _races = all.Count(e => e.Channel == LogChannel.Race);
+        _recent = all.Take(20).ToList();
+    }
+
+    private static int CountSites()
+    {
+        try
+        {
+            if (!Directory.Exists("sites")) return 0;
+            return Directory.GetFiles("sites", "*.json")
+                .Select(Path.GetFileNameWithoutExtension)
+                .Count(n => n is not ("new_site" or "template" or "example"));
+        }
+        catch { return 0; }
+    }
+
+    public void Dispose() => Sink.Changed -= OnSinkChanged;
+}

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RaceTrade</title>
+    <base href="/" />
+    <link rel="stylesheet" href="app.css" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    @* Global interactivity: every component, including the layout, runs over the
+       SignalR circuit. With per-component render modes it is easy to end up with a
+       button whose @@onclick is never wired up (a layout, for instance, never gets a
+       render mode of its own) and which then silently does nothing. *@
+    <Routes @rendermode="InteractiveServer" />
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>

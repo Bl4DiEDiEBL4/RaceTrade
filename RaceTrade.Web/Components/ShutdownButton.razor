@@ -1,0 +1,34 @@
+@inject IHostApplicationLifetime Lifetime
+@inject RaceTrade.Web.Services.EngineHost Engine
+@inject RaceTrade.Web.Services.ChatHost ChatSvc
+
+@* With the console window detached there is no Ctrl+C left, so the UI has to own the
+   exit. Two clicks on purpose: closing this kills every IRC connection. *@
+@if (!_confirm)
+{
+    <button class="quit" @onclick="() => _confirm = true">
+        <Icon Name="power" Size="14" /><span>Quit</span>
+    </button>
+}
+else
+{
+    <div class="quit-confirm">
+        <span class="fh">Stop RaceTrade?</span>
+        <button class="btn danger sm" @onclick="Quit">Yes, quit</button>
+        <button class="btn sm" @onclick="() => _confirm = false">Cancel</button>
+    </div>
+}
+
+@code {
+    private bool _confirm;
+
+    private async Task Quit()
+    {
+        // Close the sockets first: StopApplication does not wait for background tasks, and
+        // a half-torn-down IRC client can keep the process alive past the shutdown signal.
+        try { await ChatSvc.StopAsync(); } catch { }
+        try { await Engine.StopAsync(); } catch { }
+
+        Lifetime.StopApplication();
+    }
+}

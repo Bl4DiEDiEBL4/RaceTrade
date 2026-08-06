@@ -1,0 +1,417 @@
+@page "/cbftp-site"
+@page "/cbftp-site/{SiteName}"
+@inject CbftpSiteService CbftpSites
+@inject NavigationManager Nav
+
+<PageTitle>CBFTP Site - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="servers" Size="18" />CBFTP Site</h1>
+    <div class="head-actions">
+        <button class="btn" @onclick="LoadSites" disabled="@Busy"><Icon Name="refresh" Size="13" /><span>Load sites</span></button>
+        <button class="btn" @onclick="ShowRules" disabled="@(Busy || string.IsNullOrWhiteSpace(_model.Name))"><Icon Name="logs" Size="13" /><span>Get site rules</span></button>
+        <button class="btn primary" @onclick="Save" disabled="@Busy"><Icon Name="save" Size="13" /><span>Save CBFTP site</span></button>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <p class="hint err">@_error</p>
+}
+@if (_status is not null)
+{
+    <p class="hint">@_status</p>
+}
+
+<div class="tabs">
+    @foreach (var tab in Tabs)
+    {
+        <button class="tab @(_tab == tab ? "active" : "")" @onclick="() => _tab = tab">@tab</button>
+    }
+</div>
+
+<div class="panel form cbftp-site-editor">
+    <div class="toolbar embedded">
+        <label>CBFTP server</label>
+        <select @bind="_serverId" disabled="@Busy">
+            @foreach (var server in _servers)
+            {
+                <option value="@server.Id">@DisplayServer(server)</option>
+            }
+        </select>
+        <label>Existing site</label>
+        <select value="@_selectedSiteName" @onchange="SelectExistingSite" disabled="@(!_siteNames.Any() || Busy)">
+            <option value="">New / manual</option>
+            @foreach (var site in _siteNames)
+            {
+                <option value="@site">@site</option>
+            }
+        </select>
+        <button class="btn" @onclick="LoadSelected" disabled="@(string.IsNullOrWhiteSpace(_selectedSiteName) || Busy)">Edit selected</button>
+        <button class="btn" @onclick="NewSite" disabled="@Busy"><Icon Name="plus" Size="13" /><span>New CBFTP site</span></button>
+    </div>
+
+    @if (_tab == "Basic")
+    {
+        <div class="cbftp-edit-grid">
+            <div class="subcard">
+                <h2>BASIC</h2>
+                <div class="form-grid">
+                    <label>Name</label>
+                    <input type="text" @bind="_model.Name" @bind:event="oninput" placeholder="HV" />
+                    <label>Addresses</label>
+                    <textarea @bind="_model.AddressesText" @bind:event="oninput" placeholder="127.0.0.1:21"></textarea>
+                    <label>User</label>
+                    <input type="text" @bind="_model.User" @bind:event="oninput" />
+                    <label>Password</label>
+                    <input type="text" @bind="_model.Password" @bind:event="oninput" />
+                    <label>Base path</label>
+                    <input type="text" @bind="_model.BasePath" @bind:event="oninput" placeholder="/" />
+                    <label>Disabled</label>
+                    <input type="checkbox" @bind="_model.Disabled" />
+                </div>
+            </div>
+
+            <div class="subcard">
+                <h2>LIMITS</h2>
+                <div class="form-grid">
+                    <label>Max logins</label>
+                    <input type="number" @bind="_model.MaxLogins" @bind:event="oninput" />
+                    <label>Sim uploads</label>
+                    <input type="number" @bind="_model.MaxSimUp" @bind:event="oninput" />
+                    <label>Sim downloads</label>
+                    <input type="number" @bind="_model.MaxSimDown" @bind:event="oninput" />
+                    <label>Max idle (s)</label>
+                    <input type="number" @bind="_model.MaxIdleTime" @bind:event="oninput" />
+                    <label>Priority</label>
+                    <select @bind="_model.Priority">@Options("NORMAL", "LOW", "HIGH")</select>
+                    <label>List frequency</label>
+                    <select @bind="_model.ListFrequency">@Options("AUTO", "ALWAYS", "NEVER")</select>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_tab == "Transfer")
+    {
+        <div class="cbftp-edit-grid">
+            <div class="subcard">
+                <h2>TLS / TRANSFER</h2>
+                <div class="form-grid">
+                    <label>TLS mode</label>
+                    <select @bind="_model.TlsMode">@Options("NONE", "AUTH_TLS", "IMPLICIT")</select>
+                    <label>Transfer proto</label>
+                    <select @bind="_model.TransferProtocol">@Options("IPV4_ONLY", "PREFER_IPV4", "PREFER_IPV6", "IPV6_ONLY")</select>
+                    <label>TLS transfer</label>
+                    <select @bind="_model.TlsTransferPolicy">@Options("ALWAYS_OFF", "PREFER_OFF", "PREFER_ON", "ALWAYS_ON")</select>
+                    <label>Source policy</label>
+                    <select @bind="_model.TransferSourcePolicy">@Options("ALLOW", "BLOCK")</select>
+                    <label>Target policy</label>
+                    <select @bind="_model.TransferTargetPolicy">@Options("ALLOW", "BLOCK", "MATCH_ONLY")</select>
+                    <label>List command</label>
+                    <select @bind="_model.ListCommand">@Options("STAT_L", "LIST")</select>
+                </div>
+            </div>
+
+            <div class="subcard">
+                <h2>FLAGS</h2>
+                <div class="check-chip-list flags-grid">
+                    @Check("Stay logged in", _model.StayLoggedIn, v => _model.StayLoggedIn = v)
+                    @Check("CEPR", _model.Cepr, v => _model.Cepr = v)
+                    @Check("SSCN", _model.Sscn, v => _model.Sscn = v)
+                    @Check("CPSV", _model.Cpsv, v => _model.Cpsv = v)
+                    @Check("Broken PASV", _model.BrokenPasv, v => _model.BrokenPasv = v)
+                    @Check("Force binary mode", _model.ForceBinaryMode, v => _model.ForceBinaryMode = v)
+                    @Check("Leave free slot", _model.LeaveFreeSlot, v => _model.LeaveFreeSlot = v)
+                    @Check("Needs PRET", _model.Pret, v => _model.Pret = v)
+                    @Check("Use XDUPE", _model.Xdupe, v => _model.Xdupe = v)
+                </div>
+            </div>
+
+            <div class="subcard">
+                <h2>ALLOW / PROXY</h2>
+                <div class="form-grid">
+                    <label>Download</label>
+                    <select @bind="_model.AllowDownload">@Options("YES", "NO", "MATCH_ONLY")</select>
+                    <label>Upload</label>
+                    <select @bind="_model.AllowUpload">@Options("YES", "NO")</select>
+                    <label>Proxy type</label>
+                    <select @bind="_model.ProxyType">@Options("GLOBAL", "NONE", "USE")</select>
+                    <label>Proxy name</label>
+                    <input type="text" @bind="_model.ProxyName" @bind:event="oninput" />
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_tab == "Affils")
+    {
+        <div class="list-editor">
+            <div class="row-actions">
+                <input type="text" @bind="_newAffil" @bind:event="oninput" placeholder="GROUP" />
+                <button class="btn primary" @onclick="AddAffil"><Icon Name="plus" Size="13" /><span>Add affil</span></button>
+            </div>
+            <table class="grid">
+                <thead><tr><th>AFFIL</th><th class="w-act"></th></tr></thead>
+                <tbody>
+                    @foreach (var affil in _model.Affils.ToList())
+                    {
+                        <tr>
+                            <td class="site">@affil</td>
+                            <td class="right"><button class="btn danger sm" @onclick="() => _model.Affils.Remove(affil)">&times;</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (_tab == "Sections")
+    {
+        <div class="list-editor">
+            <div class="row-actions cbftp-section-add">
+                <input type="text" @bind="_newSectionName" @bind:event="oninput" placeholder="TV-1080P" />
+                <input type="text" @bind="_newSectionPath" @bind:event="oninput" placeholder="/TV-1080P" />
+                <button class="btn primary" @onclick="AddSection"><Icon Name="plus" Size="13" /><span>Add section</span></button>
+            </div>
+            <table class="grid">
+                <thead><tr><th>NAME</th><th>PATH</th><th class="w-act"></th></tr></thead>
+                <tbody>
+                    @foreach (var section in _model.Sections)
+                    {
+                        <tr>
+                            <td><input type="text" @bind="section.Name" @bind:event="oninput" /></td>
+                            <td><input type="text" @bind="section.Path" @bind:event="oninput" /></td>
+                            <td class="right"><button class="btn danger sm" @onclick="() => _model.Sections.Remove(section)">&times;</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (_tab == "Skiplist")
+    {
+        <div class="list-editor">
+            <div class="row-actions cbftp-skip-add">
+                <select @bind="_newSkip.Action">@Options("ALLOW", "DENY", "UNIQUE", "SIMILAR")</select>
+                <select @bind="_newSkip.Scope">@Options("IN_RACE", "ALL")</select>
+                <input type="text" @bind="_newSkip.Pattern" @bind:event="oninput" placeholder="*FRENCH*" />
+                <label class="chk"><input type="checkbox" @bind="_newSkip.Dir" /> Dir</label>
+                <label class="chk"><input type="checkbox" @bind="_newSkip.File" /> File</label>
+                <label class="chk"><input type="checkbox" @bind="_newSkip.Regex" /> Regex</label>
+                <button class="btn primary" @onclick="AddSkip"><Icon Name="plus" Size="13" /><span>Add skip</span></button>
+            </div>
+            <table class="grid">
+                <thead><tr><th>ACTION</th><th>SCOPE</th><th>PATTERN</th><th>DIR</th><th>FILE</th><th>REGEX</th><th class="w-act"></th></tr></thead>
+                <tbody>
+                    @foreach (var skip in _model.Skiplist)
+                    {
+                        <tr>
+                            <td><select @bind="skip.Action">@Options("ALLOW", "DENY", "UNIQUE", "SIMILAR")</select></td>
+                            <td><select @bind="skip.Scope">@Options("IN_RACE", "ALL")</select></td>
+                            <td><input type="text" @bind="skip.Pattern" @bind:event="oninput" /></td>
+                            <td><input type="checkbox" @bind="skip.Dir" /></td>
+                            <td><input type="checkbox" @bind="skip.File" /></td>
+                            <td><input type="checkbox" @bind="skip.Regex" /></td>
+                            <td class="right"><button class="btn danger sm" @onclick="() => _model.Skiplist.Remove(skip)">&times;</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (_showRules)
+{
+    <div class="modal-backdrop" @onclick="CloseRules">
+        <div class="modal-card rules-modal" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2>Site Rules - @_model.Name</h2>
+                <button class="btn" @onclick="CloseRules"><Icon Name="close" Size="13" /><span>Close</span></button>
+            </div>
+            <pre class="code">@_rulesText</pre>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? SiteName { get; set; }
+
+    private static readonly string[] Tabs = { "Basic", "Transfer", "Affils", "Sections", "Skiplist" };
+    private List<CbftpServer> _servers = new();
+    private List<string> _siteNames = new();
+    private string _serverId = "";
+    private string _selectedSiteName = "";
+    private string _tab = "Basic";
+    private CbftpSiteEditModel _model = CbftpSiteService.New();
+    private string? _error;
+    private string? _status;
+    private bool Busy { get; set; }
+    private bool _showRules;
+    private string _rulesText = "";
+    private string _newAffil = "";
+    private string _newSectionName = "";
+    private string _newSectionPath = "";
+    private CbftpSkiplistEntry _newSkip = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _servers = CbftpSites.LoadServers().ToList();
+        _serverId = _servers.FirstOrDefault()?.Id ?? "";
+        if (!string.IsNullOrWhiteSpace(SiteName))
+        {
+            _selectedSiteName = SiteName;
+            _model.Name = SiteName;
+        }
+        await LoadSites();
+        if (!string.IsNullOrWhiteSpace(SiteName))
+            await LoadSelected();
+    }
+
+    private async Task LoadSites() => await RunAsync(async () =>
+    {
+        var server = SelectedServer();
+        if (server is null)
+        {
+            _status = null;
+            _error = "Add a CBFTP server first.";
+            return;
+        }
+
+        _siteNames = (await CbftpSites.LoadSiteNamesAsync(server)).ToList();
+        if (!string.IsNullOrWhiteSpace(SiteName) && _siteNames.Contains(SiteName, StringComparer.OrdinalIgnoreCase))
+            _selectedSiteName = SiteName;
+        _status = $"Loaded {_siteNames.Count} CBFTP site(s).";
+    });
+
+    private async Task LoadSelected()
+    {
+        var server = SelectedServer();
+        if (server is null || string.IsNullOrWhiteSpace(_selectedSiteName))
+            return;
+
+        await RunAsync(async () =>
+        {
+            _model = await CbftpSites.LoadSiteAsync(server, _selectedSiteName);
+            _status = $"Loaded CBFTP site '{_model.Name}'.";
+        });
+    }
+
+    private async Task Save()
+    {
+        var server = SelectedServer();
+        if (server is null)
+        {
+            _error = "Add a CBFTP server first.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            await CbftpSites.SaveSiteAsync(server, _model);
+            _model.OriginalName = _model.Name;
+            _selectedSiteName = _model.Name;
+            _status = $"Saved CBFTP site '{_model.Name}'.";
+            await LoadSites();
+        });
+    }
+
+    private async Task ShowRules()
+    {
+        var server = SelectedServer();
+        if (server is null || string.IsNullOrWhiteSpace(_model.Name))
+            return;
+
+        await RunAsync(async () =>
+        {
+            _rulesText = await CbftpSites.GetSiteRulesAsync(server, _model.Name);
+            if (string.IsNullOrWhiteSpace(_rulesText))
+                _rulesText = "No rules returned from CBFTP.";
+            _showRules = true;
+        });
+    }
+
+    private void SelectExistingSite(ChangeEventArgs e)
+    {
+        _selectedSiteName = e.Value?.ToString() ?? "";
+        if (!string.IsNullOrWhiteSpace(_selectedSiteName))
+            _model.Name = _selectedSiteName;
+    }
+
+    private void NewSite()
+    {
+        _selectedSiteName = "";
+        _model = CbftpSiteService.New(SiteName ?? "");
+        _tab = "Basic";
+        _status = "New CBFTP site.";
+    }
+
+    private void AddAffil()
+    {
+        var value = _newAffil.Trim();
+        if (value.Length > 0 && !_model.Affils.Contains(value, StringComparer.OrdinalIgnoreCase))
+            _model.Affils.Add(value);
+        _newAffil = "";
+    }
+
+    private void AddSection()
+    {
+        var name = _newSectionName.Trim();
+        var path = _newSectionPath.Trim();
+        if (name.Length == 0 || path.Length == 0)
+            return;
+
+        _model.Sections.Add(new CbftpSiteSection { Name = name, Path = path });
+        _newSectionName = "";
+        _newSectionPath = "";
+    }
+
+    private void AddSkip()
+    {
+        if (string.IsNullOrWhiteSpace(_newSkip.Pattern))
+            return;
+
+        _model.Skiplist.Add(_newSkip);
+        _newSkip = new CbftpSkiplistEntry();
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            Busy = true;
+            _error = null;
+            await action();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private CbftpServer? SelectedServer() =>
+        _servers.FirstOrDefault(s => string.Equals(s.Id, _serverId, StringComparison.OrdinalIgnoreCase));
+
+    private static string DisplayServer(CbftpServer server) =>
+        $"{server.Name ?? server.Id} - {server.Host}:{server.Port}";
+
+    private void CloseRules() => _showRules = false;
+
+    private static RenderFragment Options(params string[] values) => @<text>
+        @foreach (var value in values)
+        {
+            <option value="@value">@value</option>
+        }
+    </text>;
+
+    private RenderFragment Check(string label, bool value, Action<bool> set) => @<label class="check-chip @(value ? "checked" : "")">
+        <input type="checkbox" checked="@value" @onchange="e => set(e.Value is bool b && b)" />
+        <span>@label</span>
+    </label>;
+}

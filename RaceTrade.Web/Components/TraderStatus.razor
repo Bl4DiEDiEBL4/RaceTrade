@@ -1,0 +1,38 @@
+@implements IDisposable
+@inject RaceTrade.Web.Services.RacerState Racer
+
+@* Lives in its own component instead of directly in MainLayout: a layout is rendered as
+   part of the page and does NOT get an interactive render mode of its own, so an
+   @onclick placed there is never wired up and the button silently does nothing. *@
+<div class="status-card">
+    <div class="status-title">TRADER STATUS</div>
+
+    <div class="status-row">
+        <span class="dot @(Racer.IsRunning ? "on" : "")"></span>
+        <span class="status-text">
+            @(Racer.IsBusy ? "Working..." : Racer.IsRunning ? "Running" : "Stopped")
+        </span>
+    </div>
+
+    @if (Racer.IsRunning && Racer.ConnectedSites.Count > 0)
+    {
+        <div class="status-sites">@Racer.ConnectedSites.Count site(s) connected</div>
+    }
+
+    <button class="btn-run @(Racer.IsRunning ? "stop" : "")"
+            disabled="@Racer.IsBusy"
+            @onclick="Toggle">
+        <Icon Name="@(Racer.IsRunning ? "stop" : "play")" Size="13" />
+        <span>@(Racer.IsBusy ? "..." : Racer.IsRunning ? "Stop" : "Start")</span>
+    </button>
+</div>
+
+@code {
+    protected override void OnInitialized() => Racer.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    private Task Toggle() => Racer.ToggleAsync();
+
+    public void Dispose() => Racer.Changed -= OnChanged;
+}

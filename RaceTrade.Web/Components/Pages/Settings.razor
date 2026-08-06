@@ -1,0 +1,289 @@
+﻿@page "/settings"
+@inject WebSecurityOptions Security
+
+<PageTitle>Settings - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="settings" Size="18" />Settings</h1>
+</div>
+
+<div class="card-grid">
+    <div class="card">
+        <div class="card-title">WEB ACCESS</div>
+        <table class="grid">
+            <tbody>
+                <tr>
+                    <td>Listening on</td>
+                    <td>@Security.BindAddress:@Security.Port</td>
+                </tr>
+                <tr>
+                    <td>Reachable from</td>
+                    <td>
+                        @if (Security.IsLoopbackOnly)
+                        {
+                            <span class="pill on">This machine only</span>
+                        }
+                        else
+                        {
+                            <span class="pill off">Other machines</span>
+                        }
+                    </td>
+                </tr>
+                <tr>
+                    <td>Login</td>
+                    <td>
+                        @if (Security.HasPassword)
+                        {
+                            <span class="pill on">Password set</span>
+                        }
+                        else
+                        {
+                            <span class="pill off">Not set</span>
+                        }
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        @if (!Security.HasPassword && Security.IsLoopbackOnly)
+        {
+            <p class="hint">
+                No password needed while this is loopback-only. Set one with
+                <code>RaceTrade --set-password</code> before changing
+                <code>Web:BindAddress</code> - the app refuses to start exposed without it.
+            </p>
+        }
+    </div>
+
+    <div class="card">
+        <div class="card-title">ENGINE</div>
+
+        @* Stacked rows, not the two-column form grid: inside a narrow card that grid
+           squeezes the help text into a one-word-per-line column. *@
+        <label class="opt">
+            <input type="checkbox" @bind="_debug" @bind:after="ApplyEngine" />
+            <span>
+                <span class="opt-name">Debug logging</span>
+                <span class="fh">Verbose diagnostics. Costs time on the race path - leave off normally.</span>
+            </span>
+        </label>
+
+        <label class="opt">
+            <input type="checkbox" @bind="_insecureSsl" @bind:after="ApplyEngine" />
+            <span>
+                <span class="opt-name">Allow insecure SSL</span>
+                <span class="fh">Accept self-signed cbftp certificates.</span>
+            </span>
+        </label>
+    </div>
+
+    <div class="card">
+        <div class="card-title">DATA FOLDER</div>
+        <p class="path">@DataRoot</p>
+        <p class="fh">
+            All sites, cbftp servers, prebots, sections and databases are read from here.
+            Copy your existing folders <strong>into</strong> this directory - not next to
+            the exe - then restart.
+        </p>
+        <table class="grid tight">
+            <tbody>
+                @foreach (var (name, count) in _dataCounts)
+                {
+                    <tr>
+                        <td>@name</td>
+                        <td class="right @(count == 0 ? "dim" : "")">@count file(s)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<h2><Icon Name="power" Size="14" />HOW THIS RUNS</h2>
+<div class="panel form">
+    <div class="callout">
+        There is no separate engine process. <strong>One binary</strong> contains the racing
+        engine and this web UI - the engine runs inside it, and the UI is just a local web
+        server you happen to view in a browser. Nothing is installed, nothing phones home.
+    </div>
+
+    <table class="grid tight">
+        <tbody>
+            <tr><td>Executable</td><td class="path">@ExePath</td></tr>
+            <tr><td>Data folder</td><td class="path">@DataRoot</td></tr>
+            <tr><td>Listening on</td><td>@Security.BindAddress:@Security.Port</td></tr>
+        </tbody>
+    </table>
+
+    <div class="fh" style="margin-top:12px">
+        <strong>Command-line switches</strong>
+    </div>
+    <table class="grid tight">
+        <tbody>
+            <tr><td><code>--data &lt;path&gt;</code></td><td>Use a different data folder.</td></tr>
+            <tr><td><code>--no-browser</code></td><td>Do not open a browser on start. Use this on a server.</td></tr>
+            <tr><td><code>--console</code></td><td>Keep the console window (Windows). Handy for reading startup errors.</td></tr>
+            <tr><td><code>--set-password</code></td><td>Generate a password hash for remote access.</td></tr>
+        </tbody>
+    </table>
+
+    <div class="fh" style="margin-top:12px">
+        <strong>Linux / headless</strong> - same binary, no desktop needed. Run it as a
+        service and point your browser at it from any machine:
+    </div>
+<pre class="code">./RaceTrade --no-browser
+
+# as a systemd service
+sudo tee /etc/systemd/system/racetrade.service &lt;&lt;'EOF'
+[Unit]
+Description=RaceTrade
+After=network-online.target
+
+[Service]
+ExecStart=/opt/racetrade/RaceTrade --no-browser
+WorkingDirectory=/opt/racetrade
+Restart=always
+User=racetrade
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl enable --now racetrade</pre>
+
+    <div class="fh">
+        To reach it from another machine set <code>Web:BindAddress</code> to
+        <code>0.0.0.0</code> in <code>appsettings.json</code> - the app refuses to start
+        exposed until a password is set with <code>--set-password</code>.
+    </div>
+</div>
+
+<h2><Icon Name="film" Size="14" />MOVIE / TV LOOKUP</h2>
+<div class="panel form">
+    <div class="callout">
+        API credentials for the IMDB and TVMaze filters you can enable per section.
+        TVMaze needs no key. For movies you can use Tiffara (no key) or TMDb (key required).
+        Stored in <code>settings/settings.json</code>.
+    </div>
+
+    <div class="form-grid wide">
+        <label>Movie provider</label>
+        <div>
+            <select @bind="_movieProvider">
+                <option value="tiffara">Tiffara - no API key needed</option>
+                <option value="tmdb">TMDb - requires a key</option>
+            </select>
+        </div>
+
+        <label>TMDb API key</label>
+        <div>
+            <input type="password" @bind="_tmdbKey" placeholder="@(_hasTmdbKey ? "******** (unchanged)" : "v3 API key")" @bind:event="oninput" />
+            <div class="fh">Free from themoviedb.org. Only needed when the provider is TMDb.</div>
+        </div>
+
+        <label>TMDb bearer token</label>
+        <div>
+            <input type="password" @bind="_tmdbBearer" placeholder="@(_hasTmdbBearer ? "******** (unchanged)" : "optional v4 token")" @bind:event="oninput" />
+            <div class="fh">Optional alternative to the API key.</div>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button class="btn primary" @onclick="SaveLookup"><Icon Name="save" Size="13" /><span>Save</span></button>
+        @if (_saved)
+        {
+            <span class="fh inline">Saved.</span>
+        }
+    </div>
+</div>
+
+@code {
+    private const string SettingsFile = "settings/settings.json";
+
+    private bool _debug = EngineSettings.DebugEnabled;
+    private bool _insecureSsl = EngineSettings.AllowInsecureSsl;
+
+    private string _movieProvider = "tiffara";
+    private string _tmdbKey = "";
+    private string _tmdbBearer = "";
+    private bool _hasTmdbKey, _hasTmdbBearer, _saved;
+
+    // The engine reads everything by relative path, and the process working directory is
+    // the data folder - so this is exactly where it looks.
+    private static string DataRoot => Directory.GetCurrentDirectory();
+
+    // Environment.ProcessPath is the real exe, even under PublishSingleFile where
+    // AppContext.BaseDirectory points at the temporary extraction folder.
+    private static string ExePath => Environment.ProcessPath ?? AppContext.BaseDirectory;
+
+    private List<(string Name, int Count)> _dataCounts = new();
+
+    protected override void OnInitialized()
+    {
+        LoadLookup();
+        CountData();
+    }
+
+    private void CountData()
+    {
+        _dataCounts = new[] { "sites", "cbftp", "pre_bots", "sections", "settings", "db" }
+            .Select(d => (d, Directory.Exists(d) ? Directory.GetFiles(d).Length : 0))
+            .ToList();
+    }
+
+    private void ApplyEngine()
+    {
+        // Applied immediately: these are plain process-wide switches, no restart needed.
+        EngineSettings.DebugEnabled = _debug;
+        EngineSettings.AllowInsecureSsl = _insecureSsl;
+    }
+
+    private void LoadLookup()
+    {
+        try
+        {
+            if (!File.Exists(SettingsFile)) return;
+
+            var o = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(SettingsFile));
+
+            _movieProvider = o["movie_api_provider"]?.ToString()
+                             ?? o["imdb_api_provider"]?.ToString()
+                             ?? "tiffara";
+
+            // Keys are not echoed back to the browser; empty box means "keep".
+            _hasTmdbKey = !string.IsNullOrEmpty(o["tmdb_api_key"]?.ToString() ?? o["tmdb_key"]?.ToString());
+            _hasTmdbBearer = !string.IsNullOrEmpty(o["tmdb_bearer_token"]?.ToString());
+        }
+        catch
+        {
+            // A malformed settings file shouldn't break the page; defaults apply.
+        }
+    }
+
+    private void SaveLookup()
+    {
+        try
+        {
+            Directory.CreateDirectory("settings");
+
+            var o = File.Exists(SettingsFile)
+                ? Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(SettingsFile))
+                : new Newtonsoft.Json.Linq.JObject();
+
+            o["movie_api_provider"] = _movieProvider;
+
+            if (!string.IsNullOrEmpty(_tmdbKey)) o["tmdb_api_key"] = _tmdbKey;
+            if (!string.IsNullOrEmpty(_tmdbBearer)) o["tmdb_bearer_token"] = _tmdbBearer;
+
+            AtomicFile.WriteAllText(SettingsFile, o.ToString(Newtonsoft.Json.Formatting.Indented));
+
+            _tmdbKey = _tmdbBearer = "";
+            _saved = true;
+            LoadLookup();
+            LogManager.Success("Saved lookup settings.");
+        }
+        catch (Exception ex)
+        {
+            LogManager.Error($"Failed to save lookup settings: {ex.Message}");
+        }
+    }
+}

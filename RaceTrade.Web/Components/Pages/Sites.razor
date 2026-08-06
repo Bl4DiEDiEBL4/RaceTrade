@@ -1,0 +1,108 @@
+@page "/sites"
+@inject SiteStore Store
+
+<PageTitle>Sites - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="sites" Size="18" />Sites</h1>
+    <div class="head-actions">
+        <a class="btn primary" href="sites/new"><Icon Name="plus" Size="13" /><span>Add site</span></a>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <p class="hint err">@_error</p>
+}
+
+<div class="panel">
+    @if (_rows.Count == 0)
+    {
+        <div class="empty">No sites yet. Use <strong>+ Add site</strong> to create one.</div>
+    }
+    else
+    {
+        <table class="grid">
+            <thead>
+                <tr>
+                    <th>SITE</th><th>ZNC HOST</th><th>NETWORK</th>
+                    <th>CHANNELS</th><th>SECTIONS</th><th>STATUS</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td class="site">@r.Name</td>
+                        <td>@r.Host</td>
+                        <td>@r.Network</td>
+                        <td class="dim">@r.Channels</td>
+                        <td class="dim">@r.Sections</td>
+                        <td>
+                            @if (r.Disabled)
+                            {
+                                <span class="pill off">disabled</span>
+                            }
+                            else if (r.DlOnly)
+                            {
+                                <span class="pill dl">dl-only</span>
+                            }
+                            else
+                            {
+                                <span class="pill on">enabled</span>
+                            }
+                        </td>
+                        <td class="right">
+                            <a class="btn" href="@($"sites/edit/{r.Name}")"><Icon Name="edit" Size="13" /><span>Edit</span></a>
+                            <a class="btn" href="@($"cbftp-site/{r.Name}")"><Icon Name="servers" Size="13" /><span>Edit CBFTP Site</span></a>
+                            <button class="btn danger" @onclick="() => Delete(r.Name)"><Icon Name="trash" Size="13" /><span>Delete</span></button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private sealed record Row(string Name, string Host, string Network,
+                              int Channels, int Sections, bool Disabled, bool DlOnly);
+
+    private List<Row> _rows = new();
+    private string? _error;
+
+    protected override void OnInitialized() => Reload();
+
+    private void Reload()
+    {
+        try
+        {
+            _error = null;
+            _rows = Store.ListNames().Select(n =>
+            {
+                var c = Store.Load(n);
+                var chans = SiteStore.ReadChannels(c.SiteSettings)
+                    .Count(x => !string.IsNullOrWhiteSpace(x.Channel));
+
+                return new Row(
+                    n,
+                    c.Server?.Host ?? "",
+                    c.Server?.Network ?? "",
+                    chans,
+                    c.Sections?.Count ?? 0,
+                    c.SiteSettings?.DisableSite ?? false,
+                    c.SiteSettings?.DlOnlySite ?? false);
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Delete(string name)
+    {
+        try { Store.Delete(name); Reload(); }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+}

@@ -1,0 +1,334 @@
+@page "/fxp"
+@inject FxpClientService Fxp
+
+<PageTitle>FXP Client - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="fxp" Size="18" />FXP Client</h1>
+    <button class="btn" @onclick="LoadSites" disabled="@Busy"><Icon Name="refresh" Size="13" /><span>Load sites</span></button>
+</div>
+
+@if (_error is not null)
+{
+    <p class="hint err">@_error</p>
+}
+@if (_status is not null)
+{
+    <p class="hint">@_status</p>
+}
+
+<div class="panel fxp-shell">
+    <div class="toolbar fxp-toolbar">
+        <label>CBFTP</label>
+        <select @bind="_serverId" disabled="@Busy">
+            @foreach (var server in _servers)
+            {
+                <option value="@server.Id">@DisplayServer(server)</option>
+            }
+        </select>
+        <button class="btn" @onclick="LoadSites" disabled="@(!_servers.Any() || Busy)">
+            <Icon Name="refresh" Size="13" />
+            <span>Refresh sites</span>
+        </button>
+        <span class="spacer"></span>
+        <button class="btn primary" @onclick="() => Transfer(true)" disabled="@(!CanTransferLeftToRight || Busy)">
+            <Icon Name="send" Size="13" />
+            <span>Left to right</span>
+        </button>
+        <button class="btn primary" @onclick="() => Transfer(false)" disabled="@(!CanTransferRightToLeft || Busy)">
+            <Icon Name="send" Size="13" />
+            <span>Right to left</span>
+        </button>
+    </div>
+
+    <div class="fxp-panes">
+        @Pane("left", "Left Site", _leftSite, v => _leftSite = v, _leftPath, v => _leftPath = v, _leftItems, _selectedLeft, BrowseLeft, UpLeft, DeleteLeft)
+        @Pane("right", "Right Site", _rightSite, v => _rightSite = v, _rightPath, v => _rightPath = v, _rightItems, _selectedRight, BrowseRight, UpRight, DeleteRight)
+    </div>
+
+    <div class="fxp-log">
+        <div class="card-title">TRANSFER LOG</div>
+        <div class="log-box">
+            @if (_log.Count == 0)
+            {
+                <div class="dim">No FXP activity yet.</div>
+            }
+            else
+            {
+                @foreach (var line in _log)
+                {
+                    <div>@line</div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<CbftpServer> _servers = new();
+    private List<string> _sites = new();
+    private string _serverId = "";
+    private string _leftSite = "";
+    private string _rightSite = "";
+    private string _leftPath = "/";
+    private string _rightPath = "/";
+    private IReadOnlyList<FxpFileItem> _leftItems = Array.Empty<FxpFileItem>();
+    private IReadOnlyList<FxpFileItem> _rightItems = Array.Empty<FxpFileItem>();
+    private readonly HashSet<string> _selectedLeft = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _selectedRight = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _log = new();
+    private string? _error;
+    private string? _status;
+    private bool Busy { get; set; }
+
+    private bool CanTransferLeftToRight =>
+        SelectedLeftItems.Any() && !string.IsNullOrWhiteSpace(_leftSite) && !string.IsNullOrWhiteSpace(_rightSite);
+
+    private bool CanTransferRightToLeft =>
+        SelectedRightItems.Any() && !string.IsNullOrWhiteSpace(_leftSite) && !string.IsNullOrWhiteSpace(_rightSite);
+
+    private IEnumerable<FxpFileItem> SelectedLeftItems => _leftItems.Where(i => _selectedLeft.Contains(i.FullPath));
+    private IEnumerable<FxpFileItem> SelectedRightItems => _rightItems.Where(i => _selectedRight.Contains(i.FullPath));
+
+    protected override void OnInitialized()
+    {
+        _servers = Fxp.LoadServers().ToList();
+        _serverId = _servers.FirstOrDefault()?.Id ?? "";
+    }
+
+    private RenderFragment Pane(
+        string side,
+        string title,
+        string site,
+        Action<string> setSite,
+        string path,
+        Action<string> setPath,
+        IReadOnlyList<FxpFileItem> items,
+        HashSet<string> selected,
+        Func<Task> browse,
+        Func<Task> up,
+        Func<Task> delete) => @<div class="fxp-pane">
+        <div class="fxp-pane-head">
+            <h2>@title</h2>
+            <select value="@site" @onchange="e => setSite(e.Value?.ToString() ?? string.Empty)" disabled="@(!_sites.Any() || Busy)">
+                <option value="">Select site</option>
+                @foreach (var s in _sites)
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+        </div>
+        <div class="path-row">
+            <input type="text" value="@path" @oninput="e => setPath(e.Value?.ToString() ?? string.Empty)" />
+            <button class="btn" @onclick="up" disabled="@Busy">Up</button>
+            <button class="btn" @onclick="browse" disabled="@Busy"><Icon Name="refresh" Size="13" /><span>Refresh</span></button>
+        </div>
+        <div class="fxp-table-wrap">
+            <table class="grid fxp-table">
+                <thead>
+                    <tr><th></th><th>NAME</th><th>SIZE</th><th>MODIFIED</th></tr>
+                </thead>
+                <tbody>
+                    @if (items.Count == 0)
+                    {
+                        <tr><td colspan="4" class="dim">No listing loaded.</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in items)
+                        {
+                            <tr class="@(item.IsSymlink ? "link" : item.IsDirectory ? "dir" : "")"
+                                @ondblclick="() => OpenItem(side, item)">
+                                <td><input type="checkbox" checked="@selected.Contains(item.FullPath)" @onchange="e => Toggle(selected, item.FullPath, e.Value)" /></td>
+                                <td class="site">@item.DisplayName</td>
+                                <td>@item.TypeText</td>
+                                <td class="dim">@item.ModifiedText</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="form-actions">
+            <button class="btn danger" @onclick="delete" disabled="@(selected.Count == 0 || Busy)">
+                <Icon Name="trash" Size="13" />
+                <span>Delete selected</span>
+            </button>
+        </div>
+    </div>;
+
+    private async Task LoadSites()
+    {
+        var server = SelectedServer();
+        if (server is null)
+        {
+            _error = "Add a CBFTP server first.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            _status = $"Loading sites from {DisplayServer(server)}...";
+            _sites = (await Fxp.FetchSitesAsync(server)).ToList();
+            _leftSite = KeepOrFirst(_leftSite);
+            _rightSite = KeepOrSecond(_rightSite);
+            _status = _sites.Count == 0 ? "No sites returned by CBFTP." : $"Loaded {_sites.Count} site(s).";
+        });
+    }
+
+    private async Task BrowseLeft() => await Browse(true);
+    private async Task BrowseRight() => await Browse(false);
+
+    private async Task Browse(bool left)
+    {
+        var server = SelectedServer();
+        var site = left ? _leftSite : _rightSite;
+        var path = left ? _leftPath : _rightPath;
+        if (server is null || string.IsNullOrWhiteSpace(site))
+        {
+            _error = "Select a CBFTP server and site first.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var items = await Fxp.BrowseAsync(server, site, path);
+            if (left)
+            {
+                _leftItems = items;
+                _selectedLeft.Clear();
+                _leftPath = FxpClientService.NormalizePath(_leftPath);
+            }
+            else
+            {
+                _rightItems = items;
+                _selectedRight.Clear();
+                _rightPath = FxpClientService.NormalizePath(_rightPath);
+            }
+
+            _status = $"Listed {items.Count} item(s) from {site}:{FxpClientService.NormalizePath(path)}.";
+        });
+    }
+
+    private async Task UpLeft()
+    {
+        _leftPath = FxpClientService.ParentPath(_leftPath);
+        await BrowseLeft();
+    }
+
+    private async Task UpRight()
+    {
+        _rightPath = FxpClientService.ParentPath(_rightPath);
+        await BrowseRight();
+    }
+
+    private async Task OpenItem(string side, FxpFileItem item)
+    {
+        if (!item.IsDirectory)
+            return;
+
+        if (side == "left")
+        {
+            _leftPath = item.IsSymlink && !string.IsNullOrWhiteSpace(item.LinkTarget)
+                ? FxpClientService.NormalizePath(item.LinkTarget)
+                : item.FullPath;
+            await BrowseLeft();
+        }
+        else
+        {
+            _rightPath = item.IsSymlink && !string.IsNullOrWhiteSpace(item.LinkTarget)
+                ? FxpClientService.NormalizePath(item.LinkTarget)
+                : item.FullPath;
+            await BrowseRight();
+        }
+    }
+
+    private async Task Transfer(bool leftToRight)
+    {
+        var server = SelectedServer();
+        if (server is null)
+            return;
+
+        await RunAsync(async () =>
+        {
+            var result = leftToRight
+                ? await Fxp.QueueTransferAsync(server, _leftSite, _leftPath, _rightSite, _rightPath, SelectedLeftItems)
+                : await Fxp.QueueTransferAsync(server, _rightSite, _rightPath, _leftSite, _leftPath, SelectedRightItems);
+
+            AddLog(result);
+            _status = result.Message;
+            await BrowseLeft();
+            await BrowseRight();
+        });
+    }
+
+    private async Task DeleteLeft() => await Delete(true);
+    private async Task DeleteRight() => await Delete(false);
+
+    private async Task Delete(bool left)
+    {
+        var server = SelectedServer();
+        if (server is null)
+            return;
+
+        await RunAsync(async () =>
+        {
+            var result = left
+                ? await Fxp.DeleteAsync(server, _leftSite, _leftPath, SelectedLeftItems)
+                : await Fxp.DeleteAsync(server, _rightSite, _rightPath, SelectedRightItems);
+
+            AddLog(result);
+            _status = result.Message;
+            await Browse(left);
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            Busy = true;
+            _error = null;
+            await action();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private void AddLog(FxpOperationResult result)
+    {
+        _log.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {result.Message}");
+        foreach (var line in result.Logs.Reverse())
+            _log.Insert(1, "  " + line);
+
+        if (_log.Count > 200)
+            _log.RemoveRange(200, _log.Count - 200);
+    }
+
+    private CbftpServer? SelectedServer() =>
+        _servers.FirstOrDefault(s => string.Equals(s.Id, _serverId, StringComparison.OrdinalIgnoreCase));
+
+    private static string DisplayServer(CbftpServer server) =>
+        $"{server.Name ?? server.Id} - {server.Host}:{server.Port}";
+
+    private string KeepOrFirst(string current) =>
+        _sites.Contains(current, StringComparer.OrdinalIgnoreCase) ? current : _sites.FirstOrDefault() ?? "";
+
+    private string KeepOrSecond(string current) =>
+        _sites.Contains(current, StringComparer.OrdinalIgnoreCase)
+            ? current
+            : _sites.Skip(1).FirstOrDefault() ?? _sites.FirstOrDefault() ?? "";
+
+    private static void Toggle(HashSet<string> set, string key, object? value)
+    {
+        var on = value is bool b && b;
+        if (on) set.Add(key);
+        else set.Remove(key);
+    }
+}

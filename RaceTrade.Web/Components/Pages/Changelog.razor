@@ -1,0 +1,92 @@
+@page "/changelog"
+
+<PageTitle>Changelog - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="changelog" Size="18" />Changelog</h1>
+</div>
+
+<div class="doc-page changelog-page">
+    <section class="doc-hero">
+        <div>
+            <span class="doc-kicker">Current branch</span>
+            <h2>v2.0 WebUI / engine split</h2>
+            <p>
+                This page tracks user-facing RaceTrade changes for the new web build.
+            </p>
+        </div>
+    </section>
+
+    <section class="timeline">
+        <article class="timeline-item current">
+            <div class="timeline-version">v2.0 WebUI</div>
+            <div class="timeline-date">Current development build</div>
+            <ul>
+                <li>Added the new local WebUI that runs together with the racing engine in one app.</li>
+                <li>Added Dashboard, Sites, CBFTP servers, PreBots, Pre, FXP Client, Test release, Chat, Logs, Settings, Help and Changelog pages.</li>
+                <li>Restored CBFTP site import from the WebUI.</li>
+                <li>Restored the CBFTP Site editor with basic settings, limits, transfer flags, affils, sections and skiplist.</li>
+                <li>Added Edit CBFTP Site from the Sites list and the Site Editor CBFTP Site tab.</li>
+                <li>Restored the Get Site Rules modal from the site editor.</li>
+                <li>Restored the dual-pane FXP Client in the WebUI.</li>
+                <li>Restored the Affil Spread &amp; Pre Manager flow in the WebUI.</li>
+                <li>Restored PreDB release import from the WebUI.</li>
+                <li>Reworked the Site Editor Sections tab into a clearer master-detail workflow.</li>
+                <li>Restored Section Rules and CBFTP Mapping Rules in the WebUI Site Editor.</li>
+                <li>Added one-click Racing/Off toggles for IRC sections in the section list.</li>
+                <li>Restored the full IMDB and TVMaze section filter controls with preset genre, network and show type lists.</li>
+                <li>Restored request auto-fill helper labels and placeholder guidance in the Site Editor Requests tab.</li>
+                <li>Restored regex test inputs, test buttons and examples for PreBots and Site Editor announce parsing.</li>
+                <li>Improved dark theme spacing, sidebar buttons, table forms, status labels and document pages.</li>
+                <li>Added self-contained builds for Windows and Linux.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
+            <div class="timeline-version">v1.0.9b</div>
+            <div class="timeline-date">July 2026</div>
+            <ul>
+                <li>Added movie lookup provider selection for Tiffara and TMDb.</li>
+                <li>Fixed IMDB/TMDB/Tiffara lookup test behavior so cached data does not hide provider failures.</li>
+                <li>Fixed global skiplist handling in release validation.</li>
+                <li>Improved build-release scripting and release packaging behavior.</li>
+                <li>Kept release packages to the required clean file set.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
+            <div class="timeline-version">v1.0.8b</div>
+            <div class="timeline-date">July 2026</div>
+            <ul>
+                <li>Fixed TVMaze/IMDB settings persistence in the site editor.</li>
+                <li>Fixed Add Affil text/background contrast.</li>
+                <li>Added working global skiplist form and wildcard matching.</li>
+                <li>Fixed Skiplist flow to check release-name strings, not files.</li>
+                <li>Improved AntdUI dark theme styling, button spacing, drag movement and log window sizing.</li>
+                <li>Moved changelog out of the help content in the WinForms build.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
+            <div class="timeline-version">v1.0.7b</div>
+            <div class="timeline-date">January 2026</div>
+            <ul>
+                <li>Added the WinForms FXP browser.</li>
+                <li>Added dual-pane CBFTP browsing and FXP transfer workflows.</li>
+                <li>Added transfer logs and CBFTP browser operations such as delete, refresh and directory navigation.</li>
+                <li>Improved CBFTP section/path handling used by the browser.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
+            <div class="timeline-version">Legacy WinForms builds</div>
+            <div class="timeline-date">2024 - 2025</div>
+            <ul>
+                <li>Initial CBFTP integration, site configuration and IRC announce parsing.</li>
+                <li>Rules engine, section mappings, affils, blacklist and request auto-fill features.</li>
+                <li>IMDB and TVMaze filtering for movie and TV releases.</li>
+                <li>Application, IRC, CBFTP and Race log separation.</li>
+            </ul>
+        </article>
+    </section>
+</div>

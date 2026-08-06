@@ -1,0 +1,55 @@
+@inherits LayoutComponentBase
+
+@* Static by design. Anything interactive lives in its own component with its own
+   render mode (see TraderStatus) - a layout does not get one. *@
+<div class="app">
+    <nav class="sidebar">
+        <div class="brand">
+            <span class="brand-mark"><Icon Name="speed" Size="18" /></span>
+            <span class="brand-name">RACETRADE</span>
+            <span class="brand-ver">v2.0</span>
+        </div>
+
+        <TraderStatus />
+
+        <div class="nav-title">MENU</div>
+        <NavLink class="nav-item" href="" Match="NavLinkMatch.All"><Icon Name="dashboard" /><span>Dashboard</span></NavLink>
+        <NavLink class="nav-item" href="sites"><Icon Name="sites" /><span>Sites</span></NavLink>
+        <NavLink class="nav-item" href="servers"><Icon Name="servers" /><span>CBFTP servers</span></NavLink>
+        <NavLink class="nav-item" href="prebots"><Icon Name="prebots" /><span>PreBots</span></NavLink>
+        <NavLink class="nav-item" href="pre"><Icon Name="flag" /><span>Pre</span></NavLink>
+
+        <div class="nav-title">TOOLS</div>
+        <NavLink class="nav-item" href="test"><Icon Name="test" /><span>Test release</span></NavLink>
+        <NavLink class="nav-item" href="fxp"><Icon Name="fxp" /><span>FXP Client</span></NavLink>
+        <NavLink class="nav-item" href="chat"><Icon Name="chat" /><span>Chat</span></NavLink>
+        <NavLink class="nav-item" href="logs"><Icon Name="logs" /><span>Logs</span></NavLink>
+        <NavLink class="nav-item" href="settings"><Icon Name="settings" /><span>Settings</span></NavLink>
+
+        <div class="nav-title">INFO</div>
+        <NavLink class="nav-item" href="help"><Icon Name="help" /><span>Help</span></NavLink>
+        <NavLink class="nav-item" href="changelog"><Icon Name="changelog" /><span>Changelog</span></NavLink>
+
+        <div class="sidebar-foot">
+            <div class="community-row">
+                <div class="community">linknet / #racetrade</div>
+                <a class="github-link"
+                   href="https://github.com/Bl4DiEDiEBL4/RaceTrade"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   title="RaceTrade on GitHub"
+                   aria-label="RaceTrade on GitHub">
+                    <Icon Name="github" Size="15" />
+                </a>
+            </div>
+            <form class="logout" action="/auth/logout" method="post">
+                <button type="submit"><Icon Name="signout" Size="14" /><span>Sign out</span></button>
+            </form>
+            <ShutdownButton />
+        </div>
+    </nav>
+
+    <main>
+        @Body
+    </main>
+</div>

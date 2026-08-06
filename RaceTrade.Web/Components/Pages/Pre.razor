@@ -1,0 +1,342 @@
+@page "/pre"
+@using PreCbftpServer = RaceTrade.Web.Services.PreCbftpServer
+@using PreSiteConfig = RaceTrade.Web.Services.PreSiteConfig
+@inject PreSpreadService PreSpread
+
+<PageTitle>Pre - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="flag" Size="18" />Pre</h1>
+    <div class="head-actions">
+        <button class="btn" @onclick="ImportServers" disabled="@Busy"><Icon Name="download" Size="13" /><span>Import CBFTP servers</span></button>
+        <button class="btn" @onclick="FetchSites" disabled="@(!_servers.Any() || Busy)"><Icon Name="refresh" Size="13" /><span>Fetch all sites</span></button>
+        <button class="btn primary" @onclick="SaveConfig" disabled="@Busy"><Icon Name="save" Size="13" /><span>Save config</span></button>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <p class="hint err">@_error</p>
+}
+@if (_status is not null)
+{
+    <p class="hint">@_status</p>
+}
+
+<div class="pre-layout">
+    <section class="panel form pre-sites-panel">
+        <h2>PRE SITE CONFIGURATION</h2>
+        <div class="pre-site-list">
+            @if (_sites.Count == 0)
+            {
+                <div class="empty">No Pre sites configured. Use <strong>Fetch all sites</strong>.</div>
+            }
+            else
+            {
+                @foreach (var site in _sites)
+                {
+                    <button type="button"
+                            class="section-row @(_selectedSite == site ? "active" : "")"
+                            @onclick="() => SelectSite(site)">
+                        <span class="section-row-main">
+                            <strong>@site.Name</strong>
+                            <span>@site.AffilDirectory / @site.Section</span>
+                        </span>
+                        <span class="section-badges">
+                            <span class="mini-pill @(site.Enabled ? "on" : "off")">@(site.Enabled ? "Enabled" : "Off")</span>
+                        </span>
+                    </button>
+                }
+            }
+        </div>
+
+        @if (_selectedSite is not null)
+        {
+            <div class="subcard">
+                <div class="form-grid">
+                    <label>Enabled</label>
+                    <input type="checkbox" @bind="_selectedSite.Enabled" />
+                    <label>Site name</label>
+                    <input type="text" @bind="_selectedSite.Name" @bind:event="oninput" />
+                    <label>CBFTP server</label>
+                    <select @bind="_selectedSite.CbftpServerId">
+                        @foreach (var server in _servers)
+                        {
+                            <option value="@server.Id">@server.Name</option>
+                        }
+                    </select>
+                    <label>Affil directory</label>
+                    <input type="text" @bind="_selectedSite.AffilDirectory" @bind:event="oninput" placeholder="/pre" />
+                    <label>PRE section</label>
+                    <input type="text" @bind="_selectedSite.Section" @bind:event="oninput" placeholder="DEFAULT" />
+                </div>
+            </div>
+        }
+    </section>
+
+    <section class="panel form pre-work-panel">
+        <div class="pre-toolbar">
+            <label>Source site</label>
+            <select @bind="_sourceSiteName" disabled="@(!_sites.Any() || Busy)">
+                @foreach (var site in EnabledSites)
+                {
+                    <option value="@site.Name">@site.Name</option>
+                }
+            </select>
+            <button class="btn" @onclick="RefreshReleases" disabled="@(string.IsNullOrWhiteSpace(_sourceSiteName) || Busy)">
+                <Icon Name="refresh" Size="13" />
+                <span>Refresh releases</span>
+            </button>
+        </div>
+
+        <div class="pre-columns">
+            <div>
+                <h2>RELEASES</h2>
+                <div class="pre-release-list">
+                    @if (_releases.Count == 0)
+                    {
+                        <div class="empty compact">No releases loaded.</div>
+                    }
+                    else
+                    {
+                        @foreach (var release in _releases)
+                        {
+                            <button type="button"
+                                    class="pre-release @(_selectedRelease == release ? "active" : "")"
+                                    @onclick="() => _selectedRelease = release">
+                                @release
+                            </button>
+                        }
+                    }
+                </div>
+            </div>
+
+            <div>
+                <h2>DESTINATION / SITE PRE</h2>
+                <div class="check-chip-list pre-dest-list">
+                    @foreach (var site in EnabledSites)
+                    {
+                        var checkedDest = _destSites.Contains(site.Name ?? "");
+                        <label class="check-chip @(checkedDest ? "checked" : "")">
+                            <input type="checkbox" checked="@checkedDest" @onchange="e => Toggle(_destSites, site.Name, e.Value)" />
+                            <span>@site.Name</span>
+                        </label>
+                    }
+                </div>
+                <div class="fh">
+                    Distribution skips the source site. SITE PRE uses the checked sites; if none are checked it uses every enabled Pre site.
+                </div>
+            </div>
+        </div>
+
+        <div class="form-actions pre-actions">
+            <button class="btn primary" @onclick="Distribute" disabled="@(!HasRelease || Busy)">
+                <Icon Name="fxp" Size="13" />
+                <span>Distribute release</span>
+            </button>
+            <button class="btn" @onclick="CheckCompletion" disabled="@(!HasRelease || Busy)">Check completion</button>
+            <button class="btn danger" @onclick="DeleteRelease" disabled="@(!HasRelease || Busy)">
+                <Icon Name="trash" Size="13" />
+                <span>Delete release</span>
+            </button>
+            <button class="btn primary" @onclick="SendPre" disabled="@(!HasRelease || Busy)">
+                <Icon Name="send" Size="13" />
+                <span>SITE PRE</span>
+            </button>
+        </div>
+    </section>
+
+    <section class="panel form pre-log-panel">
+        <h2>PRE LOG</h2>
+        <div class="log-box">
+            @if (_log.Count == 0)
+            {
+                <div class="dim">No Pre activity yet.</div>
+            }
+            else
+            {
+                @foreach (var line in _log)
+                {
+                    <div>@line</div>
+                }
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private List<PreCbftpServer> _servers = new();
+    private List<PreSiteConfig> _sites = new();
+    private PreSiteConfig? _selectedSite;
+    private string _sourceSiteName = "";
+    private List<string> _releases = new();
+    private string _selectedRelease = "";
+    private readonly HashSet<string> _destSites = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _log = new();
+    private string? _error;
+    private string? _status;
+    private bool Busy { get; set; }
+
+    private IEnumerable<PreSiteConfig> EnabledSites =>
+        _sites.Where(s => s.Enabled && !string.IsNullOrWhiteSpace(s.Name))
+            .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase);
+
+    private bool HasRelease => !string.IsNullOrWhiteSpace(_selectedRelease);
+
+    protected override void OnInitialized() => Reload();
+
+    private void Reload()
+    {
+        _servers = PreSpread.LoadServers();
+        _sites = PreSpread.LoadSites();
+        _selectedSite = _sites.FirstOrDefault();
+        _sourceSiteName = EnabledSites.FirstOrDefault()?.Name ?? "";
+        _destSites.Clear();
+        foreach (var site in EnabledSites.Skip(1))
+            _destSites.Add(site.Name ?? "");
+    }
+
+    private void SelectSite(PreSiteConfig site) => _selectedSite = site;
+
+    private void ImportServers()
+    {
+        try
+        {
+            _servers = PreSpread.ImportServersFromMainConfig(save: true);
+            _status = $"Imported {_servers.Count} CBFTP server(s) into Pre config.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task FetchSites() => await RunAsync(async () =>
+    {
+        var result = await PreSpread.FetchAllSitesAsync(_servers, _sites);
+        AddLog(result);
+        _status = result.Message;
+        _sites = PreSpread.LoadSites();
+        _selectedSite ??= _sites.FirstOrDefault();
+        _sourceSiteName = EnabledSites.FirstOrDefault()?.Name ?? "";
+    });
+
+    private void SaveConfig()
+    {
+        try
+        {
+            PreSpread.SaveServers(_servers);
+            PreSpread.SaveSites(_sites);
+            _status = "Pre configuration saved.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task RefreshReleases() => await RunAsync(async () =>
+    {
+        var source = SourceSite();
+        if (source is null)
+        {
+            _error = "Select a source site.";
+            return;
+        }
+
+        var server = FindServer(source);
+        if (server is null)
+        {
+            _error = "Source CBFTP server not found.";
+            return;
+        }
+
+        _releases = (await PreSpread.ListReleasesAsync(server, source)).ToList();
+        _selectedRelease = _releases.FirstOrDefault() ?? "";
+        _status = $"Loaded {_releases.Count} release(s) from {source.Name}:{source.AffilDirectory}.";
+    });
+
+    private async Task Distribute() => await RunAsync(async () =>
+    {
+        var source = SourceSite();
+        if (source is null) return;
+        var destinations = SelectedDestinations().Where(s => !string.Equals(s.Name, source.Name, StringComparison.OrdinalIgnoreCase)).ToList();
+        var result = await PreSpread.DistributeAsync(_selectedRelease, source, destinations, _servers);
+        AddLog(result);
+        _status = result.Message;
+    });
+
+    private async Task CheckCompletion() => await RunAsync(async () =>
+    {
+        var source = SourceSite();
+        if (source is null) return;
+        var result = await PreSpread.CheckCompletionAsync(_selectedRelease, source, SelectedDestinations(), _servers);
+        AddLog(result);
+        _status = result.Message;
+    });
+
+    private async Task DeleteRelease() => await RunAsync(async () =>
+    {
+        var result = await PreSpread.DeleteReleaseAsync(_selectedRelease, SelectedDestinations(), _servers);
+        AddLog(result);
+        _status = result.Message;
+    });
+
+    private async Task SendPre() => await RunAsync(async () =>
+    {
+        var sites = _destSites.Count == 0
+            ? EnabledSites.ToList()
+            : SelectedDestinations();
+        var result = await PreSpread.SendPreAsync(_selectedRelease, sites, _servers);
+        AddLog(result);
+        _status = result.Message;
+    });
+
+    private List<PreSiteConfig> SelectedDestinations()
+    {
+        var selected = EnabledSites.Where(s => _destSites.Contains(s.Name ?? "")).ToList();
+        return selected.Count == 0 ? EnabledSites.ToList() : selected;
+    }
+
+    private PreSiteConfig? SourceSite() =>
+        _sites.FirstOrDefault(s => string.Equals(s.Name, _sourceSiteName, StringComparison.OrdinalIgnoreCase));
+
+    private PreCbftpServer? FindServer(PreSiteConfig site) =>
+        _servers.FirstOrDefault(s => string.Equals(s.Id, site.CbftpServerId, StringComparison.OrdinalIgnoreCase));
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            Busy = true;
+            _error = null;
+            await action();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private void AddLog(PreActionResult result)
+    {
+        _log.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {result.Message}");
+        foreach (var line in result.Logs.Reverse())
+            _log.Insert(1, "  " + line);
+
+        if (_log.Count > 200)
+            _log.RemoveRange(200, _log.Count - 200);
+    }
+
+    private static void Toggle(HashSet<string> set, string? value, object? raw)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return;
+        var on = raw is bool b && b;
+        if (on) set.Add(value);
+        else set.Remove(value);
+    }
+}

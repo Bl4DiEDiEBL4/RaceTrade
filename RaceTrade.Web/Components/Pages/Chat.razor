@@ -1,0 +1,163 @@
+﻿@page "/chat"
+@implements IDisposable
+@inject WebIrcOutput Irc
+@inject ChatHost ChatSvc
+
+<PageTitle>Chat - RaceTrade</PageTitle>
+
+@* Chat runs on its own IRC connections (ChatHost), not the trader's. Starting chat here
+   does not start racing, and stopping the racer does not drop chat. *@
+<div class="page-head">
+    <h1><Icon Name="chat" Size="18" />Chat</h1>
+    <div class="head-actions">
+        @if (ChatSvc.IsRunning)
+        {
+            <span class="chat-state on"><span class="state-dot"></span>@ChatSvc.ConnectedSites.Count site(s) connected</span>
+            <button class="btn danger" @onclick="Stop" disabled="@_busy"><Icon Name="stop" Size="13" /><span>Disconnect chat</span></button>
+        }
+        else
+        {
+            <span class="chat-state off"><span class="state-dot"></span>Offline</span>
+            <button class="btn primary" @onclick="Start" disabled="@_busy"><Icon Name="play" Size="13" /><span>Connect chat</span></button>
+        }
+    </div>
+</div>
+
+@if (_channels.Count == 0)
+{
+    <div class="panel">
+        <div class="empty">
+            @if (ChatSvc.IsRunning)
+            {
+                <text>Connecting... channels appear as the IRC clients join them.</text>
+            }
+            else
+            {
+                <text>
+                    Not connected. Press <strong>Connect chat</strong> above - this only opens
+                    the IRC connections, it does not start the trader.
+                </text>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="panel">
+        <div class="toolbar">
+            <select @bind="_selected" @bind:after="Refresh">
+                @foreach (var (site, chan) in _channels)
+                {
+                    <option value="@($"{site}|{chan}")">@site - @chan</option>
+                }
+            </select>
+            <span class="spacer"></span>
+            <span class="hint">@_users.Count users</span>
+        </div>
+
+        <div class="chat-body">
+            <table class="grid logs chat-lines">
+                <tbody>
+                    @foreach (var l in _lines)
+                    {
+                        <tr class="lvl-@l.Level.ToString().ToLowerInvariant()">
+                            <td class="ts">@l.At.ToString("HH:mm:ss")</td>
+                            <td class="msg">@l.Text</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <aside class="userlist">
+                @foreach (var u in _users)
+                {
+                    <div class="user">@u</div>
+                }
+            </aside>
+        </div>
+
+        <div class="chat-send">
+            <input @bind="_draft" @bind:event="oninput" @onkeydown="OnKeyDown"
+                   placeholder="Message @CurrentChannel - Enter to send"
+                   disabled="@(!ChatSvc.IsRunning)" />
+            <button class="btn primary" @onclick="Send" disabled="@(!ChatSvc.IsRunning)"><Icon Name="send" Size="13" /><span>Send</span></button>
+        </div>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<(string Site, string Channel)> _channels = Array.Empty<(string, string)>();
+    private IReadOnlyList<WebIrcOutput.ChatLine> _lines = Array.Empty<WebIrcOutput.ChatLine>();
+    private IReadOnlyList<string> _users = Array.Empty<string>();
+    private string _selected = "";
+    private string _draft = "";
+    private bool _busy;
+
+    private string CurrentChannel => _selected.Split('|', 2) is { Length: 2 } p ? p[1] : "";
+
+    protected override void OnInitialized()
+    {
+        Irc.Changed += OnChanged;
+        ChatSvc.Changed += OnChanged;
+        Refresh();
+    }
+
+    private void OnChanged() => InvokeAsync(() => { Refresh(); StateHasChanged(); });
+
+    private async Task Start()
+    {
+        _busy = true;
+        try { await ChatSvc.StartAsync(); }
+        finally { _busy = false; }
+    }
+
+    private async Task Stop()
+    {
+        _busy = true;
+        try { await ChatSvc.StopAsync(); }
+        finally { _busy = false; }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Send();
+    }
+
+    private async Task Send()
+    {
+        var text = _draft;
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var parts = _selected.Split('|', 2);
+        if (parts.Length != 2) return;
+
+        _draft = "";                     // cleared first: sending is async and may fail
+        await ChatSvc.SendAsync(parts[0], parts[1], text);
+    }
+
+    private void Refresh()
+    {
+        _channels = Irc.Channels;
+
+        // Default to the first channel, and recover if the selected one disappeared.
+        if (_channels.Count > 0 &&
+            (string.IsNullOrEmpty(_selected) || !_channels.Any(c => $"{c.Site}|{c.Channel}" == _selected)))
+        {
+            _selected = $"{_channels[0].Site}|{_channels[0].Channel}";
+        }
+
+        if (string.IsNullOrEmpty(_selected)) return;
+
+        var parts = _selected.Split('|', 2);
+        if (parts.Length != 2) return;
+
+        _lines = Irc.Lines(parts[0], parts[1]);
+        _users = Irc.Users(parts[0], parts[1]);
+    }
+
+    public void Dispose()
+    {
+        Irc.Changed -= OnChanged;
+        ChatSvc.Changed -= OnChanged;
+    }
+}

@@ -365,3 +365,13 @@ FodyWeavers.xsd
 # RaceTrade local build cache
 work/
 Release/
+data/
+
+# RaceTrade runtime data
+/cbftp/
+/db/
+/sections/
+/settings/
+/RaceTrade/CBFTP/cbftp_config.json
+/RaceTrade/db/
+/RaceTrade/settings/

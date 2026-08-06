@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>RaceTrade.Web</RootNamespace>
+    <AssemblyName>RaceTrade</AssemblyName>
+    <!-- Enabled because the host code uses nullable annotations (string?, event Action?).
+         The engine library stays on 'disable' - it is ported .NET Framework code that
+         was never annotated, and turning it on there would produce thousands of warnings
+         with no safety benefit. -->
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <!-- ONE FILE, like the old Costura-packed build.
+         A plain Debug/Release build always produces loose DLLs - that is just how .NET
+         compiles. The single file is produced by PUBLISH, not by building:
+
+           dotnet publish RaceTrade.Web -c Release -r win-x64
+           dotnet publish RaceTrade.Web -c Release -r linux-x64
+
+         The properties below are already set, so those commands alone give you a single
+         self-contained RaceTrade.exe (or ./RaceTrade) with the .NET runtime included -
+         no separate .NET install needed on the target machine.
+
+         Trimming stays OFF on purpose: the engine looks channel config up by reflection
+         (GetProperty("Chan{i}")), which a trimmer silently strips. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Without this, PublishSingleFile bundles only assemblies and native libs -
+         content files such as wwwroot\app.css are left loose next to the exe. -->
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RaceTrade.Engine\RaceTrade.Engine.csproj" />
+  </ItemGroup>
+
+  <!-- Physically copy wwwroot next to the binary.
+       By default ASP.NET serves these through the Static Web Assets manifest, which
+       resolves paths relative to the project folder. That works under `dotnet run` and
+       F5, but NOT when the produced exe is launched directly - then wwwroot simply is
+       not there and every page renders unstyled ("WebRootPath was not found").
+       Copying makes the folder exist in every launch scenario, and
+       IncludeAllContentForSelfExtract then pulls it into the single-file exe. -->
+  <ItemGroup>
+    <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Never treat local build/runtime folders as web content. Without these explicit
+       removes the Web SDK can copy stale bin/data folders into publish output, which is
+       exactly the "why are all these DLLs in my release" problem we want to avoid. -->
+  <ItemGroup>
+    <Content Remove="bin\**\*;obj\**\*;data\**\*" />
+    <None Remove="bin\**\*;obj\**\*;data\**\*" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,295 @@
+﻿@page "/prebots"
+@inject PreBotStore Store
+
+<PageTitle>PreBots - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="prebots" Size="18" />PreBots</h1>
+    <div class="head-actions">
+        @if (_editing is null)
+        {
+            <button class="btn primary" @onclick="AddNew"><Icon Name="plus" Size="13" /><span>Add prebot</span></button>
+            <button class="btn" @onclick="ImportPretimes" disabled="@_importingPretimes">
+                <Icon Name="download" Size="13" />
+                <span>@(_importingPretimes ? "Importing..." : "Import releases")</span>
+            </button>
+        }
+        else
+        {
+            <button class="btn primary" @onclick="Save"><Icon Name="save" Size="13" /><span>Save</span></button>
+            <button class="btn" @onclick="Cancel"><Icon Name="close" Size="13" /><span>Cancel</span></button>
+        }
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <p class="hint err">@_error</p>
+}
+@if (_status is not null)
+{
+    <p class="hint ok">@_status</p>
+}
+
+@if (_editing is null)
+{
+    <div class="panel">
+        @if (_rows.Count == 0)
+        {
+            <div class="empty">
+                No prebots configured. A prebot feeds pre announces into the racer so
+                pretime rules can be applied.
+            </div>
+        }
+        else
+        {
+            <table class="grid">
+                <thead><tr><th>NAME</th><th>ZNC HOST</th><th>CHANNEL</th><th>BOT</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var r in _rows)
+                    {
+                        <tr>
+                            <td class="site">@r.Name</td>
+                            <td>@r.Host</td>
+                            <td>@r.Channel</td>
+                            <td>@r.Bot</td>
+                            <td class="right">
+                                <button class="btn" @onclick="() => Edit(r.Name)"><Icon Name="edit" Size="13" /><span>Edit</span></button>
+                                <button class="btn danger" @onclick="() => Delete(r.Name)"><Icon Name="trash" Size="13" /><span>Delete</span></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+else
+{
+    <div class="panel form">
+        <div class="editor-with-aside prebot-editor">
+            <div class="editor-main">
+                <h2>@(_isNew ? "NEW PREBOT" : $"EDIT {_originalName}")</h2>
+
+                <div class="form-grid">
+                    <label>Name</label>
+                    <input type="text" @bind="_editing.SiteSettings.Sitename" placeholder="PREBOT1" @bind:event="oninput" />
+
+                    <label>Bot nick</label>
+                    <input type="text" @bind="_editing.SiteSettings.BotName" placeholder="pre bot nick" @bind:event="oninput" />
+
+                    <label>ZNC host</label>
+                    <input type="text" @bind="_editing.ZncServer.Host" placeholder="znc.myhost.net" @bind:event="oninput" />
+
+                    <label>ZNC port</label>
+                    <input type="number" @bind="_editing.ZncServer.Port" @bind:event="oninput" />
+
+                    <label>ZNC user</label>
+                    <input type="text" @bind="_editing.ZncServer.Username" placeholder="user/network" @bind:event="oninput" />
+
+                    <label>ZNC password</label>
+                    <input type="password" @bind="_password" placeholder="@(_hasPassword ? "(unchanged)" : "")" @bind:event="oninput" />
+
+                    <label>Channel</label>
+                    <input type="text" @bind="_editing.SiteSettings.Channel1" placeholder="#pre" @bind:event="oninput" />
+
+                    <label>Blowfish key</label>
+                    <input type="password" @bind="_key" placeholder="@(_hasKey ? "(unchanged)" : "")" @bind:event="oninput" />
+                </div>
+
+                <h2>PARSING</h2>
+                <div class="form-grid wide">
+                    <label>Section regex</label>
+                    <input type="text" @bind="_editing.SiteSettings.SectionRegex" placeholder="\[([^\]]+)\]" @bind:event="oninput" />
+
+                    <label>Name regex</label>
+                    <input type="text" @bind="_editing.SiteSettings.NameRegex" placeholder="(\S+-\w+)$" @bind:event="oninput" />
+
+                    <label>Section prefix</label>
+                    <input type="text" @bind="_editing.SiteSettings.SectionPrefix" @bind:event="oninput" />
+
+                    <label>Section suffix</label>
+                    <input type="text" @bind="_editing.SiteSettings.SectionSuffix" @bind:event="oninput" />
+                </div>
+
+                <h2>TEST PARSING</h2>
+                <div class="regex-test-row">
+                    <input type="text" @bind="_prebotTestInput" placeholder="Paste a prebot announce line here" @bind:event="oninput" />
+                    <button type="button" class="btn primary" @onclick="TestPreBotRegex"><Icon Name="test" Size="13" /><span>Test</span></button>
+                </div>
+
+                @if (_prebotTestResult is not null)
+                {
+                    <div class="@($"regex-result {(_prebotTestResult.Success ? "ok" : "err")}")">
+                        <strong>@_prebotTestResult.Title</strong>
+                        @foreach (var line in _prebotTestResult.Lines)
+                        {
+                            <div class="@($"regex-result-row {line.Status}")">
+                                <span>@line.Label</span>
+                                <code>@(string.IsNullOrEmpty(line.Value) ? "-" : line.Value)</code>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <aside class="regex-help-panel">
+                <h2>PREBOT EXAMPLES</h2>
+                <p class="fh">
+                    Paste a real line from the pre channel and test before saving. The first capture group
+                    from each regex is what RaceTrade uses.
+                </p>
+                <div class="regex-example-list">
+                    <div>
+                        <span>Section regex</span>
+                        <code>\[([^\]]+)\]</code>
+                    </div>
+                    <div>
+                        <span>Name regex</span>
+                        <code>(\S+-\w+)$</code>
+                    </div>
+                    <div>
+                        <span>Example line</span>
+                        <code>PRE: [TV-1080P] Show.Name.S01E01.1080p-GROUP</code>
+                    </div>
+                </div>
+                <p class="fh">
+                    Prefix and suffix are only stripped from the captured section. Use them when the bot
+                    sends names like <code>PRE-TV-HD</code> but your RaceTrade section is <code>TV-HD</code>.
+                </p>
+            </aside>
+        </div>
+    </div>
+}
+
+@code {
+    private sealed record Row(string Name, string Host, string Channel, string Bot);
+
+    private List<Row> _rows = new();
+    private string? _error;
+    private string? _status;
+    private bool _importingPretimes;
+
+    private PreBotConfig? _editing;
+    private PreBotConfig? _stored;
+    private string _originalName = "";
+    private bool _isNew;
+    private string _password = "";
+    private string _key = "";
+    private bool _hasPassword, _hasKey;
+    private string _prebotTestInput = "";
+    private RegexTestResult? _prebotTestResult;
+
+    protected override void OnInitialized() => Reload();
+
+    private void Reload()
+    {
+        try
+        {
+            _error = null;
+            _rows = Store.ListNames().Select(n =>
+            {
+                var c = Store.Load(n);
+                return new Row(n, c.ZncServer?.Host ?? "",
+                                  c.SiteSettings?.Channel1 ?? "",
+                                  c.SiteSettings?.BotName ?? "");
+            }).ToList();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void AddNew()
+    {
+        _editing = PreBotStore.New();
+        _stored = null;
+        _originalName = "";
+        _isNew = true;
+        _password = _key = "";
+        _hasPassword = _hasKey = false;
+        _prebotTestInput = "";
+        _prebotTestResult = null;
+    }
+
+    private void Edit(string name)
+    {
+        _editing = Store.Load(name);
+        _stored = Store.Load(name);
+        _originalName = name;
+        _isNew = false;
+
+        // Secrets stay server-side; empty box means "keep what is stored".
+        _hasPassword = !string.IsNullOrEmpty(_editing.ZncServer?.Password);
+        _hasKey = !string.IsNullOrEmpty(_editing.SiteSettings?.BlowfishKey1);
+        _password = _key = "";
+        _prebotTestInput = "";
+        _prebotTestResult = null;
+    }
+
+    private void TestPreBotRegex()
+    {
+        if (_editing is null) return;
+
+        var s = _editing.SiteSettings;
+        _prebotTestResult = RegexTestHelper.TestPreBot(
+            _prebotTestInput,
+            s.SectionRegex,
+            s.NameRegex,
+            s.SectionPrefix,
+            s.SectionSuffix);
+    }
+
+    private void Save()
+    {
+        if (_editing is null) return;
+
+        try
+        {
+            _error = null;
+
+            _editing.ZncServer.Password = string.IsNullOrEmpty(_password)
+                ? _stored?.ZncServer?.Password
+                : _password;
+
+            _editing.SiteSettings.BlowfishKey1 = string.IsNullOrEmpty(_key)
+                ? _stored?.SiteSettings?.BlowfishKey1
+                : _key;
+
+            Store.Save(_editing, _isNew ? null : _originalName);
+            _editing = null;
+            Reload();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void Cancel() { _editing = null; _error = null; }
+
+    private void Delete(string name)
+    {
+        try { Store.Delete(name); Reload(); }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task ImportPretimes()
+    {
+        try
+        {
+            _error = null;
+            _status = "Importing latest 100 releases from predb.club...";
+            _importingPretimes = true;
+
+            var imported = await PreBotManager.ImportFromPredbClubAsync(100);
+            _status = imported > 0
+                ? $"Imported {imported} release(s) into the pretime database."
+                : "No releases were imported. Check the logs for details.";
+        }
+        catch (Exception ex)
+        {
+            _status = null;
+            _error = $"Failed to import releases: {ex.Message}";
+        }
+        finally
+        {
+            _importingPretimes = false;
+        }
+    }
+}

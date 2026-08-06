@@ -1,0 +1,23 @@
+@using System.Net.Http
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using static Microsoft.AspNetCore.Components.Web.RenderMode
+@using Microsoft.JSInterop
+@using RaceTrade.Web
+@using RaceTrade.Web.Components
+@using RaceTrade.Web.Services
+@using RaceTrade.Web.Security
+@using RaceTrade.Web.Components.Layout
+@using RaceTrade.Engine.Logging
+@using RaceTrade
+
+@* RaceTrade.Engine.Logging.LogLevel and Microsoft.Extensions.Logging.LogLevel are both
+   in scope here (the latter arrives via ImplicitUsings). Alias the engine's one so
+   components can say LogLevel unambiguously - it is the only one they care about. *@
+@using LogLevel = RaceTrade.Engine.Logging.LogLevel
+
+@* Everything requires a signed-in user; Login.razor opts out with [AllowAnonymous]. *@
+@attribute [Authorize]

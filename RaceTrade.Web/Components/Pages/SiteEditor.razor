@@ -1,0 +1,1418 @@
+﻿@page "/sites/edit/{Name}"
+@page "/sites/new"
+@using Newtonsoft.Json.Linq
+@inject SiteStore Store
+@inject NavigationManager Nav
+
+<PageTitle>@(_isNew ? "New site" : $"{_originalName} - RaceTrade")</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="sites" Size="18" />@(_isNew ? "New site" : _originalName)</h1>
+    <div class="head-actions">
+        <button class="btn primary" @onclick="Save"><Icon Name="save" Size="13" /><span>Save</span></button>
+        <a class="btn" href="sites"><Icon Name="close" Size="13" /><span>Cancel</span></a>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <p class="hint err">@_error</p>
+}
+@if (_status is not null)
+{
+    <p class="hint">@_status</p>
+}
+
+<div class="tabs">
+    @foreach (var t in Tabs)
+    {
+        <button class="tab @(_tab == t ? "active" : "")" @onclick="() => _tab = t">@t</button>
+    }
+</div>
+
+<div class="panel form">
+
+@if (_tab == "General")
+{
+    <div class="form-grid">
+        <label>Site name</label>
+        <div>
+            <input type="text" @bind="S.Sitename" placeholder="MYSITE" @bind:event="oninput" />
+            <div class="fh">Also the filename under <code>sites\</code>. Must match the site name used in cbftp.</div>
+        </div>
+
+        <label>Bot name</label>
+        <div>
+            <input type="text" @bind="S.BotName" placeholder="SiteBoT" @bind:event="oninput" />
+            <div class="fh">Nick of the announce bot in the channel. Only lines from this nick are parsed.</div>
+        </div>
+
+        <label>Mode</label>
+        <div>
+            <select @bind="S.PreOrSite">
+                <option value="Site">Site - own sitebot announces</option>
+                <option value="PreBot">PreBot</option>
+                <option value="Global PreBot">Global PreBot - one feed for all sites</option>
+            </select>
+            <div class="fh">
+                With a <strong>Global PreBot</strong> the announce carries one section name that is
+                matched literally against every site, so all sites must use that same IRC section name.
+            </div>
+        </div>
+
+        <label>Disabled</label>
+        <div>
+            <input type="checkbox" @bind="S.DisableSite" />
+            <span class="fh inline">Skip this site entirely - no IRC connection, no racing.</span>
+        </div>
+
+        <label>Download only</label>
+        <div>
+            <input type="checkbox" @bind="S.DlOnlySite" />
+            <span class="fh inline">Races, but is never an upload target.</span>
+        </div>
+
+        <label>Max pretime (s)</label>
+        <div>
+            <input type="number" @bind="_maxPreTime" placeholder="0" @bind:event="oninput" />
+            <div class="fh">Skip releases older than this many seconds since pre. <code>0</code> = no limit. Can be overridden per section.</div>
+        </div>
+
+        <label>Ignore words</label>
+        <div>
+            <input type="text" @bind="S.IgnoreWords" placeholder="COMPLETE, NUKED, REQUEST" @bind:event="oninput" />
+            <div class="fh">Comma separated. Announce lines containing any of these are ignored.</div>
+        </div>
+    </div>
+}
+
+@if (_tab == "ZNC")
+{
+    <div class="form-grid">
+        <label>Host</label>
+        <div>
+            <input type="text" @bind="Sv.Host" placeholder="znc.myhost.net" @bind:event="oninput" />
+            <div class="fh">Your ZNC bouncer, not the IRC server itself.</div>
+        </div>
+
+        <label>Port</label>
+        <div>
+            <input type="number" @bind="Sv.Port" placeholder="6697" @bind:event="oninput" />
+            <div class="fh">ZNC listen port. Usually 6697 (SSL).</div>
+        </div>
+
+        <label>Username</label>
+        <div>
+            <input type="text" @bind="Sv.Username" placeholder="racer" @bind:event="oninput" />
+            <div class="fh">The bare ZNC account name - <strong>without</strong> <code>/network</code>.</div>
+        </div>
+
+        <label>Network</label>
+        <div>
+            <input type="text" @bind="Sv.Network" placeholder="EFNet" @bind:event="oninput" />
+            <div class="fh">
+                The network name exactly as configured in ZNC. Combined with the username this
+                becomes <code>user/network</code> at connect time - this is what puts each site
+                on the right network. Leave empty only if this ZNC user has a single network.
+            </div>
+        </div>
+
+        <label>Password</label>
+        <div>
+            <input type="password" @bind="_password" placeholder="@(_hasStoredPassword ? "******** (unchanged)" : "ZNC password")" @bind:event="oninput" />
+            <div class="fh">Stored encrypted. Leave empty to keep the current password.</div>
+        </div>
+    </div>
+}
+
+@if (_tab == "Channels")
+{
+    <div class="callout">
+        <strong>Only add channels that belong to this site's network.</strong> Every channel listed
+        here is joined on the network configured under the ZNC tab - a channel from another
+        network ends up created on the wrong one.
+        Keys are stored encrypted; leave a key empty to keep the existing one.
+    </div>
+
+    @if (VisibleChannels.Count == 0)
+    {
+        <div class="empty">No channels yet.</div>
+    }
+    else
+    {
+        <table class="grid chan-table">
+            <thead>
+                <tr><th class="w-chan">CHANNEL</th><th>BLOWFISH KEY</th><th class="w-act"></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var c in VisibleChannels)
+                {
+                    var idx = _channels.FindIndex(x => x.Index == c.Index);
+                    <tr>
+                        <td><input type="text" value="@_channels[idx].Channel"
+                                   @oninput="e => SetChannel(idx, e.Value?.ToString())" placeholder="#channel" /></td>
+                        <td>
+                            <input type="password" value="@_channels[idx].Key"
+                                   @oninput="e => SetKey(idx, e.Value?.ToString())"
+                                   placeholder="@(HasStoredKey(idx) ? "******** (unchanged)" : "no encryption")" />
+                        </td>
+                        <td class="right">
+                            <button class="btn danger sm" title="Clear this channel"
+                                    @onclick="() => ClearChannel(idx)">&times;</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <div class="row-actions">
+        <button class="btn primary" @onclick="AddChannelRow" disabled="@(_channels.All(c => !string.IsNullOrWhiteSpace(c.Channel)) && _visible.Count >= 20)">
+            + Add channel
+        </button>
+        <span class="fh inline">@VisibleChannels.Count of 20 slots used</span>
+    </div>
+}
+
+@if (_tab == "Announce")
+{
+    <div class="editor-with-aside announce-editor">
+        <div class="editor-main">
+            <div class="callout">
+                <strong>How an announce is parsed.</strong> A line from the bot is first checked against
+                <em>New regex</em> to see if it is a new-release announce at all. Then
+                <em>Section regex</em> pulls out the section and <em>Release regex</em> the release name.
+                Both need a capture group <code>(...)</code> - the first group is what gets used.
+                Prefix/suffix are then stripped from the result, which is handy when your bot announces
+                <code>[TV-HD]</code> but your sections are called <code>TV-HD</code>.
+            </div>
+
+            <h2>NORMAL ANNOUNCE</h2>
+            <div class="form-grid wide">
+                <label>New regex</label>
+                <div>
+                    <input type="text" @bind="S.NewRegexPattern" placeholder="NEW|RACE" @bind:event="oninput" />
+                    <div class="fh">Line must match this to be treated as a new release. Leave empty to accept every line from the bot.</div>
+                </div>
+
+                <label>Section regex</label>
+                <div>
+                    <input type="text" @bind="S.SectionRegexPattern" placeholder="\[([^\]]+)\]" @bind:event="oninput" />
+                    <div class="fh">Captures the section. Example matches <code>[TV-HD]</code> and yields <code>TV-HD</code>.</div>
+                </div>
+
+                <label>Release regex</label>
+                <div>
+                    <input type="text" @bind="S.ReleaseRegexPattern" placeholder="(\S+-\w+)$" @bind:event="oninput" />
+                    <div class="fh">Captures the release name, normally the last word ending in <code>-GROUP</code>.</div>
+                </div>
+
+                <label>Section prefix</label>
+                <div>
+                    <input type="text" @bind="S.SectionPrefix" placeholder="PRE-" @bind:event="oninput" />
+                    <div class="fh">Stripped from the front of the captured section, if present.</div>
+                </div>
+
+                <label>Section suffix</label>
+                <div>
+                    <input type="text" @bind="S.SectionSuffix" placeholder="-SECTION" @bind:event="oninput" />
+                    <div class="fh">Stripped from the end of the captured section.</div>
+                </div>
+
+                <label>Release prefix</label>
+                <div><input type="text" @bind="S.ReleasePrefix" @bind:event="oninput" /></div>
+
+                <label>Release suffix</label>
+                <div><input type="text" @bind="S.ReleaseSuffix" @bind:event="oninput" /></div>
+            </div>
+
+            <h2>TEST NORMAL</h2>
+            <div class="regex-test-row">
+                <input type="text" @bind="_announceTestInput" placeholder="Paste a normal sitebot announce line here" @bind:event="oninput" />
+                <button type="button" class="btn primary" @onclick="TestNormalAnnounceRegex"><Icon Name="test" Size="13" /><span>Test</span></button>
+            </div>
+
+            @if (_announceTestResult is not null)
+            {
+                <div class="@($"regex-result {(_announceTestResult.Success ? "ok" : "err")}")">
+                    <strong>@_announceTestResult.Title</strong>
+                    @foreach (var line in _announceTestResult.Lines)
+                    {
+                        <div class="@($"regex-result-row {line.Status}")">
+                            <span>@line.Label</span>
+                            <code>@(string.IsNullOrEmpty(line.Value) ? "-" : line.Value)</code>
+                        </div>
+                    }
+                </div>
+            }
+
+            <h2>PRE ANNOUNCE</h2>
+            <p class="fh">
+                Only used when this site also announces pres, or when it is a PreBot. If left empty the
+                normal patterns above are used for pre lines too.
+            </p>
+            <div class="form-grid wide">
+                <label>Pre regex</label>
+                <div>
+                    <input type="text" @bind="S.PreRegexPattern" placeholder="PRE" @bind:event="oninput" />
+                    <div class="fh">Marks a line as a pre announce rather than a new-release announce.</div>
+                </div>
+
+                <label>Pre section regex</label>
+                <div><input type="text" @bind="S.PreSectionRegexPattern" placeholder="\[([^\]]+)\]" @bind:event="oninput" /></div>
+
+                <label>Pre release regex</label>
+                <div><input type="text" @bind="S.PreReleaseRegexPattern" placeholder="(\S+-\w+)$" @bind:event="oninput" /></div>
+
+                <label>Pre section prefix</label>
+                <div><input type="text" @bind="S.PreSectionPrefix" @bind:event="oninput" /></div>
+
+                <label>Pre section suffix</label>
+                <div><input type="text" @bind="S.PreSectionSuffix" @bind:event="oninput" /></div>
+            </div>
+
+            <h2>TEST PRE</h2>
+            <div class="regex-test-row">
+                <input type="text" @bind="_preAnnounceTestInput" placeholder="Paste a pre announce line here" @bind:event="oninput" />
+                <button type="button" class="btn primary" @onclick="TestPreAnnounceRegex"><Icon Name="test" Size="13" /><span>Test</span></button>
+            </div>
+
+            @if (_preAnnounceTestResult is not null)
+            {
+                <div class="@($"regex-result {(_preAnnounceTestResult.Success ? "ok" : "err")}")">
+                    <strong>@_preAnnounceTestResult.Title</strong>
+                    @foreach (var line in _preAnnounceTestResult.Lines)
+                    {
+                        <div class="@($"regex-result-row {line.Status}")">
+                            <span>@line.Label</span>
+                            <code>@(string.IsNullOrEmpty(line.Value) ? "-" : line.Value)</code>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <aside class="regex-help-panel">
+            <h2>ANNOUNCE EXAMPLES</h2>
+            <p class="fh">Most sitebots can be handled with these capture rules. Change them to match the real line in your channel.</p>
+            <div class="regex-example-list">
+                <div>
+                    <span>New/Race marker</span>
+                    <code>NEW|RACE</code>
+                </div>
+                <div>
+                    <span>Section capture</span>
+                    <code>\[([^\]]+)\]</code>
+                </div>
+                <div>
+                    <span>Release capture</span>
+                    <code>(\S+-\w+)$</code>
+                </div>
+                <div>
+                    <span>Normal line</span>
+                    <code>&lt;SiteBot&gt; NEW: [TV-1080P] Show.Name.S01E01.1080p-GROUP</code>
+                </div>
+                <div>
+                    <span>Pre line</span>
+                    <code>&lt;PreBot&gt; PRE: [TV-HD] Show.Name.S01E01-GROUP</code>
+                </div>
+            </div>
+            <p class="fh">
+                Ignore words from the General tab still apply. If the test says an ignore word matched,
+                the announce will be skipped before racing.
+            </p>
+        </aside>
+    </div>
+}
+
+@if (_tab == "Sections")
+{
+    <div class="sections-topbar">
+        <div>
+            <h2>SECTION ROUTING</h2>
+            <p class="fh">
+                Pick an IRC section on the left, then map it to one or more CBFTP sections on the right.
+                Empty trigger regex = fallback mapping.
+            </p>
+        </div>
+        <button class="btn primary" @onclick="AddSection"><Icon Name="plus" Size="13" /><span>Add section</span></button>
+    </div>
+
+    @if (_cfg.Sections.Count == 0)
+    {
+        <div class="empty">No sections yet.</div>
+    }
+    else
+    {
+        var selected = SelectedSection;
+
+        <div class="sections-shell">
+            <aside class="section-list">
+                <div class="section-list-head">
+                    <span>@_cfg.Sections.Count section(s)</span>
+                    <span>@_cfg.RaceSectionsEnabled.Count enabled</span>
+                </div>
+
+                @for (var i = 0; i < _cfg.Sections.Count; i++)
+                {
+                    var idx = i;
+                    var sec = _cfg.Sections[idx];
+                    var active = idx == SelectedSectionIndex;
+                    <button type="button"
+                            class="section-row @(active ? "active" : "")"
+                            @onclick="() => SelectSection(idx)">
+                        <span class="section-row-main">
+                            <strong>@DisplaySectionName(sec)</strong>
+                            <span>@MappingSummary(sec)</span>
+                        </span>
+                        <span class="section-badges">
+                            <span class="mini-pill toggle @(IsRaceEnabled(sec.IrcName) ? "on" : "off")"
+                                  role="button"
+                                  tabindex="0"
+                                  title="Toggle racing for this IRC section"
+                                  @onclick:stopPropagation="true"
+                                  @onclick="() => ToggleRaceEnabled(sec)"
+                                  @onkeydown="e => ToggleRaceEnabledFromKey(e, sec)">
+                                @(IsRaceEnabled(sec.IrcName) ? "Racing" : "Off")
+                            </span>
+                            @if (IsEnabled(sec.Imdb))
+                            {
+                                <span class="mini-pill info">IMDB</span>
+                            }
+                            @if (IsEnabled(sec.Tvmaze))
+                            {
+                                <span class="mini-pill info">TVMaze</span>
+                            }
+                        </span>
+                    </button>
+                }
+            </aside>
+
+            @if (selected is not null)
+            {
+                <section class="section-editor">
+                    <div class="section-editor-head">
+                        <div>
+                            <h2>@DisplaySectionName(selected)</h2>
+                            <p class="fh">This IRC section races only when enabled and at least one CBFTP mapping exists.</p>
+                        </div>
+                        <button class="btn danger" @onclick="() => RemoveSection(selected)">
+                            <Icon Name="trash" Size="13" /><span>Remove section</span>
+                        </button>
+                    </div>
+
+                    <div class="section-core-grid">
+                        <label>
+                            <span>IRC section</span>
+                            <input type="text" value="@selected.IrcName" @oninput="e => SetSectionName(selected, e.Value?.ToString())" placeholder="TV-HD" />
+                        </label>
+
+                        <label>
+                            <span>Pretime override</span>
+                            <input type="number" value="@(selected.Pretime?.ToString() ?? "")"
+                                   @oninput="e => selected.Pretime = ParseNullableInt(e.Value?.ToString())" placeholder="inherit" />
+                        </label>
+
+                        <label class="section-enable">
+                            <input type="checkbox"
+                                   checked="@IsRaceEnabled(selected.IrcName)"
+                                   @onchange="e => SetRaceEnabled(selected.IrcName, (bool)(e.Value ?? false))" />
+                            <span>
+                                <strong>Enabled for racing</strong>
+                                <em>Announces in this IRC section can create CBFTP jobs.</em>
+                            </span>
+                        </label>
+                    </div>
+
+                    <div class="section-block">
+                        <div class="section-block-head">
+                            <div>
+                                <h2>CBFTP mappings</h2>
+                                <p class="fh">Use more than one mapping when one IRC section needs different CBFTP targets.</p>
+                            </div>
+                            <button class="btn" @onclick="() => AddTag(selected)"><Icon Name="plus" Size="13" /><span>Add mapping</span></button>
+                        </div>
+
+                        @if ((selected.Tags?.Count ?? 0) == 0)
+                        {
+                            <div class="empty compact">No mappings yet.</div>
+                        }
+                        else
+                        {
+                            <table class="grid mapping-table">
+                                <thead><tr><th>CBFTP SECTION</th><th>TRIGGER REGEX</th><th class="w-act"></th></tr></thead>
+                                <tbody>
+                                    @foreach (var tag in selected.Tags ?? new List<Tag>())
+                                    {
+                                        <tr>
+                                            <td><input type="text" value="@tag.MapCbftpSection"
+                                                       @oninput="e => tag.MapCbftpSection = e.Value?.ToString()" placeholder="TV" /></td>
+                                            <td><input type="text" value="@tag.TriggerRegex"
+                                                       @oninput="e => tag.TriggerRegex = e.Value?.ToString()"
+                                                       placeholder="x265|HEVC   (empty = fallback)" /></td>
+                                            <td class="right"><button class="btn danger sm" title="Remove mapping" @onclick="() => RemoveTag(selected, tag)">&times;</button></td>
+                                        </tr>
+                                        <tr class="mapping-rules-row">
+                                            <td colspan="3">
+                                                <div class="rules-box">
+                                                    <div class="rules-head">
+                                                        <div>
+                                                            <strong>CBFTP Mapping Rules</strong>
+                                                            <span>DROP runs before ALLOW. These apply only to this mapping.</span>
+                                                        </div>
+                                                        <button class="btn sm" @onclick="() => AddTagRule(tag)">
+                                                            <Icon Name="plus" Size="12" /><span>Add rule</span>
+                                                        </button>
+                                                    </div>
+
+                                                    @if ((tag.Rules?.Count ?? 0) == 0)
+                                                    {
+                                                        <div class="empty rule-empty">No mapping rules.</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="rule-rows">
+                                                            @for (var r = 0; r < (tag.Rules?.Count ?? 0); r++)
+                                                            {
+                                                                var ruleIndex = r;
+                                                                <div class="rule-row">
+                                                                    <input type="text"
+                                                                           value="@tag.Rules![ruleIndex]"
+                                                                           @oninput="e => SetTagRule(tag, ruleIndex, e.Value?.ToString())"
+                                                                           placeholder="[release] contains 720p DROP" />
+                                                                    <button class="btn danger sm" title="Remove rule" @onclick="() => RemoveTagRule(tag, ruleIndex)">&times;</button>
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+
+                    <div class="section-block">
+                        <div class="section-block-head">
+                            <div>
+                                <h2>Section Rules</h2>
+                                <p class="fh">Global filters for this IRC section. Section DROP takes priority over ALLOW.</p>
+                            </div>
+                            <button class="btn" @onclick="() => AddSectionRule(selected)">
+                                <Icon Name="plus" Size="13" /><span>Add rule</span>
+                            </button>
+                        </div>
+
+                        <div class="rules-box section-rules-box">
+                            @if ((selected.Rules?.Count ?? 0) == 0)
+                            {
+                                <div class="empty rule-empty">No section rules.</div>
+                            }
+                            else
+                            {
+                                <div class="rule-rows">
+                                    @for (var r = 0; r < (selected.Rules?.Count ?? 0); r++)
+                                    {
+                                        var ruleIndex = r;
+                                        <div class="rule-row">
+                                            <input type="text"
+                                                   value="@selected.Rules![ruleIndex]"
+                                                   @oninput="e => SetSectionRule(selected, ruleIndex, e.Value?.ToString())"
+                                                   placeholder="[release] matches (?i)\bFRENCH\b DROP" />
+                                            <button class="btn danger sm" title="Remove rule" @onclick="() => RemoveSectionRule(selected, ruleIndex)">&times;</button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <div class="fh rule-help">
+                                Format: <code>[release] contains INTERNAL DROP</code>,
+                                <code>[group] isin BadGroup1,BadGroup2 DROP</code>, or
+                                <code>[release] contains 1080p ALLOW</code>.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-block">
+                        <div class="section-block-head">
+                            <div>
+                                <h2>Lookup filters</h2>
+                                <p class="fh">Optional movie/series checks for this IRC section only.</p>
+                            </div>
+                            <div class="filter-toggles">
+                                <label class="chk">
+                                    <input type="checkbox" checked="@IsEnabled(selected.Imdb)"
+                                           @onchange="e => ToggleFilter(selected, imdb: true, (bool)(e.Value ?? false))" />
+                                    IMDB
+                                </label>
+                                <label class="chk">
+                                    <input type="checkbox" checked="@IsEnabled(selected.Tvmaze)"
+                                           @onchange="e => ToggleFilter(selected, imdb: false, (bool)(e.Value ?? false))" />
+                                    TVMaze
+                                </label>
+                            </div>
+                        </div>
+
+                        @if (IsEnabled(selected.Imdb))
+                        {
+                            <div class="subcard nested lookup-card">
+                                <div class="card-title">IMDB FILTER - movies</div>
+                                <div class="form-grid">
+                                    <label>Min rating</label>
+                                    <div><input type="text" value='@Get(selected.Imdb, "min_rating")'
+                                                @oninput='e => Set(selected.Imdb, "min_rating", e.Value?.ToString())' placeholder="6.5" /></div>
+
+                                    <label>Min votes</label>
+                                    <div><input type="text" value='@Get(selected.Imdb, "min_votes")'
+                                                @oninput='e => Set(selected.Imdb, "min_votes", e.Value?.ToString())' placeholder="1000" /></div>
+
+                                    <label>Restrictions</label>
+                                    <div class="chk-row">
+                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Imdb, "only_english")'
+                                            @onchange='e => SetBool(selected.Imdb, "only_english", e)' /> English only</label>
+                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Imdb, "only_us_country")'
+                                            @onchange='e => SetBool(selected.Imdb, "only_us_country", e)' /> US only</label>
+                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Imdb, "no_documentary")'
+                                            @onchange='e => SetBool(selected.Imdb, "no_documentary", e)' /> No documentary</label>
+                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Imdb, "no_comedy")'
+                                            @onchange='e => SetBool(selected.Imdb, "no_comedy", e)' /> No comedy</label>
+                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Imdb, "no_music")'
+                                            @onchange='e => SetBool(selected.Imdb, "no_music", e)' /> No music</label>
+                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Imdb, "no_show")'
+                                            @onchange='e => SetBool(selected.Imdb, "no_show", e)' /> No TV shows</label>
+                                    </div>
+
+                                    <label>Allowed genres</label>
+                                    <div>
+                                        <input type="text" value='@GetListText(selected.Imdb, "allowed_genres")'
+                                               @oninput='e => SetListText(selected.Imdb, "allowed_genres", e.Value?.ToString())' placeholder="Action, Thriller" />
+                                        <div class="lookup-actions">
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Imdb, "allowed_genres", ImdbGenres)'>All</button>
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Imdb, "allowed_genres", Array.Empty<string>())'>None</button>
+                                            <span class="fh inline">Empty = allow all.</span>
+                                        </div>
+                                        <div class="check-chip-list">
+                                            @foreach (var genreOption in OptionsWithSelected(ImdbGenres, selected.Imdb, "allowed_genres"))
+                                            {
+                                                var option = genreOption;
+                                                var isChecked = ListContains(selected.Imdb, "allowed_genres", option);
+                                                <label class="check-chip @(isChecked ? "checked" : "")">
+                                                    <input type="checkbox"
+                                                           checked="@isChecked"
+                                                           @onchange='e => SetListItem(selected.Imdb, "allowed_genres", option, (bool)(e.Value ?? false))' />
+                                                    <span>@option</span>
+                                                </label>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <label>Blocked genres</label>
+                                    <div>
+                                        <input type="text" value='@GetListText(selected.Imdb, "blocked_genres")'
+                                               @oninput='e => SetListText(selected.Imdb, "blocked_genres", e.Value?.ToString())' placeholder="Documentary, Music" />
+                                        <div class="lookup-actions">
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Imdb, "blocked_genres", ImdbGenres)'>All</button>
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Imdb, "blocked_genres", Array.Empty<string>())'>None</button>
+                                        </div>
+                                        <div class="check-chip-list">
+                                            @foreach (var genreOption in OptionsWithSelected(ImdbGenres, selected.Imdb, "blocked_genres"))
+                                            {
+                                                var option = genreOption;
+                                                var isChecked = ListContains(selected.Imdb, "blocked_genres", option);
+                                                <label class="check-chip @(isChecked ? "checked" : "")">
+                                                    <input type="checkbox"
+                                                           checked="@isChecked"
+                                                           @onchange='e => SetListItem(selected.Imdb, "blocked_genres", option, (bool)(e.Value ?? false))' />
+                                                    <span>@option</span>
+                                                </label>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <label>On lookup error</label>
+                                    <div>
+                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Imdb, "fallback_on_error")'
+                                            @onchange='e => SetBool(selected.Imdb, "fallback_on_error", e)' /> Race anyway</label>
+                                        <div class="fh">If IMDB is unreachable or slow: on = race it, off = skip it.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        @if (IsEnabled(selected.Tvmaze))
+                        {
+                            <div class="subcard nested lookup-card">
+                                <div class="card-title">TVMAZE FILTER - series</div>
+                                <div class="form-grid">
+                                    <label>Min rating</label>
+                                    <div><input type="text" value='@Get(selected.Tvmaze, "min_rating")'
+                                                @oninput='e => Set(selected.Tvmaze, "min_rating", e.Value?.ToString())' placeholder="7.0" /></div>
+
+                                    <label>Cache days</label>
+                                    <div>
+                                        <input type="number" value='@Get(selected.Tvmaze, "cache_duration_days")'
+                                               @oninput='e => Set(selected.Tvmaze, "cache_duration_days", e.Value?.ToString())' placeholder="7" />
+                                        <div class="fh">Saved for compatibility with the old Section Settings form.</div>
+                                    </div>
+
+                                    <label>Allowed genres</label>
+                                    <div>
+                                        <input type="text" value='@GetListText(selected.Tvmaze, "allowed_genres")'
+                                               @oninput='e => SetListText(selected.Tvmaze, "allowed_genres", e.Value?.ToString())' placeholder="Drama, Crime" />
+                                        <div class="lookup-actions">
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_genres", TvmazeGenres)'>All</button>
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_genres", Array.Empty<string>())'>None</button>
+                                            <span class="fh inline">Empty = allow all.</span>
+                                        </div>
+                                        <div class="check-chip-list">
+                                            @foreach (var genreOption in OptionsWithSelected(TvmazeGenres, selected.Tvmaze, "allowed_genres"))
+                                            {
+                                                var option = genreOption;
+                                                var isChecked = ListContains(selected.Tvmaze, "allowed_genres", option);
+                                                <label class="check-chip @(isChecked ? "checked" : "")">
+                                                    <input type="checkbox"
+                                                           checked="@isChecked"
+                                                           @onchange='e => SetListItem(selected.Tvmaze, "allowed_genres", option, (bool)(e.Value ?? false))' />
+                                                    <span>@option</span>
+                                                </label>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <label>Blocked genres</label>
+                                    <div>
+                                        <input type="text" value='@GetListText(selected.Tvmaze, "blocked_genres")'
+                                               @oninput='e => SetListText(selected.Tvmaze, "blocked_genres", e.Value?.ToString())' placeholder="Reality, Talk Show" />
+                                        <div class="lookup-actions">
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "blocked_genres", TvmazeGenres)'>All</button>
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "blocked_genres", Array.Empty<string>())'>None</button>
+                                        </div>
+                                        <div class="check-chip-list">
+                                            @foreach (var genreOption in OptionsWithSelected(TvmazeGenres, selected.Tvmaze, "blocked_genres"))
+                                            {
+                                                var option = genreOption;
+                                                var isChecked = ListContains(selected.Tvmaze, "blocked_genres", option);
+                                                <label class="check-chip @(isChecked ? "checked" : "")">
+                                                    <input type="checkbox"
+                                                           checked="@isChecked"
+                                                           @onchange='e => SetListItem(selected.Tvmaze, "blocked_genres", option, (bool)(e.Value ?? false))' />
+                                                    <span>@option</span>
+                                                </label>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <label>Allowed networks</label>
+                                    <div>
+                                        <input type="text" value='@GetListText(selected.Tvmaze, "allowed_networks")'
+                                               @oninput='e => SetListText(selected.Tvmaze, "allowed_networks", e.Value?.ToString())' placeholder="HBO, Netflix" />
+                                        <div class="lookup-actions">
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_networks", PopularNetworks)'>All</button>
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_networks", Array.Empty<string>())'>None</button>
+                                        </div>
+                                        <div class="check-chip-list">
+                                            @foreach (var networkOption in OptionsWithSelected(PopularNetworks, selected.Tvmaze, "allowed_networks"))
+                                            {
+                                                var option = networkOption;
+                                                var isChecked = ListContains(selected.Tvmaze, "allowed_networks", option);
+                                                <label class="check-chip @(isChecked ? "checked" : "")">
+                                                    <input type="checkbox"
+                                                           checked="@isChecked"
+                                                           @onchange='e => SetListItem(selected.Tvmaze, "allowed_networks", option, (bool)(e.Value ?? false))' />
+                                                    <span>@option</span>
+                                                </label>
+                                            }
+                                        </div>
+                                        <div class="fh">Comma separated. Empty = allow all.</div>
+                                    </div>
+
+                                    <label>Show types</label>
+                                    <div>
+                                        <input type="text" value='@GetListText(selected.Tvmaze, "allowed_show_types")'
+                                               @oninput='e => SetListText(selected.Tvmaze, "allowed_show_types", e.Value?.ToString())' placeholder="Scripted" />
+                                        <div class="lookup-actions">
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_show_types", TvmazeShowTypes)'>All</button>
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_show_types", Array.Empty<string>())'>None</button>
+                                        </div>
+                                        <div class="check-chip-list compact">
+                                            @foreach (var typeOption in OptionsWithSelected(TvmazeShowTypes, selected.Tvmaze, "allowed_show_types"))
+                                            {
+                                                var option = typeOption;
+                                                var isChecked = ListContains(selected.Tvmaze, "allowed_show_types", option);
+                                                <label class="check-chip @(isChecked ? "checked" : "")">
+                                                    <input type="checkbox"
+                                                           checked="@isChecked"
+                                                           @onchange='e => SetListItem(selected.Tvmaze, "allowed_show_types", option, (bool)(e.Value ?? false))' />
+                                                    <span>@option</span>
+                                                </label>
+                                            }
+                                        </div>
+                                        <div class="fh">e.g. Scripted, Reality, Documentary.</div>
+                                    </div>
+
+                                    <label>Options</label>
+                                    <div class="chk-row">
+                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Tvmaze, "skip_ended_shows")'
+                                            @onchange='e => SetBool(selected.Tvmaze, "skip_ended_shows", e)' /> Skip ended shows</label>
+                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Tvmaze, "fallback_on_error")'
+                                            @onchange='e => SetBool(selected.Tvmaze, "fallback_on_error", e)' /> Race on lookup error</label>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+    }
+}
+
+@if (_tab == "Affils")
+{
+    <p class="hint">
+        Releases from these groups make this site download-only for that release
+        (it still races, but is not an upload target).
+    </p>
+    <div class="row-actions">
+        <input type="text" @bind="_newAffil" placeholder="GROUPNAME" @bind:event="oninput" />
+        <button class="btn primary" @onclick="AddAffil"><Icon Name="plus" Size="13" /><span>Add</span></button>
+    </div>
+    <table class="grid">
+        <tbody>
+            @foreach (var a in _cfg.Affils)
+            {
+                <tr>
+                    <td>@a</td>
+                    <td class="right"><button class="btn danger" @onclick="() => _cfg.Affils.Remove(a)"><Icon Name="trash" Size="13" /><span>Remove</span></button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (_cfg.Affils.Count == 0) { <div class="empty">No affiliated groups.</div> }
+}
+
+@if (_tab == "Blacklist")
+{
+    <p class="hint">Releases matching these patterns are never raced. <code>*</code> and <code>?</code> are wildcards.</p>
+    <div class="row-actions">
+        <input type="text" @bind="_newBlacklist" placeholder="*German*" @bind:event="oninput" />
+        <button class="btn primary" @onclick="AddBlacklist"><Icon Name="plus" Size="13" /><span>Add</span></button>
+    </div>
+    <table class="grid">
+        <tbody>
+            @foreach (var b in _cfg.GlobalBlacklist)
+            {
+                <tr>
+                    <td>@b</td>
+                    <td class="right"><button class="btn danger" @onclick="() => _cfg.GlobalBlacklist.Remove(b)"><Icon Name="trash" Size="13" /><span>Remove</span></button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (_cfg.GlobalBlacklist.Count == 0) { <div class="empty">No blacklist patterns.</div> }
+}
+
+@if (_tab == "Requests")
+{
+    <div class="callout">
+        <strong>Request auto-fill uses CBFTP raw commands.</strong> The list command is sent to
+        the request site, each output line is parsed by the regex below, and RaceTrade fills
+        matching releases from sites marked as source.
+    </div>
+
+    <div class="form-grid wide">
+        <label>Auto-fill enabled</label>
+        <div>
+            <input type="checkbox" @bind="S.RequestAutoFillEnabled" />
+            <span class="fh inline">Enable auto-fill of requests.</span>
+        </div>
+
+        <label>List command</label>
+        <div>
+            <input type="text" @bind="S.RequestListCommand" placeholder="SITE REQUESTS" @bind:event="oninput" />
+            <div class="fh">Command sent through CBFTP <code>/raw</code> to list open requests.</div>
+        </div>
+
+        <label>Request line regex</label>
+        <div>
+            <input type="text" @bind="S.RequestLinePattern" @bind:event="oninput" />
+            <div class="fh">For regex, use named groups: <code>(?&lt;id&gt;)</code>, <code>(?&lt;name&gt;)</code>, optional <code>(?&lt;user&gt;)</code>.</div>
+        </div>
+
+        <label>Fill command template</label>
+        <div>
+            <input type="text" @bind="S.RequestFillTemplate" placeholder="SITE REQFILLED {id}" @bind:event="oninput" />
+            <div class="fh">Supported placeholders: <code>{id}</code>, <code>{name}</code>.</div>
+        </div>
+
+        <label>Dst path template</label>
+        <div>
+            <input type="text" @bind="S.RequestDstPathTemplate" placeholder="/REQUESTS/REQ-{release}" @bind:event="oninput" />
+            <div class="fh">Supported placeholders: <code>{id}</code>, <code>{name}</code>, <code>{user}</code>, <code>{release}</code>, <code>{sitename}</code>.</div>
+        </div>
+
+        <label>Complete pattern</label>
+        <div>
+            <input type="text" @bind="S.RequestCompletePattern" @bind:event="oninput" />
+            <div class="fh">Optional regex. Matching request lines are treated as already filled and skipped.</div>
+        </div>
+
+        <label>Poll interval (s)</label>
+        <div>
+            <input type="number" @bind="S.RequestPollSeconds" placeholder="300" @bind:event="oninput" />
+            <div class="fh">Old default is <code>300</code>; minimum polling interval is handled by the engine.</div>
+        </div>
+
+        <label>Can fill from source</label>
+        <div>
+            <input type="checkbox" @bind="S.RequestCanFillSource" />
+            <span class="fh inline">Can be used for filling requests on another site.</span>
+        </div>
+    </div>
+}
+
+@if (_tab == "CBFTP Site")
+{
+    <div class="cbftp-site-tab">
+        <div class="callout">
+            <strong>This edits the site inside CBFTP itself.</strong> The other tabs edit
+            RaceTrade's local <code>sites\*.json</code>. Use this tab when you need CBFTP
+            address, user, password, affils, section paths or skiplist settings.
+        </div>
+        <div class="head-actions">
+            <a class="btn primary" href="@($"cbftp-site/{Uri.EscapeDataString(S.Sitename ?? _originalName ?? "")}")">
+                <Icon Name="servers" Size="13" />
+                <span>Edit CBFTP Site</span>
+            </a>
+            <button class="btn" @onclick="ShowSiteRules" disabled="@_loadingRules">
+                <Icon Name="logs" Size="13" />
+                <span>@(_loadingRules ? "Loading rules..." : "Get Site Rules")</span>
+            </button>
+        </div>
+    </div>
+}
+
+</div>
+
+@if (_showRules)
+{
+    <div class="modal-backdrop" @onclick="CloseRules">
+        <div class="modal-card rules-modal" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2>Site Rules - @(S.Sitename ?? _originalName)</h2>
+                <button class="btn" @onclick="CloseRules"><Icon Name="close" Size="13" /><span>Close</span></button>
+            </div>
+            <pre class="code">@_rulesText</pre>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Name { get; set; }
+
+    private static readonly string[] Tabs =
+        { "General", "ZNC", "Channels", "Announce", "Sections", "Affils", "Blacklist", "Requests", "CBFTP Site" };
+
+    private static readonly string[] ImdbGenres =
+    {
+        "Action", "Adventure", "Animation", "Biography", "Comedy",
+        "Crime", "Documentary", "Drama", "Family", "Fantasy",
+        "Film-Noir", "History", "Horror", "Music", "Musical",
+        "Mystery", "Romance", "Sci-Fi", "Sport", "Thriller",
+        "War", "Western"
+    };
+
+    private static readonly string[] TvmazeGenres =
+    {
+        "Action", "Adventure", "Anime", "Children", "Comedy", "Crime",
+        "Documentary", "Drama", "Fantasy", "Food", "Game Show", "History",
+        "Horror", "Legal", "Medical", "Music", "Mystery", "Nature",
+        "Reality", "Romance", "Science-Fiction", "Sports", "Supernatural",
+        "Talk Show", "Thriller", "Travel", "War", "Western"
+    };
+
+    private static readonly string[] PopularNetworks =
+    {
+        "HBO", "Netflix", "Amazon", "Apple TV+", "Disney+", "Hulu",
+        "Showtime", "AMC", "FX", "CBS", "NBC", "ABC", "FOX", "The CW",
+        "Peacock", "Paramount+", "Max", "BBC One", "BBC Two", "Channel 4",
+        "Sky Atlantic", "ITV", "Starz", "Epix", "USA Network", "TNT",
+        "Syfy", "Comedy Central", "Adult Swim", "Cartoon Network"
+    };
+
+    private static readonly string[] TvmazeShowTypes =
+    {
+        "Scripted", "Animation", "Reality", "Talk Show", "Documentary",
+        "Game Show", "News", "Sports", "Variety", "Award Show", "Panel Show"
+    };
+
+    private SiteConfig _cfg = SiteStore.NewSite();
+    private SiteSettings S => _cfg.SiteSettings;
+    private ServerSettings Sv => _cfg.Server;
+
+    private string _tab = "General";
+    private string _originalName = "";
+    private bool _isNew;
+    private string? _error;
+    private string? _status;
+    private bool _loadingRules;
+    private bool _showRules;
+    private string _rulesText = "";
+
+    private string _password = "";
+    private bool _hasStoredPassword;
+    private SiteConfig? _stored;
+
+    private List<(int Index, string Channel, string Key)> _channels = new();
+    private int _maxPreTime;
+    private string _newAffil = "";
+    private string _newBlacklist = "";
+    private int _selectedSectionIndex = -1;
+    private string _announceTestInput = "";
+    private string _preAnnounceTestInput = "";
+    private RegexTestResult? _announceTestResult;
+    private RegexTestResult? _preAnnounceTestResult;
+
+    protected override void OnParametersSet()
+    {
+        _isNew = string.IsNullOrEmpty(Name);
+
+        if (_isNew)
+        {
+            _cfg = SiteStore.NewSite();
+            _stored = null;
+            _hasStoredPassword = false;
+        }
+        else
+        {
+            _cfg = Store.Load(Name!);
+            _originalName = Name!;
+            _stored = Store.Load(Name!);
+            _hasStoredPassword = !string.IsNullOrEmpty(Sv.Password);
+        }
+
+        _cfg.Sections ??= new List<Section>();
+        _cfg.Affils ??= new List<string>();
+        _cfg.GlobalBlacklist ??= new List<string>();
+        _cfg.RaceSectionsEnabled ??= new List<string>();
+        foreach (var section in _cfg.Sections)
+        {
+            section.Tags ??= new List<Tag>();
+            section.Rules ??= new List<string>();
+            foreach (var tag in section.Tags)
+            {
+                tag.Rules ??= new List<string>();
+            }
+        }
+        NormalizeSelectedSection();
+
+        _maxPreTime = S.MaxPreTime ?? 0;
+
+        // Secrets are never rendered: the boxes start empty and only overwrite the
+        // stored value when something new is typed.
+        _password = "";
+        _channels = SiteStore.ReadChannels(S)
+            .Select(c => (c.Index, c.Channel, ""))
+            .ToList();
+        _announceTestInput = "";
+        _preAnnounceTestInput = "";
+        _announceTestResult = null;
+        _preAnnounceTestResult = null;
+    }
+
+    private void TestNormalAnnounceRegex()
+    {
+        _announceTestResult = RegexTestHelper.TestNormalAnnounce(
+            _announceTestInput,
+            S.NewRegexPattern,
+            S.IgnoreWords,
+            S.SectionRegexPattern,
+            S.ReleaseRegexPattern,
+            S.SectionPrefix,
+            S.SectionSuffix);
+    }
+
+    private void TestPreAnnounceRegex()
+    {
+        _preAnnounceTestResult = RegexTestHelper.TestPreAnnounce(
+            _preAnnounceTestInput,
+            S.PreRegexPattern,
+            string.IsNullOrWhiteSpace(S.PreSectionRegexPattern) ? S.SectionRegexPattern : S.PreSectionRegexPattern,
+            string.IsNullOrWhiteSpace(S.PreReleaseRegexPattern) ? S.ReleaseRegexPattern : S.PreReleaseRegexPattern,
+            string.IsNullOrWhiteSpace(S.PreSectionPrefix) ? S.SectionPrefix : S.PreSectionPrefix,
+            string.IsNullOrWhiteSpace(S.PreSectionSuffix) ? S.SectionSuffix : S.PreSectionSuffix);
+    }
+
+    private bool HasStoredKey(int i)
+    {
+        if (_stored is null) return false;
+        var v = (string?)_stored.SiteSettings.GetType()
+            .GetProperty($"BlowfishKey{_channels[i].Index}")?.GetValue(_stored.SiteSettings);
+        return !string.IsNullOrEmpty(v);
+    }
+
+    private void SetChannel(int i, string? v) => _channels[i] = (_channels[i].Index, v ?? "", _channels[i].Key);
+    private void SetKey(int i, string? v) => _channels[i] = (_channels[i].Index, _channels[i].Channel, v ?? "");
+
+    // Only rows that hold a channel are shown; _visible additionally holds the empty
+    // slots the user asked for via "+ Add channel", so the page stays short instead of
+    // rendering twenty empty inputs.
+    private readonly HashSet<int> _visible = new();
+
+    private List<(int Index, string Channel, string Key)> VisibleChannels =>
+        _channels.Where(c => !string.IsNullOrWhiteSpace(c.Channel) || _visible.Contains(c.Index)).ToList();
+
+    private void AddChannelRow()
+    {
+        var free = _channels.FirstOrDefault(c => string.IsNullOrWhiteSpace(c.Channel) && !_visible.Contains(c.Index));
+        if (free.Index > 0) _visible.Add(free.Index);
+    }
+
+    private void ClearChannel(int i)
+    {
+        _channels[i] = (_channels[i].Index, "", "");
+        _visible.Remove(_channels[i].Index);
+        _clearedKeys.Add(_channels[i].Index);
+    }
+
+    // Cleared rows must actually wipe the stored key, so they are exempt from the
+    // "empty box = keep existing key" rule applied on save.
+    private readonly HashSet<int> _clearedKeys = new();
+
+    private static int? ParseNullableInt(string? s) =>
+        int.TryParse(s, out var v) && v > 0 ? v : null;
+
+    private bool IsRaceEnabled(string? irc) =>
+        !string.IsNullOrWhiteSpace(irc) &&
+        _cfg.RaceSectionsEnabled.Contains(irc, StringComparer.OrdinalIgnoreCase);
+
+    private void SetRaceEnabled(string? irc, bool on)
+    {
+        if (string.IsNullOrWhiteSpace(irc)) return;
+
+        _cfg.RaceSectionsEnabled.RemoveAll(x => string.Equals(x, irc, StringComparison.OrdinalIgnoreCase));
+        if (on) _cfg.RaceSectionsEnabled.Add(irc);
+    }
+
+    private void ToggleRaceEnabled(Section sec)
+    {
+        if (string.IsNullOrWhiteSpace(sec.IrcName)) return;
+        SetRaceEnabled(sec.IrcName, !IsRaceEnabled(sec.IrcName));
+    }
+
+    private void ToggleRaceEnabledFromKey(KeyboardEventArgs e, Section sec)
+    {
+        if (e.Key is "Enter" or " ")
+            ToggleRaceEnabled(sec);
+    }
+
+    private int SelectedSectionIndex =>
+        _cfg.Sections.Count == 0 ? -1 : Math.Clamp(_selectedSectionIndex, 0, _cfg.Sections.Count - 1);
+
+    private Section? SelectedSection =>
+        SelectedSectionIndex >= 0 ? _cfg.Sections[SelectedSectionIndex] : null;
+
+    private void NormalizeSelectedSection()
+    {
+        if (_cfg.Sections.Count == 0) _selectedSectionIndex = -1;
+        else if (_selectedSectionIndex < 0) _selectedSectionIndex = 0;
+        else if (_selectedSectionIndex >= _cfg.Sections.Count) _selectedSectionIndex = _cfg.Sections.Count - 1;
+    }
+
+    private void SelectSection(int index)
+    {
+        _selectedSectionIndex = index;
+        NormalizeSelectedSection();
+    }
+
+    private void SetSectionName(Section sec, string? value)
+    {
+        var oldName = sec.IrcName;
+        var wasEnabled = IsRaceEnabled(oldName);
+        var nextName = value ?? "";
+
+        if (!string.Equals(oldName, nextName, StringComparison.OrdinalIgnoreCase))
+            _cfg.RaceSectionsEnabled.RemoveAll(x => string.Equals(x, oldName, StringComparison.OrdinalIgnoreCase));
+
+        sec.IrcName = nextName;
+
+        if (wasEnabled && !string.IsNullOrWhiteSpace(nextName))
+            SetRaceEnabled(nextName, true);
+    }
+
+    private void RemoveSection(Section sec)
+    {
+        _cfg.RaceSectionsEnabled.RemoveAll(x => string.Equals(x, sec.IrcName, StringComparison.OrdinalIgnoreCase));
+        _cfg.Sections.Remove(sec);
+        NormalizeSelectedSection();
+    }
+
+    private static string DisplaySectionName(Section sec) =>
+        string.IsNullOrWhiteSpace(sec.IrcName) ? "Untitled section" : sec.IrcName.Trim();
+
+    private static string MappingSummary(Section sec)
+    {
+        var mapped = (sec.Tags ?? new List<Tag>())
+            .Select(t => t.MapCbftpSection)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .ToList();
+
+        if (mapped.Count == 0) return "No CBFTP mappings";
+
+        var suffix = (sec.Tags?.Count ?? 0) > mapped.Count ? $" +{(sec.Tags?.Count ?? 0) - mapped.Count}" : "";
+        return string.Join(", ", mapped) + suffix;
+    }
+
+    // ---- IMDB / TVMaze filter helpers -------------------------------------------------
+    // Both are stored as free-form JObjects on the section (the engine reads them by key),
+    // so the editor reads and writes individual keys rather than binding to a typed model.
+
+    private static bool IsEnabled(JObject? o) => o?["enabled"]?.Value<bool>() == true;
+
+    private static void ToggleFilter(Section sec, bool imdb, bool on)
+    {
+        var current = imdb ? sec.Imdb : sec.Tvmaze;
+
+        if (on)
+        {
+            current ??= new JObject();
+            current["enabled"] = true;
+            // Sensible default: an unreachable lookup service should not silently stop
+            // the site from racing.
+            current["fallback_on_error"] ??= true;
+            if (!imdb)
+            {
+                current["skip_ended_shows"] ??= true;
+                current["cache_duration_days"] ??= 7;
+            }
+        }
+        else if (current != null)
+        {
+            current["enabled"] = false;
+        }
+
+        if (imdb) sec.Imdb = current; else sec.Tvmaze = current;
+    }
+
+    private static string Get(JObject? o, string key) => o?[key]?.ToString() ?? "";
+
+    private static void Set(JObject? o, string key, string? value)
+    {
+        if (o is null) return;
+
+        if (string.IsNullOrWhiteSpace(value)) o.Remove(key);
+        else o[key] = value.Trim();
+    }
+
+    private static bool GetBool(JObject? o, string key) => o?[key]?.Value<bool>() == true;
+
+    private static void SetBool(JObject? o, string key, ChangeEventArgs e)
+    {
+        if (o is null) return;
+        o[key] = (bool)(e.Value ?? false);
+    }
+
+    private static List<string> GetStringList(JObject? o, string key)
+    {
+        var token = o?[key];
+        if (token is null) return new List<string>();
+
+        if (token.Type == JTokenType.Array)
+        {
+            return token.Values<string>()
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => v!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        return SplitListText(token.ToString()).ToList();
+    }
+
+    private static IEnumerable<string> SplitListText(string? value) =>
+        (value ?? "")
+            .Split(new[] { ',', '|' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(v => !string.IsNullOrWhiteSpace(v));
+
+    private static string GetListText(JObject? o, string key) =>
+        string.Join(", ", GetStringList(o, key));
+
+    private static void SetListText(JObject? o, string key, string? value) =>
+        SetList(o, key, SplitListText(value));
+
+    private static void SetList(JObject? o, string key, IEnumerable<string> values)
+    {
+        if (o is null) return;
+
+        var clean = values
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (clean.Count == 0) o.Remove(key);
+        else o[key] = JArray.FromObject(clean);
+    }
+
+    private static bool ListContains(JObject? o, string key, string value) =>
+        GetStringList(o, key).Contains(value, StringComparer.OrdinalIgnoreCase);
+
+    private static void SetListItem(JObject? o, string key, string value, bool enabled)
+    {
+        if (o is null || string.IsNullOrWhiteSpace(value)) return;
+
+        var list = GetStringList(o, key);
+        var existingIndex = list.FindIndex(v => string.Equals(v, value, StringComparison.OrdinalIgnoreCase));
+
+        if (enabled && existingIndex < 0)
+            list.Add(value.Trim());
+        else if (!enabled && existingIndex >= 0)
+            list.RemoveAt(existingIndex);
+
+        SetList(o, key, list);
+    }
+
+    private static string[] OptionsWithSelected(IEnumerable<string> options, JObject? o, string key) =>
+        options
+            .Concat(GetStringList(o, key))
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private void AddSection()
+    {
+        _cfg.Sections.Add(new Section { Tags = new List<Tag>(), Rules = new List<string>() });
+        _selectedSectionIndex = _cfg.Sections.Count - 1;
+    }
+
+    private void AddTag(Section sec)
+    {
+        sec.Tags ??= new List<Tag>();
+        sec.Tags.Add(new Tag { Rules = new List<string>() });
+    }
+
+    private static void RemoveTag(Section sec, Tag tag) => sec.Tags?.Remove(tag);
+
+    private static void AddSectionRule(Section sec)
+    {
+        sec.Rules ??= new List<string>();
+        sec.Rules.Add("");
+    }
+
+    private static void SetSectionRule(Section sec, int index, string? value)
+    {
+        if (sec.Rules is null || index < 0 || index >= sec.Rules.Count) return;
+        sec.Rules[index] = value ?? "";
+    }
+
+    private static void RemoveSectionRule(Section sec, int index)
+    {
+        if (sec.Rules is null || index < 0 || index >= sec.Rules.Count) return;
+        sec.Rules.RemoveAt(index);
+    }
+
+    private static void AddTagRule(Tag tag)
+    {
+        tag.Rules ??= new List<string>();
+        tag.Rules.Add("");
+    }
+
+    private static void SetTagRule(Tag tag, int index, string? value)
+    {
+        if (tag.Rules is null || index < 0 || index >= tag.Rules.Count) return;
+        tag.Rules[index] = value ?? "";
+    }
+
+    private static void RemoveTagRule(Tag tag, int index)
+    {
+        if (tag.Rules is null || index < 0 || index >= tag.Rules.Count) return;
+        tag.Rules.RemoveAt(index);
+    }
+
+    private void AddAffil()
+    {
+        var v = _newAffil.Trim().ToUpperInvariant();
+        if (v.Length > 0 && !_cfg.Affils.Contains(v, StringComparer.OrdinalIgnoreCase))
+            _cfg.Affils.Add(v);
+        _newAffil = "";
+    }
+
+    private void AddBlacklist()
+    {
+        var v = _newBlacklist.Trim();
+        if (v.Length > 0 && !_cfg.GlobalBlacklist.Contains(v, StringComparer.OrdinalIgnoreCase))
+            _cfg.GlobalBlacklist.Add(v);
+        _newBlacklist = "";
+    }
+
+    private async Task ShowSiteRules()
+    {
+        try
+        {
+            _loadingRules = true;
+            _error = null;
+            var siteName = S.Sitename?.Trim();
+            if (string.IsNullOrWhiteSpace(siteName))
+            {
+                _error = "Enter a site name before loading CBFTP site rules.";
+                return;
+            }
+
+            var rules = await CbftpRacer.GetSiteRulesTextAsync(siteName);
+            _rulesText = string.IsNullOrWhiteSpace(rules) ? "No rules returned from CBFTP." : rules;
+            _showRules = true;
+            _status = $"Loaded CBFTP site rules for {siteName}.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loadingRules = false;
+        }
+    }
+
+    private void CloseRules() => _showRules = false;
+
+    private void Save()
+    {
+        try
+        {
+            _error = null;
+
+            S.MaxPreTime = _maxPreTime > 0 ? _maxPreTime : null;
+
+            if (!string.IsNullOrEmpty(_password))
+                Sv.Password = _password;
+
+            // Empty key box = keep whatever was stored, rather than wiping it - except
+            // for rows the user explicitly cleared.
+            var merged = _channels.Select(c =>
+            {
+                if (!string.IsNullOrEmpty(c.Key) || _stored is null || _clearedKeys.Contains(c.Index))
+                    return c;
+
+                var kept = _stored.SiteSettings?.GetType()
+                    .GetProperty($"BlowfishKey{c.Index}")?.GetValue(_stored.SiteSettings) as string;
+
+                return (c.Index, c.Channel, kept ?? "");
+            }).ToList();
+
+            SiteStore.WriteChannels(S, merged);
+
+            Store.Save(_cfg, _isNew ? null : _originalName);
+            Nav.NavigateTo("sites");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

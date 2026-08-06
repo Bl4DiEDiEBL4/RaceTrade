@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net8.0 (not net8.0-windows): the engine must run headless on Linux.
+         Anything that needs Windows APIs stays out of this project. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>RaceTrade.Engine</RootNamespace>
+    <AssemblyName>RaceTrade.Engine</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- The engine reads channel config via reflection (GetProperty("Chan{i}")),
+         which trimming silently breaks. Keep trimming off. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <!-- GHSA-2m69-gcr7-jv3q / CVE-2025-6965 is against the native SQLite library
+         (fixed in SQLite 3.50.2), not against Microsoft.Data.Sqlite. The advisory has
+         no package mapping, so NuGet audit flags whatever SQLitePCLRaw.lib.e_sqlite3
+         version gets pulled in. Pinning the newest 2.1.x bundle brings in a native
+         SQLite past the fix. Staying on 2.1.x (not 3.x) keeps the ABI that
+         Microsoft.Data.Sqlite expects. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
+  </ItemGroup>
+
+</Project>
