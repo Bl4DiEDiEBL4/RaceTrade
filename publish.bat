@@ -15,8 +15,12 @@ rem ============================================================================
 
 set ROOT=%~dp0
 set OUT=%ROOT%Release
-set WORK=%ROOT%work\publish
+set WORK=%TEMP%\RaceTrade-publish-%RANDOM%-%RANDOM%
 set PROJ=%ROOT%RaceTrade.Web\RaceTrade.Web.csproj
+
+rem Clean old one-folder WinForms release files that may still sit directly under
+rem Release\. The v2 release lives only in Release\win-x64 and Release\linux-x64.
+if exist "%OUT%" del /q "%OUT%\*" 2>nul
 
 where dotnet >nul 2>&1
 if errorlevel 1 (
@@ -74,4 +78,5 @@ echo.
 echo   Ship only the per-platform executable.
 echo   The data\ folder is created on first run next to the executable.
 echo.
+if exist "%WORK%" rd /s /q "%WORK%"
 endlocal

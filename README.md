@@ -1,155 +1,99 @@
 # RaceTrade v2 WebUI
 
-RaceTrade is an IRC race manager with CBFTP integration. The v2 branch splits the
-old WinForms application into a reusable racing engine and a local browser-based
-WebUI:
+RaceTrade is an IRC race manager with CBFTP integration and a local browser UI.
 
-- `RaceTrade.Engine` contains the racing, rules, CBFTP, IRC, PreBot, IMDB/Tiffara,
-  TMDb and TVMaze logic.
-- `RaceTrade.Web` is the new local WebUI that runs in the same executable as the
-  engine.
+The app runs as one executable. Start `RaceTrade.exe`, your browser opens, and the
+racing engine runs in the same process.
 
-The app still stores normal config/data folders such as `sites`, `cbftp`,
-`pre_bots`, `settings`, `sections` and `db`, but in v2 they live under the data
-folder shown on the Settings page. By default that folder is `data` next to the
-executable.
+## Download And Start
 
-## Screenshots
-
-Screenshots can be added here after uploading them to GitHub:
-
-- Dashboard
-- Site editor
-- CBFTP server/site editor
-- FXP client
-- Pre / Affil spread manager
-- PreBots
-- Logs
-
-## Highlights
-
-- Local WebUI with Dashboard, Sites, CBFTP servers, PreBots, Pre manager, FXP
-  client, Test release, Chat, Logs, Settings, Help and Changelog pages.
-- Site editor with ZNC, channels, announce parsing, sections, rules, affils,
-  blacklist, request auto-fill and CBFTP site access.
-- Section editor with Racing/Off toggles, CBFTP mappings, section rules, mapping
-  rules, IMDB movie filters and TVMaze series filters.
-- CBFTP site import and direct CBFTP-side site editing.
-- Dual-pane FXP browser.
-- PreDB release import and Affil Spread / Pre Manager flow.
-- Single-file self-contained publish output for Windows and Linux.
-
-## Run From Source
-
-Install the .NET 8 SDK, then run:
-
-```bat
-dotnet run --project RaceTrade.Web
-```
-
-The default local URL is:
+1. Download the Windows release.
+2. Put `RaceTrade.exe` in its own folder, for example `D:\RaceTrade`.
+3. Start `RaceTrade.exe`.
+4. Open the WebUI at:
 
 ```text
 http://127.0.0.1:8420
 ```
 
-The WebUI binds to loopback only by default. To expose it to another machine, set
-a password first:
+On first start RaceTrade creates a `data` folder next to the executable. That is
+normal. It contains your sites, CBFTP settings, prebots, logs and databases.
+
+## Run Multiple Copies
+
+Every running RaceTrade needs its own web port. If port `8420` is already used,
+start the next copy on another port:
 
 ```bat
-RaceTrade.exe --set-password
+RaceTrade.exe --port 8421
 ```
 
-Then change `Web:BindAddress` in `RaceTrade.Web/appsettings.json` or in the
-published `appsettings.json`. Prefer a VPN/tunnel over exposing the port directly,
-because RaceTrade stores site and CBFTP credentials.
-
-## Build Check
+For separate configs, also give each copy its own data folder:
 
 ```bat
-dotnet build RaceTrade.Modern.sln -c Debug
+RaceTrade.exe --port 8421 --data D:\RaceTrade-HV\data
+RaceTrade.exe --port 8422 --data D:\RaceTrade-KPN\data
 ```
 
-## Release Without Loose DLLs
-
-Do not package `bin\Release`. A normal .NET build folder always contains loose
-DLLs. That is expected build output, not the release package.
-
-For a clean single-executable release, run:
-
-```bat
-publish.bat
-```
-
-That script runs `dotnet publish` with single-file, self-contained settings and
-writes output under:
-
-```text
-Release\win-x64\RaceTrade.exe
-Release\linux-x64\RaceTrade
-```
-
-The important publish settings are already in `RaceTrade.Web/RaceTrade.Web.csproj`:
-
-```xml
-<PublishSingleFile>true</PublishSingleFile>
-<SelfContained>true</SelfContained>
-<IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
-<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-<PublishTrimmed>false</PublishTrimmed>
-```
-
-You can also publish one platform manually:
-
-```bat
-dotnet publish RaceTrade.Web\RaceTrade.Web.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false -p:DebugType=none -o Release\win-x64
-```
-
-For Linux:
-
-```bash
-./publish.sh linux-x64
-```
-
-On Debian, copy the Linux binary, make it executable if needed, and run it:
-
-```bash
-chmod +x RaceTrade
-./RaceTrade
-```
-
-The published app is self-contained, so users do not need to install .NET on the
-target machine.
+You can put the same command in a Windows shortcut target.
 
 ## Data Folder
 
-By default, RaceTrade creates and uses:
+Default:
 
 ```text
 data\
 ```
 
-next to the executable. Override it with:
+Override:
 
 ```bat
-RaceTrade.exe --data C:\RaceTradeData
+RaceTrade.exe --data D:\RaceTradeData
 ```
 
-Keep runtime data out of git. `Release/`, `work/`, `data/`, `cbftp/`, `db/`,
-`settings/` and generated config folders are ignored.
-
-## Repository Layout
+RaceTrade uses these folders inside the data folder:
 
 ```text
-RaceTrade.Engine/      racing engine and legacy-compatible services
-RaceTrade.Web/         local WebUI
-RaceTrade.Modern.sln   v2 solution
-publish.bat            Windows release publisher
-publish.sh             Linux/macOS shell publisher
+sites\
+cbftp\
+pre_bots\
+sections\
+settings\
+db\
+userdata\
+logs\
 ```
 
-## Notes
+## Features
 
-- Use the Help page inside the WebUI for the current configuration guide.
-- Use the Changelog page inside the WebUI for user-facing changes.
-- The legacy WinForms project is intentionally not part of this v2 branch.
+- Dashboard with trader status and quick actions.
+- Site editor for ZNC, channels, announce parsing, sections, rules, affils,
+  blacklist, requests and CBFTP site settings.
+- CBFTP server import and CBFTP-side site editor.
+- Dual-pane FXP browser.
+- PreBots and Pre / Affil Spread manager.
+- Test Release page for checking mappings, rules, IMDB/Tiffara/TMDb and TVMaze.
+- Chat, logs, settings, help and changelog pages.
+
+## Help And Changelog
+
+Open `Help` in the left menu for the current WebUI guide.
+
+Open `Changelog` in the left menu for user-facing changes.
+
+## Build A Release
+
+Only needed when building from source:
+
+```bat
+publish.bat
+```
+
+Upload only the executable from:
+
+```text
+Release\win-x64\RaceTrade.exe
+```
+
+Do not upload `bin\Release`. That folder is normal build output and can contain
+loose DLLs.

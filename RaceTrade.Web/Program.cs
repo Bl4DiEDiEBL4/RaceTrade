@@ -1,5 +1,7 @@
 ﻿using System.Net;
 using System.Security.Claims;
+using System.Net.Sockets;
+using System.Reflection;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using RaceTrade.Engine.Logging;
@@ -16,7 +18,19 @@ using RaceTrade.Web.Services;
 // resolved against the binary's folder; absolute paths work too, so the data can live
 // outside the install directory - handy when replacing the binary on an update.
 var appDir = ResolveAppDirectory();
-var dataRoot = ResolveDataRoot(args, appDir);
+var appArgs = NormalizeArgs(args);
+var startupSecurity = ResolveStartupSecurity(appArgs, appDir);
+var startupUrl = BuildUrl(startupSecurity);
+
+if (!IsPortAvailable(startupSecurity.BindAddress, startupSecurity.Port))
+{
+    Console.WriteLine($"RaceTrade web UI: {startupUrl}");
+    PrintPortInUse(startupUrl);
+    Environment.ExitCode = 1;
+    return;
+}
+
+var dataRoot = ResolveDataRoot(appArgs, appDir);
 Directory.CreateDirectory(dataRoot);
 Directory.SetCurrentDirectory(dataRoot);
 
@@ -50,7 +64,7 @@ Console.WriteLine($"Data directory: {dataRoot}");
 }
 
 // --- one-off password setup: RaceTrade --set-password ---------------------------------
-if (args.Contains("--set-password", StringComparer.OrdinalIgnoreCase))
+if (appArgs.Contains("--set-password", StringComparer.OrdinalIgnoreCase))
 {
     SetPasswordInteractive();
     return;
@@ -61,8 +75,9 @@ if (args.Contains("--set-password", StringComparer.OrdinalIgnoreCase))
 // look for wwwroot inside the data folder and serve no CSS ("WebRootPath was not found").
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
-    Args = args,
-    ContentRootPath = AppContext.BaseDirectory
+    Args = appArgs,
+    ContentRootPath = AppContext.BaseDirectory,
+    WebRootPath = ResolveWebRoot(appDir)
 });
 
 // An appsettings.json placed NEXT TO THE EXE wins over the one baked into the bundle.
@@ -133,6 +148,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var app = builder.Build();
+var appCss = ReadEmbeddedText("RaceTrade.Web.wwwroot.app.css");
 
 // Route every engine log line into the UI sink.
 LogManager.Configure(app.Services.GetRequiredService<ILogSink>());
@@ -168,6 +184,9 @@ if (!requireLogin)
 
 app.UseAuthorization();
 app.UseAntiforgery();
+
+app.MapGet("/app.css", () => Results.Content(appCss, "text/css"))
+    .AllowAnonymous();
 
 // --- login / logout -------------------------------------------------------------------
 // Minimal API endpoints rather than Blazor handlers: sign-in must write a cookie, which
@@ -223,7 +242,7 @@ app.MapPost("/auth/logout", async (HttpContext ctx) =>
 app.MapRazorComponents<RaceTrade.Web.Components.App>()
     .AddInteractiveServerRenderMode();
 
-var url = $"http://{(security.BindAddress == "0.0.0.0" ? "localhost" : security.BindAddress)}:{security.Port}";
+var url = BuildUrl(security);
 Console.WriteLine($"RaceTrade web UI: {url}");
 if (security.IsLoopbackOnly)
     Console.WriteLine("Listening on loopback only. Set Web:BindAddress to expose it (a password is then required).");
@@ -232,8 +251,8 @@ if (security.IsLoopbackOnly)
 // Registered on ApplicationStarted, not before app.Run(): at this point Kestrel has
 // actually bound the port, so we never open a browser at a URL that failed to come up and
 // never hide the console right before printing a bind error to it.
-var openBrowser = !args.Contains("--no-browser", StringComparer.OrdinalIgnoreCase);
-var keepConsole = args.Contains("--console", StringComparer.OrdinalIgnoreCase);
+var openBrowser = !appArgs.Contains("--no-browser", StringComparer.OrdinalIgnoreCase);
+var keepConsole = appArgs.Contains("--console", StringComparer.OrdinalIgnoreCase);
 
 app.Lifetime.ApplicationStarted.Register(() =>
 {
@@ -245,16 +264,9 @@ try
 {
     app.Run();
 }
-catch (IOException ex) when (ex.InnerException is System.Net.Sockets.SocketException)
+catch (IOException ex) when (ContainsSocketException(ex))
 {
-    // Almost always a previous RaceTrade still holding the port. An unhandled Kestrel
-    // bind failure buries that behind a stack trace, so say it plainly.
-    Console.WriteLine();
-    Console.WriteLine($"Could not listen on {url} - the port is already in use.");
-    Console.WriteLine("Another RaceTrade is probably still running. Close it, or:");
-    Console.WriteLine("    taskkill /IM RaceTrade.exe /F        (Windows)");
-    Console.WriteLine("    pkill RaceTrade                      (Linux)");
-    Console.WriteLine("Or pick a different port with Web:Port in appsettings.json.");
+    PrintPortInUse(url);
     Environment.ExitCode = 1;
 }
 
@@ -287,6 +299,140 @@ static string ResolveAppDirectory()
 
     return AppContext.BaseDirectory;
 }
+
+static string ResolveWebRoot(string appDir)
+{
+    var visible = Path.Combine(appDir, "wwwroot");
+    if (Directory.Exists(visible)) return visible;
+
+    var extracted = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+    if (Directory.Exists(extracted)) return extracted;
+
+    var empty = Path.Combine(Path.GetTempPath(), "RaceTrade", "wwwroot");
+    Directory.CreateDirectory(empty);
+    return empty;
+}
+
+static string[] NormalizeArgs(string[] args)
+{
+    var normalized = new List<string>();
+
+    for (var i = 0; i < args.Length; i++)
+    {
+        var raw = args[i];
+
+        if (TryReadCommandLineValue(args, ref i, raw, "port", out var port))
+        {
+            normalized.Add($"--Web:Port={port}");
+            continue;
+        }
+
+        if (TryReadCommandLineValue(args, ref i, raw, "bind", out var bindAddress))
+        {
+            normalized.Add($"--Web:BindAddress={bindAddress}");
+            continue;
+        }
+
+        normalized.Add(raw);
+    }
+
+    return normalized.ToArray();
+}
+
+static bool TryReadCommandLineValue(
+    string[] args,
+    ref int index,
+    string raw,
+    string name,
+    out string value)
+{
+    value = "";
+
+    var option = raw.TrimStart('-', '/');
+    var separator = option.IndexOf('=');
+    var key = separator >= 0 ? option[..separator] : option;
+
+    if (!key.Equals(name, StringComparison.OrdinalIgnoreCase))
+        return false;
+
+    if (separator >= 0)
+    {
+        value = option[(separator + 1)..];
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    if (index + 1 >= args.Length || args[index + 1].StartsWith('-') || args[index + 1].StartsWith('/'))
+        return false;
+
+    value = args[++index];
+    return !string.IsNullOrWhiteSpace(value);
+}
+
+static WebSecurityOptions ResolveStartupSecurity(string[] args, string appDir)
+{
+    var security = new WebSecurityOptions();
+    var settings = Path.Combine(appDir, "appsettings.json");
+
+    if (File.Exists(settings))
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(settings));
+            if (doc.RootElement.TryGetProperty("Web", out var web))
+            {
+                if (web.TryGetProperty("BindAddress", out var bindAddress))
+                {
+                    var v = bindAddress.GetString();
+                    if (!string.IsNullOrWhiteSpace(v)) security.BindAddress = v;
+                }
+
+                if (web.TryGetProperty("Port", out var port) && port.TryGetInt32(out var p))
+                    security.Port = p;
+            }
+        }
+        catch
+        {
+            // The real configuration loader reports malformed settings later. For this
+            // early port probe, fall back to defaults instead of blocking startup here.
+        }
+    }
+
+    for (var i = 0; i < args.Length; i++)
+    {
+        var raw = args[i];
+        var normalized = raw.TrimStart('-', '/');
+        var key = normalized;
+        string? value = null;
+
+        var equals = normalized.IndexOf('=');
+        if (equals >= 0)
+        {
+            key = normalized[..equals];
+            value = normalized[(equals + 1)..];
+        }
+        else if (i + 1 < args.Length && !args[i + 1].StartsWith('-') && !args[i + 1].StartsWith('/'))
+        {
+            value = args[i + 1];
+        }
+
+        if (key.Equals("Web:BindAddress", StringComparison.OrdinalIgnoreCase) ||
+            key.Equals("Web__BindAddress", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.IsNullOrWhiteSpace(value)) security.BindAddress = value;
+        }
+        else if ((key.Equals("Web:Port", StringComparison.OrdinalIgnoreCase) ||
+                  key.Equals("Web__Port", StringComparison.OrdinalIgnoreCase)) &&
+                 int.TryParse(value, out var port))
+        {
+            security.Port = port;
+        }
+    }
+
+    return security;
+}
+
+static string BuildUrl(WebSecurityOptions security) =>
+    $"http://{(security.BindAddress == "0.0.0.0" ? "localhost" : security.BindAddress)}:{security.Port}";
 
 /// <summary>
 /// Works out where the data lives, in order: --data on the command line, then Data:Root
@@ -321,6 +467,62 @@ static string ResolveDataRoot(string[] args, string appDir)
     }
 
     return Path.Combine(appDir, "data");
+}
+
+static string ReadEmbeddedText(string name)
+{
+    using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
+        ?? throw new InvalidOperationException($"Embedded asset '{name}' was not found.");
+    using var reader = new StreamReader(stream);
+    return reader.ReadToEnd();
+}
+
+static bool IsPortAvailable(string bindAddress, int port)
+{
+    try
+    {
+        var address = bindAddress.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            ? IPAddress.Loopback
+            : IPAddress.Parse(bindAddress);
+
+        using var listener = new TcpListener(address, port);
+        listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ExclusiveAddressUse, true);
+        listener.Start();
+        return true;
+    }
+    catch (SocketException)
+    {
+        return false;
+    }
+    catch (FormatException)
+    {
+        return true;
+    }
+}
+
+static bool ContainsSocketException(Exception? ex)
+{
+    while (ex is not null)
+    {
+        if (ex is SocketException || ex.GetType().Name.Contains("AddressInUse", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        ex = ex.InnerException;
+    }
+
+    return false;
+}
+
+static void PrintPortInUse(string url)
+{
+    Console.WriteLine();
+    Console.WriteLine($"Could not listen on {url} - the port is already in use.");
+    Console.WriteLine("Another RaceTrade is probably still running. Close it, or:");
+    Console.WriteLine("    taskkill /IM RaceTrade.exe /F        (Windows)");
+    Console.WriteLine("    pkill RaceTrade                      (Linux)");
+    Console.WriteLine("Or start another copy on a different port:");
+    Console.WriteLine("    RaceTrade.exe --port 8421");
+    Console.WriteLine("You can also set Web:Port in appsettings.json next to the executable.");
 }
 
 static void SetPasswordInteractive()

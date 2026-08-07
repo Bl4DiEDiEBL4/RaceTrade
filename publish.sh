@@ -12,8 +12,16 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$ROOT/Release"
-WORK="$ROOT/work/publish"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/racetrade-publish.XXXXXX")"
 PROJ="$ROOT/RaceTrade.Web/RaceTrade.Web.csproj"
+
+mkdir -p "$OUT"
+find "$OUT" -maxdepth 1 -type f -delete
+
+cleanup() {
+    rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 if ! command -v dotnet >/dev/null 2>&1; then
     echo "dotnet SDK not found. Install the .NET 8 SDK:" >&2

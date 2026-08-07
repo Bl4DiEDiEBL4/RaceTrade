@@ -50,6 +50,7 @@
        IncludeAllContentForSelfExtract then pulls it into the single-file exe. -->
   <ItemGroup>
     <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="wwwroot\app.css" LogicalName="RaceTrade.Web.wwwroot.app.css" />
   </ItemGroup>
 
   <!-- Never treat local build/runtime folders as web content. Without these explicit
