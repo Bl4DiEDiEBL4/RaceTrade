@@ -50,18 +50,33 @@ else
                 {
                     var value = $"{site}|{chan}";
                     <button type="button"
-                            class="@($"channel-tab {(value == _selected ? "active" : "")}")"
+                            class="@ChannelTabClass(value, chan)"
                             @onclick="() => SelectChannel(site, chan)">
                         <span class="channel-site">@site</span>
-                        <span class="channel-name">@chan</span>
+                        @if (IsPrivateMessage(chan))
+                        {
+                            <span class="channel-pm">PM</span>
+                            <span class="channel-name">@PrivateNick(chan)</span>
+                        }
+                        else
+                        {
+                            <span class="channel-name">@chan</span>
+                        }
                     </button>
                 }
             </div>
             <span class="spacer"></span>
             <button class="btn" @onclick="OpenKeyDialog" disabled="@(!ChatSvc.IsRunning || string.IsNullOrEmpty(_selected))">
-                <Icon Name="lock" Size="13" /><span>Channel key</span>
+                <Icon Name="lock" Size="13" /><span>@(CurrentIsPm ? "PM key" : "Channel key")</span>
             </button>
-            <span class="hint">@_users.Count users</span>
+            @if (CurrentIsPm)
+            {
+                <span class="hint">private message</span>
+            }
+            else
+            {
+                <span class="hint">@_users.Count users</span>
+            }
         </div>
 
         <div class="chat-body">
@@ -77,17 +92,28 @@ else
                 </tbody>
             </table>
 
-            <aside class="userlist">
-                @foreach (var u in _users)
+            <aside class="@($"userlist {(CurrentIsPm ? "pm-side" : "")}")">
+                @if (CurrentIsPm)
                 {
-                    <div class="@UserClass(u)">@u</div>
+                    <div class="pm-meta">
+                        <span class="pm-kicker">Private message</span>
+                        <strong>@PrivateNick(CurrentChannel)</strong>
+                        <span>Messages go straight to this nick with <code>PRIVMSG</code>.</span>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var u in _users)
+                    {
+                        <div class="@UserClass(u)">@u</div>
+                    }
                 }
             </aside>
         </div>
 
         <div class="chat-send">
             <input @bind="_draft" @bind:event="oninput" @onkeydown="OnKeyDown"
-                   placeholder="Message @CurrentChannel - Enter to send"
+                   placeholder="Message @CurrentTargetLabel - Enter to send"
                    disabled="@(!ChatSvc.IsRunning)" />
             <button class="btn primary" @onclick="Send" disabled="@(!ChatSvc.IsRunning)"><Icon Name="send" Size="13" /><span>Send</span></button>
         </div>
@@ -99,7 +125,7 @@ else
     <div class="modal-backdrop" @onclick="CloseKeyDialog">
         <div class="modal-card key-modal" @onclick:stopPropagation="true">
             <div class="modal-head">
-                <h2><Icon Name="lock" Size="15" />Blowfish key for @CurrentSite - @CurrentChannel</h2>
+                <h2><Icon Name="lock" Size="15" />Blowfish key for @KeyDialogTarget</h2>
                 <button class="btn" @onclick="CloseKeyDialog"><Icon Name="close" Size="13" /><span>Close</span></button>
             </div>
             <div class="key-modal-body">
@@ -113,7 +139,7 @@ else
                                autocomplete="off"
                                placeholder="channel Blowfish key" />
                         <div class="fh">
-                            Existing keys from the site channel list or chat-only keys are loaded here.
+                            Existing keys from the site channel list, chat-only keys, or saved PM keys are loaded here.
                             Saving writes an encrypted <code>chat_keys</code> entry to this site config.
                         </div>
                     </div>
@@ -162,6 +188,9 @@ else
 
     private string CurrentSite => _selected.Split('|', 2) is { Length: 2 } p ? p[0] : "";
     private string CurrentChannel => _selected.Split('|', 2) is { Length: 2 } p ? p[1] : "";
+    private bool CurrentIsPm => IsPrivateMessage(CurrentChannel);
+    private string CurrentTargetLabel => CurrentIsPm ? $"PM {PrivateNick(CurrentChannel)}" : CurrentChannel;
+    private string KeyDialogTarget => CurrentIsPm ? $"{CurrentSite} - PM {PrivateNick(CurrentChannel)}" : $"{CurrentSite} - {CurrentChannel}";
 
     protected override void OnInitialized()
     {
@@ -218,7 +247,7 @@ else
         _showKey = false;
         _keyMessageIsError = false;
         _keyMessage = string.IsNullOrEmpty(_channelKey)
-            ? "No key is currently configured for this channel."
+            ? $"No key is currently configured for this {(CurrentIsPm ? "private message" : "channel")}."
             : "Existing key loaded.";
         _showKeyDialog = true;
     }
@@ -263,6 +292,18 @@ else
 
     private static char RankPrefix(string user) =>
         string.IsNullOrWhiteSpace(user) ? '\0' : user.Trim()[0];
+
+    private string ChannelTabClass(string value, string channel)
+    {
+        var classes = $"channel-tab {(value == _selected ? "active" : "")}";
+        return IsPrivateMessage(channel) ? $"{classes} pm-tab" : classes;
+    }
+
+    private static bool IsPrivateMessage(string channel) =>
+        channel.StartsWith("PM:", StringComparison.OrdinalIgnoreCase);
+
+    private static string PrivateNick(string channel) =>
+        IsPrivateMessage(channel) ? channel[3..] : channel;
 
     private void Refresh()
     {

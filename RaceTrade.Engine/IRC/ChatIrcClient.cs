@@ -483,8 +483,22 @@ public class ChatIrcClient
             string pmNick = channel.Substring(3);
             lock (fishLock)
             {
-                return pmFishKeys.TryGetValue(pmNick, out var pmKey) ? pmKey : string.Empty;
+                if (pmFishKeys.TryGetValue(pmNick, out var pmKey))
+                    return pmKey;
             }
+
+            if (siteSettings.ChatKeys != null)
+            {
+                foreach (var kvp in siteSettings.ChatKeys)
+                {
+                    if (!string.Equals(NormalizeKeyName(kvp.Key), channel, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    return SecureConfig.Decrypt(kvp.Value) ?? string.Empty;
+                }
+            }
+
+            return string.Empty;
         }
 
         if (siteSettings.ChatKeys != null)

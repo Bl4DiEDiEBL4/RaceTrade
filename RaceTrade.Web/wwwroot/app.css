@@ -391,9 +391,26 @@ tr.lvl-debug td { color: var(--dim); }
     color: #ffffff;
 }
 
+.channel-tab.pm-tab {
+    border-color: rgba(255, 93, 104, .42);
+    background: rgba(255, 93, 104, .10);
+}
+
+.channel-tab.pm-tab.active {
+    border-color: #ff6f8f;
+    background: rgba(255, 93, 104, .18);
+}
+
 .channel-site {
     color: var(--accent);
     font-weight: 700;
+}
+
+.channel-pm {
+    color: #ff9ab0;
+    font-weight: 800;
+    margin-left: 5px;
+    margin-right: 1px;
 }
 
 .channel-name {
@@ -426,6 +443,30 @@ tr.lvl-debug td { color: var(--dim); }
     max-height: 65vh;
     overflow-y: auto;
     background: #0c111b;
+}
+
+.userlist.pm-side {
+    padding: 12px;
+}
+
+.pm-meta {
+    display: grid;
+    gap: 7px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.pm-meta strong {
+    color: #ff9ab0;
+    font-size: 14px;
+}
+
+.pm-kicker {
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
 }
 
 .user { padding: 2px 13px; color: var(--muted); font-size: 12px; font-weight: 600; }

@@ -92,7 +92,11 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
     public event Action? Changed;
 
     public IReadOnlyList<(string Site, string Channel)> Channels =>
-        _lines.Keys.OrderBy(k => k.Site).ThenBy(k => k.Channel).ToList();
+        _lines.Keys
+            .OrderBy(k => k.Site)
+            .ThenBy(k => IsPrivateMessage(k.Channel))
+            .ThenBy(k => PlainChannelName(k.Channel), StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     public IReadOnlyList<ChatLine> Lines(string site, string channel) =>
         _lines.TryGetValue(Key(site, channel), out var q) ? q.ToArray() : Array.Empty<ChatLine>();
@@ -131,6 +135,12 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
 
         return clean;
     }
+
+    private static bool IsPrivateMessage(string channel) =>
+        channel.StartsWith("PM:", StringComparison.OrdinalIgnoreCase);
+
+    private static string PlainChannelName(string channel) =>
+        IsPrivateMessage(channel) ? channel[3..] : channel;
 
     private static class IrcMarkup
     {
