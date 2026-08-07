@@ -43,14 +43,20 @@
 }
 else
 {
-    <div class="panel">
-        <div class="toolbar">
-            <select @bind="_selected" @bind:after="Refresh">
+    <div class="panel chat-panel">
+        <div class="toolbar chat-toolbar">
+            <div class="channel-tabs">
                 @foreach (var (site, chan) in _channels)
                 {
-                    <option value="@($"{site}|{chan}")">@site - @chan</option>
+                    var value = $"{site}|{chan}";
+                    <button type="button"
+                            class="@($"channel-tab {(value == _selected ? "active" : "")}")"
+                            @onclick="() => SelectChannel(site, chan)">
+                        <span class="channel-site">@site</span>
+                        <span class="channel-name">@chan</span>
+                    </button>
                 }
-            </select>
+            </div>
             <span class="spacer"></span>
             <button class="btn" @onclick="OpenKeyDialog" disabled="@(!ChatSvc.IsRunning || string.IsNullOrEmpty(_selected))">
                 <Icon Name="lock" Size="13" /><span>Channel key</span>
@@ -65,7 +71,7 @@ else
                     {
                         <tr class="lvl-@l.Level.ToString().ToLowerInvariant()">
                             <td class="ts">@l.At.ToString("HH:mm:ss")</td>
-                            <td class="msg">@l.Text</td>
+                            <td class="msg irc-line">@((MarkupString)l.Html)</td>
                         </tr>
                     }
                 </tbody>
@@ -74,7 +80,7 @@ else
             <aside class="userlist">
                 @foreach (var u in _users)
                 {
-                    <div class="user">@u</div>
+                    <div class="@UserClass(u)">@u</div>
                 }
             </aside>
         </div>
@@ -238,6 +244,25 @@ else
         CloseKeyDialog();
         return Task.CompletedTask;
     }
+
+    private void SelectChannel(string site, string channel)
+    {
+        _selected = $"{site}|{channel}";
+        Refresh();
+    }
+
+    private static string UserClass(string user) => RankPrefix(user) switch
+    {
+        '~' => "user rank-owner",
+        '&' => "user rank-admin",
+        '@' => "user rank-op",
+        '%' => "user rank-halfop",
+        '+' => "user rank-voice",
+        _ => "user"
+    };
+
+    private static char RankPrefix(string user) =>
+        string.IsNullOrWhiteSpace(user) ? '\0' : user.Trim()[0];
 
     private void Refresh()
     {

@@ -351,8 +351,73 @@ tr.lvl-debug td { color: var(--dim); }
 .pill.race-failed { background: rgba(255,76,92,.16); color: var(--err); }
 
 /* chat: message list + user list side by side, like the old tabbed chat window */
+.chat-panel {
+    padding: 0;
+    overflow: hidden;
+    background: #111722;
+}
+
+.chat-toolbar {
+    padding: 8px 12px;
+    background: rgba(8, 10, 15, .28);
+    border-bottom: 1px solid var(--line);
+}
+
+.channel-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+}
+
+.channel-tab {
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid rgba(151, 164, 188, .22);
+    border-radius: 4px;
+    background: #151c28;
+    color: #b8c7dd;
+    cursor: pointer;
+}
+
+.channel-tab:hover {
+    border-color: rgba(17, 215, 202, .45);
+    color: #ffffff;
+}
+
+.channel-tab.active {
+    background: rgba(17, 215, 202, .16);
+    border-color: var(--accent);
+    color: #ffffff;
+}
+
+.channel-site {
+    color: var(--accent);
+    font-weight: 700;
+}
+
+.channel-name {
+    margin-left: 5px;
+}
+
 .chat-body { display: flex; align-items: stretch; }
-.chat-lines { flex: 1; }
+.chat-lines {
+    flex: 1;
+    background: #090d15;
+}
+
+.chat-lines td {
+    background: #090d15;
+    border-bottom-color: rgba(255, 255, 255, .025);
+}
+
+.chat-lines tbody tr:hover td {
+    background: #101722;
+}
+
+.chat-lines .msg {
+    color: #dce6f4;
+}
 
 .userlist {
     flex: 0 0 165px;
@@ -360,10 +425,16 @@ tr.lvl-debug td { color: var(--dim); }
     padding: 8px 0;
     max-height: 65vh;
     overflow-y: auto;
+    background: #0c111b;
 }
 
-.user { padding: 2px 13px; color: var(--muted); font-size: 12px; }
+.user { padding: 2px 13px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .user:hover { color: var(--fg); }
+.user.rank-owner { color: #ff80d5; }
+.user.rank-admin { color: #f5df5a; }
+.user.rank-op { color: #20d7ca; }
+.user.rank-halfop { color: #8bf58b; }
+.user.rank-voice { color: #78b7ff; }
 
 /* send bar pinned under the message list */
 .chat-send {
@@ -371,9 +442,71 @@ tr.lvl-debug td { color: var(--dim); }
     gap: 7px;
     padding: 9px 12px;
     border-top: 1px solid var(--line);
+    background: #0c111b;
 }
 
-.chat-send input { flex: 1; }
+.chat-send input {
+    flex: 1;
+    min-height: 32px;
+    background: #090e16;
+    border: 1px solid rgba(151, 164, 188, .35);
+    color: var(--fg);
+    padding: 0 10px;
+}
+
+.chat-send input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(17, 215, 202, .22);
+    outline: 0;
+}
+
+.chat-send input::placeholder {
+    color: #8b96ab;
+}
+
+.irc-line {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.irc-bold { font-weight: 800; }
+.irc-underline { text-decoration: underline; }
+.irc-italic { font-style: italic; }
+.irc-reverse { background: rgba(230, 238, 255, .18); color: #ffffff; }
+
+.irc-fg-0 { color: #ffffff; }
+.irc-fg-1 { color: #d6deea; }
+.irc-fg-2 { color: #6fa8ff; }
+.irc-fg-3 { color: #24d27a; }
+.irc-fg-4 { color: #ff5d68; }
+.irc-fg-5 { color: #c78662; }
+.irc-fg-6 { color: #bd86ff; }
+.irc-fg-7 { color: #f0a54a; }
+.irc-fg-8 { color: #f5df5a; }
+.irc-fg-9 { color: #8bf58b; }
+.irc-fg-10 { color: #20d7ca; }
+.irc-fg-11 { color: #8ffaff; }
+.irc-fg-12 { color: #78b7ff; }
+.irc-fg-13 { color: #ff80d5; }
+.irc-fg-14 { color: #9aa8bd; }
+.irc-fg-15 { color: #cfd8e6; }
+
+.irc-bg-0 { background-color: rgba(255, 255, 255, .22); }
+.irc-bg-1 { background-color: rgba(214, 222, 234, .18); }
+.irc-bg-2 { background-color: rgba(111, 168, 255, .24); }
+.irc-bg-3 { background-color: rgba(36, 210, 122, .22); }
+.irc-bg-4 { background-color: rgba(255, 93, 104, .24); }
+.irc-bg-5 { background-color: rgba(199, 134, 98, .24); }
+.irc-bg-6 { background-color: rgba(189, 134, 255, .23); }
+.irc-bg-7 { background-color: rgba(240, 165, 74, .24); }
+.irc-bg-8 { background-color: rgba(245, 223, 90, .24); }
+.irc-bg-9 { background-color: rgba(139, 245, 139, .22); }
+.irc-bg-10 { background-color: rgba(32, 215, 202, .22); }
+.irc-bg-11 { background-color: rgba(143, 250, 255, .22); }
+.irc-bg-12 { background-color: rgba(120, 183, 255, .23); }
+.irc-bg-13 { background-color: rgba(255, 128, 213, .23); }
+.irc-bg-14 { background-color: rgba(154, 168, 189, .20); }
+.irc-bg-15 { background-color: rgba(207, 216, 230, .20); }
 
 @media (max-width: 720px) {
     .chat-body { flex-direction: column; }
@@ -1185,14 +1318,6 @@ pre.code {
 
 .chat-lines {
     min-width: 0;
-}
-
-.userlist {
-    background: rgba(8, 10, 15, .18);
-}
-
-.chat-send {
-    background: rgba(8, 10, 15, .26);
 }
 
 .login-wrap {
