@@ -37,7 +37,7 @@ var dataRoot = ResolveDataRoot(appArgs, appDir);
 Directory.CreateDirectory(dataRoot);
 Directory.SetCurrentDirectory(dataRoot);
 
-foreach (var sub in new[] { "sites", "cbftp", "pre_bots", "sections", "settings", "db", "userdata", "logs" })
+foreach (var sub in new[] { "sites", "cbftp", "pre_bots", "sections", "settings", "db", "userdata", "logs", "history" })
     Directory.CreateDirectory(sub);
 
 Console.WriteLine($"Data directory: {dataRoot}");
@@ -113,6 +113,7 @@ builder.WebHost.ConfigureKestrel(k =>
 builder.Services.AddSingleton(security);
 
 // Singletons: engine components are process-wide, not per browser circuit.
+builder.Services.AddSingleton<RaceHistoryStore>();
 builder.Services.AddSingleton<UiLogSink>();
 builder.Services.AddSingleton<ILogSink>(sp => sp.GetRequiredService<UiLogSink>());
 builder.Services.AddSingleton<WebIrcOutput>();

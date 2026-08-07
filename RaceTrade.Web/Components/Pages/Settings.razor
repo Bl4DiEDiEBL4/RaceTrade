@@ -3,6 +3,8 @@
 @inject Microsoft.Extensions.Hosting.IHostApplicationLifetime Lifetime
 @inject EngineHost Engine
 @inject ChatHost ChatSvc
+@inject RaceHistoryStore History
+@inject UiLogSink Sink
 
 <PageTitle>Settings - RaceTrade</PageTitle>
 
@@ -99,6 +101,41 @@
                 }
             </tbody>
         </table>
+    </div>
+
+    <div class="card">
+        <div class="card-title">HISTORY / RESET</div>
+        <table class="grid tight">
+            <tbody>
+                <tr><td>Releases seen</td><td class="right">@_historyStats.Detected</td></tr>
+                <tr><td>Unique releases</td><td class="right">@_historyStats.UniqueReleases</td></tr>
+                <tr><td>Race events</td><td class="right">@_historyStats.Events</td></tr>
+            </tbody>
+        </table>
+
+        <div class="card-actions">
+            @if (!_confirmClearHistory)
+            {
+                <button class="btn danger" @onclick="() => _confirmClearHistory = true">
+                    <Icon Name="trash" Size="13" /><span>Clear release history</span>
+                </button>
+            }
+            else
+            {
+                <span class="fh inline">Really clear history?</span>
+                <button class="btn danger" @onclick="ClearRaceHistory">Yes</button>
+                <button class="btn" @onclick="() => _confirmClearHistory = false">Cancel</button>
+            }
+
+            <button class="btn" @onclick="ClearLiveLogs">
+                <Icon Name="trash" Size="13" /><span>Clear live logs</span>
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_historyMessage))
+        {
+            <p class="fh">@_historyMessage</p>
+        }
     </div>
 </div>
 
@@ -287,6 +324,9 @@ sudo systemctl enable --now racetrade</pre>
     private string _tmdbKey = "";
     private string _tmdbBearer = "";
     private bool _hasTmdbKey, _hasTmdbBearer, _saved;
+    private RaceHistoryStore.RaceHistoryStats _historyStats = new(0, 0, 0);
+    private bool _confirmClearHistory;
+    private string _historyMessage = "";
     private string _bindAddress = "";
     private int _webPort;
     private string _dataRootSetting = "";
@@ -311,13 +351,30 @@ sudo systemctl enable --now racetrade</pre>
         LoadWebAccess();
         LoadLookup();
         CountData();
+        RefreshHistoryStats();
     }
 
     private void CountData()
     {
-        _dataCounts = new[] { "sites", "cbftp", "pre_bots", "sections", "settings", "db" }
+        _dataCounts = new[] { "sites", "cbftp", "pre_bots", "sections", "settings", "db", "history" }
             .Select(d => (d, Directory.Exists(d) ? Directory.GetFiles(d).Length : 0))
             .ToList();
+    }
+
+    private void RefreshHistoryStats() => _historyStats = History.GetStats();
+
+    private void ClearRaceHistory()
+    {
+        History.Clear();
+        _confirmClearHistory = false;
+        _historyMessage = "Release history cleared.";
+        RefreshHistoryStats();
+    }
+
+    private void ClearLiveLogs()
+    {
+        Sink.Clear();
+        _historyMessage = "Live log buffer cleared. Persistent release history was not changed.";
     }
 
     private void ApplyEngine()

@@ -321,6 +321,13 @@ table.grid tbody tr:hover td { background: #262d3b; }
 .logs .ch { color: var(--muted); white-space: nowrap; width: 1%; font-size: 11px; }
 .logs .site { color: var(--accent); white-space: nowrap; width: 1%; }
 .logs .msg { white-space: pre-wrap; word-break: break-word; }
+.history .ts { white-space: nowrap; color: var(--dim); font-family: Consolas, "Cascadia Mono", monospace; font-size: 11.5px; }
+.history .site { color: var(--accent); white-space: nowrap; }
+.history .release-name {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 12px;
+    word-break: break-word;
+}
 
 tr.lvl-error .msg { color: var(--err); }
 tr.lvl-warning .msg { color: var(--warn); }
@@ -337,6 +344,11 @@ tr.lvl-debug td { color: var(--dim); }
 
 .pill.on { background: rgba(42,199,122,.16); color: var(--ok); }
 .pill.off { background: rgba(150,160,178,.14); color: var(--muted); }
+.pill.race-detected { background: rgba(17, 215, 202, .14); color: var(--accent); }
+.pill.race-racing { background: rgba(42,199,122,.16); color: var(--ok); }
+.pill.race-completed { background: rgba(42,199,122,.16); color: var(--ok); }
+.pill.race-filtered { background: rgba(245,172,70,.14); color: var(--warn); }
+.pill.race-failed { background: rgba(255,76,92,.16); color: var(--err); }
 
 /* chat: message list + user list side by side, like the old tabbed chat window */
 .chat-body { display: flex; align-items: stretch; }

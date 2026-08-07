@@ -1,0 +1,91 @@
+@page "/history"
+@implements IDisposable
+@inject RaceHistoryStore HistoryStore
+
+<PageTitle>Release History - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="logs" Size="18" />Release History</h1>
+    <a class="btn" href="settings"><Icon Name="settings" Size="13" /><span>Reset in Settings</span></a>
+</div>
+
+<div class="panel">
+    <div class="toolbar">
+        <input type="text" placeholder="Search release, site, section..." @bind="_query" @bind:event="oninput" @bind:after="Refresh" />
+        <select @bind="_status" @bind:after="Refresh">
+            <option value="">All statuses</option>
+            <option value="Detected">Detected</option>
+            <option value="Filtered">Filtered</option>
+            <option value="Racing">Racing</option>
+            <option value="Completed">Completed</option>
+            <option value="Failed">Failed</option>
+        </select>
+        <span class="spacer"></span>
+        <span class="hint">@_stats.UniqueReleases release(s), @_stats.Events event(s) stored</span>
+    </div>
+
+    @if (_entries.Count == 0)
+    {
+        <div class="empty">No matching release history.</div>
+    }
+    else
+    {
+        <table class="grid history">
+            <thead>
+                <tr>
+                    <th>LAST SEEN</th>
+                    <th>STATUS</th>
+                    <th>SITE</th>
+                    <th>SECTION</th>
+                    <th>RELEASE</th>
+                    <th>DETAIL</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _entries)
+                {
+                    <tr>
+                        <td class="ts">@e.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td><span class="@StatusClass(e.Status)">@e.Status</span></td>
+                        <td class="site">@e.Site</td>
+                        <td>@e.Section</td>
+                        <td class="release-name">@e.Release</td>
+                        <td class="dim">@HistoryDetail(e)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<RaceHistoryStore.RaceReleaseSummary> _entries = Array.Empty<RaceHistoryStore.RaceReleaseSummary>();
+    private RaceHistoryStore.RaceHistoryStats _stats = new(0, 0, 0);
+    private string _query = "";
+    private string _status = "";
+
+    protected override void OnInitialized()
+    {
+        HistoryStore.Changed += OnHistoryChanged;
+        Refresh();
+    }
+
+    private void OnHistoryChanged() => InvokeAsync(() => { Refresh(); StateHasChanged(); });
+
+    private void Refresh()
+    {
+        _stats = HistoryStore.GetStats();
+        _entries = HistoryStore.LatestReleases(500, _query, _status);
+    }
+
+    private static string StatusClass(string status) => $"pill race-{status.ToLowerInvariant()}";
+
+    private static string HistoryDetail(RaceHistoryStore.RaceReleaseSummary e)
+    {
+        if (!string.IsNullOrWhiteSpace(e.Reason)) return e.Reason;
+        if (!string.IsNullOrWhiteSpace(e.TargetSite)) return $"Target: {e.TargetSite}";
+        return e.EventCount > 1 ? $"{e.EventCount} event(s)" : "";
+    }
+
+    public void Dispose() => HistoryStore.Changed -= OnHistoryChanged;
+}

@@ -23,6 +23,7 @@ public sealed class UiLogSink : ILogSink, IDisposable
 {
     private const int MaxEntries = 5000;
 
+    private readonly RaceHistoryStore _history;
     private readonly ConcurrentQueue<LogEvent> _events = new();
     private readonly Timer _notifyTimer;
     private int _count;
@@ -31,8 +32,10 @@ public sealed class UiLogSink : ILogSink, IDisposable
     /// <summary>Raised (on a timer thread) when new events have arrived.</summary>
     public event Action? Changed;
 
-    public UiLogSink()
+    public UiLogSink(RaceHistoryStore history)
     {
+        _history = history;
+
         // Coalesce notifications to ~4/sec: enough to feel live, cheap enough that a
         // race storm cannot saturate the circuit.
         _notifyTimer = new Timer(_ =>
@@ -48,6 +51,7 @@ public sealed class UiLogSink : ILogSink, IDisposable
     {
         if (entry is null) return;
 
+        _history.Capture(entry);
         _events.Enqueue(entry);
         Interlocked.Increment(ref _pendingSinceLastNotify);
 
@@ -68,6 +72,13 @@ public sealed class UiLogSink : ILogSink, IDisposable
         if (minLevel.HasValue) q = q.Where(e => e.Level >= minLevel.Value);
 
         return q.Reverse().Take(max).ToList();
+    }
+
+    public void Clear()
+    {
+        while (_events.TryDequeue(out _)) { }
+        Interlocked.Exchange(ref _count, 0);
+        Interlocked.Increment(ref _pendingSinceLastNotify);
     }
 
     public void Dispose() => _notifyTimer.Dispose();

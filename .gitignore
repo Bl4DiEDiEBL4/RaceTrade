@@ -370,8 +370,12 @@ data/
 # RaceTrade runtime data
 /cbftp/
 /db/
+/history/
+/pre_bots/
 /sections/
 /settings/
+/sites/
+/userdata/
 /RaceTrade/CBFTP/cbftp_config.json
 /RaceTrade/db/
 /RaceTrade/settings/

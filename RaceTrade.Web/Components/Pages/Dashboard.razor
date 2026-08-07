@@ -1,6 +1,7 @@
 @page "/"
 @implements IDisposable
 @inject UiLogSink Sink
+@inject RaceHistoryStore History
 
 <PageTitle>Dashboard - RaceTrade</PageTitle>
 
@@ -90,25 +91,73 @@
     }
 </div>
 
+<h2>RELEASE HISTORY</h2>
+<div class="panel">
+    <div class="toolbar">
+        <span class="hint">@_historyStats.UniqueReleases release(s), @_historyStats.Events race event(s) stored</span>
+        <span class="spacer"></span>
+        <a class="btn" href="history"><Icon Name="logs" Size="13" /><span>Full history</span></a>
+    </div>
+
+    @if (_releaseHistory.Count == 0)
+    {
+        <div class="empty">No releases seen yet.</div>
+    }
+    else
+    {
+        <table class="grid history">
+            <thead>
+                <tr>
+                    <th>LAST SEEN</th>
+                    <th>STATUS</th>
+                    <th>SITE</th>
+                    <th>SECTION</th>
+                    <th>RELEASE</th>
+                    <th>DETAIL</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _releaseHistory)
+                {
+                    <tr>
+                        <td class="ts">@e.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td><span class="@StatusClass(e.Status)">@e.Status</span></td>
+                        <td class="site">@e.Site</td>
+                        <td>@e.Section</td>
+                        <td class="release-name">@e.Release</td>
+                        <td class="dim">@HistoryDetail(e)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
 @code {
     private IReadOnlyList<LogEvent> _recent = Array.Empty<LogEvent>();
+    private IReadOnlyList<RaceHistoryStore.RaceReleaseSummary> _releaseHistory = Array.Empty<RaceHistoryStore.RaceReleaseSummary>();
+    private RaceHistoryStore.RaceHistoryStats _historyStats = new(0, 0, 0);
     private int _errors, _warnings, _races, _siteCount;
 
     protected override void OnInitialized()
     {
         Sink.Changed += OnSinkChanged;
+        History.Changed += OnHistoryChanged;
         _siteCount = CountSites();
         Refresh();
     }
 
     private void OnSinkChanged() => InvokeAsync(() => { Refresh(); StateHasChanged(); });
+    private void OnHistoryChanged() => InvokeAsync(() => { Refresh(); StateHasChanged(); });
 
     private void Refresh()
     {
         var all = Sink.Snapshot(1000);
         _errors = all.Count(e => e.Level == LogLevel.Error);
         _warnings = all.Count(e => e.Level == LogLevel.Warning);
-        _races = all.Count(e => e.Channel == LogChannel.Race);
+        _historyStats = History.GetStats();
+        _races = _historyStats.Detected;
+        _releaseHistory = History.LatestReleases(10);
         _recent = all.Take(20).ToList();
     }
 
@@ -124,5 +173,18 @@
         catch { return 0; }
     }
 
-    public void Dispose() => Sink.Changed -= OnSinkChanged;
+    private static string StatusClass(string status) => $"pill race-{status.ToLowerInvariant()}";
+
+    private static string HistoryDetail(RaceHistoryStore.RaceReleaseSummary e)
+    {
+        if (!string.IsNullOrWhiteSpace(e.Reason)) return e.Reason;
+        if (!string.IsNullOrWhiteSpace(e.TargetSite)) return $"Target: {e.TargetSite}";
+        return e.EventCount > 1 ? $"{e.EventCount} event(s)" : "";
+    }
+
+    public void Dispose()
+    {
+        Sink.Changed -= OnSinkChanged;
+        History.Changed -= OnHistoryChanged;
+    }
 }
