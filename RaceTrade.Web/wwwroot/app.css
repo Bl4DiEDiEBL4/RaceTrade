@@ -985,8 +985,29 @@ body {
     position: sticky;
     top: 0;
     height: 100vh;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     border-right: 1px solid rgba(255, 255, 255, .06);
     box-shadow: 14px 0 30px rgba(0, 0, 0, .24);
+}
+
+.sidebar::-webkit-scrollbar {
+    width: 8px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+    background: rgba(151, 164, 188, .20);
+    border-radius: 8px;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover {
+    background: rgba(17, 215, 202, .34);
 }
 
 .brand {
@@ -1394,6 +1415,8 @@ pre.code {
     .sidebar {
         position: static;
         height: auto;
+        overflow: visible;
+        scrollbar-gutter: auto;
         box-shadow: none;
         border-right: 0;
         border-bottom: 1px solid rgba(255, 255, 255, .06);
