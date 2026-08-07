@@ -2,6 +2,16 @@
 
 RaceTrade is an IRC race manager with CBFTP integration and a local browser UI.
 
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/a3b0a5b9-0620-4cec-96a6-2f2e5fc03b38" />
+
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/d5f79c5c-bbd6-450d-b467-227d2c308348" />
+
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/36b1b3ce-aa64-46ac-896d-10493c1b1a74" />
+
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/4b93fd16-a2b8-4c3f-85f6-0410fd1bd0c8" />
+
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/04e126f3-30df-4aff-98e3-a6d162922112" />
+
 The app runs as one executable. Start `RaceTrade.exe`, your browser opens, and the
 racing engine runs in the same process.
 
