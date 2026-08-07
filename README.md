@@ -2,15 +2,27 @@
 
 RaceTrade is an IRC race manager with CBFTP integration and a local browser UI.
 
-<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/a3b0a5b9-0620-4cec-96a6-2f2e5fc03b38" />
+## Screenshots
 
-<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/d5f79c5c-bbd6-450d-b467-227d2c308348" />
+Dashboard
 
-<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/36b1b3ce-aa64-46ac-896d-10493c1b1a74" />
+<img width="1912" height="914" alt="RaceTrade dashboard" src="https://github.com/user-attachments/assets/a3b0a5b9-0620-4cec-96a6-2f2e5fc03b38" />
 
-<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/4b93fd16-a2b8-4c3f-85f6-0410fd1bd0c8" />
+Site editor
 
-<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/04e126f3-30df-4aff-98e3-a6d162922112" />
+<img width="1912" height="914" alt="RaceTrade site editor" src="https://github.com/user-attachments/assets/d5f79c5c-bbd6-450d-b467-227d2c308348" />
+
+CBFTP servers and site import
+
+<img width="1912" height="914" alt="RaceTrade CBFTP servers and site import" src="https://github.com/user-attachments/assets/36b1b3ce-aa64-46ac-896d-10493c1b1a74" />
+
+FXP Client
+
+<img width="1912" height="914" alt="RaceTrade FXP client" src="https://github.com/user-attachments/assets/4b93fd16-a2b8-4c3f-85f6-0410fd1bd0c8" />
+
+Help
+
+<img width="1912" height="914" alt="RaceTrade help page" src="https://github.com/user-attachments/assets/04e126f3-30df-4aff-98e3-a6d162922112" />
 
 The app runs as one executable. Start `RaceTrade.exe`, your browser opens, and the
 racing engine runs in the same process.
@@ -90,20 +102,3 @@ logs\
 Open `Help` in the left menu for the current WebUI guide.
 
 Open `Changelog` in the left menu for user-facing changes.
-
-## Build A Release
-
-Only needed when building from source:
-
-```bat
-publish.bat
-```
-
-Upload only the executable from:
-
-```text
-Release\win-x64\RaceTrade.exe
-```
-
-Do not upload `bin\Release`. That folder is normal build output and can contain
-loose DLLs.
