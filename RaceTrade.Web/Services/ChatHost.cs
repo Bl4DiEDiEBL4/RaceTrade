@@ -201,6 +201,41 @@ public sealed class ChatHost : IAsyncDisposable
             Color.White);
     }
 
+    public string GetChannelKey(string siteName, string channel)
+    {
+        if (string.IsNullOrWhiteSpace(siteName) || string.IsNullOrWhiteSpace(channel))
+            return "";
+
+        return _clients.TryGetValue(siteName, out var client)
+            ? client.GetChannelKey(channel)
+            : "";
+    }
+
+    public void SetChannelKey(string siteName, string channel, string utf8Key, bool persist)
+    {
+        if (string.IsNullOrWhiteSpace(siteName) ||
+            string.IsNullOrWhiteSpace(channel) ||
+            string.IsNullOrWhiteSpace(utf8Key))
+        {
+            return;
+        }
+
+        if (!_clients.TryGetValue(siteName, out var client))
+        {
+            LogManager.Warning($"Chat: not connected to '{siteName}'.");
+            return;
+        }
+
+        client.SetChannelKey(channel, utf8Key, persist);
+        _output.AppendChannelMessage(
+            siteName,
+            channel,
+            persist
+                ? $"[FiSH] Blowfish key saved for {channel}"
+                : $"[FiSH] Blowfish key set for {channel} until reconnect",
+            Color.Green);
+    }
+
     private string NickOf(string siteName) =>
         SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) && cfg?.Server?.Username is { } u
             ? u.Split('/')[0]

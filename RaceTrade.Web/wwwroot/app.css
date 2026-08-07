@@ -1372,6 +1372,28 @@ pre.code {
 
 .modal-head h2 { margin: 0; color: var(--fg); }
 
+.key-modal {
+    width: min(620px, 96vw);
+}
+
+.key-modal-body {
+    padding: 16px;
+}
+
+.key-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 12px;
+}
+
+.check-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--muted);
+}
+
 .rules-modal pre.code {
     max-height: calc(88vh - 78px);
     margin: 0;

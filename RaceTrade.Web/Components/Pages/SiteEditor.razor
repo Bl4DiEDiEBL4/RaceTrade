@@ -209,13 +209,13 @@
 
                 <label>Section prefix</label>
                 <div>
-                    <input type="text" @bind="S.SectionPrefix" placeholder="PRE-" @bind:event="oninput" />
+                    <input type="text" @bind="S.SectionPrefix" placeholder="[" @bind:event="oninput" />
                     <div class="fh">Stripped from the front of the captured section, if present.</div>
                 </div>
 
                 <label>Section suffix</label>
                 <div>
-                    <input type="text" @bind="S.SectionSuffix" placeholder="-SECTION" @bind:event="oninput" />
+                    <input type="text" @bind="S.SectionSuffix" placeholder="]" @bind:event="oninput" />
                     <div class="fh">Stripped from the end of the captured section.</div>
                 </div>
 
@@ -265,10 +265,10 @@
                 <div><input type="text" @bind="S.PreReleaseRegexPattern" placeholder="(\S+-\w+)$" @bind:event="oninput" /></div>
 
                 <label>Pre section prefix</label>
-                <div><input type="text" @bind="S.PreSectionPrefix" @bind:event="oninput" /></div>
+                <div><input type="text" @bind="S.PreSectionPrefix" placeholder="[" @bind:event="oninput" /></div>
 
                 <label>Pre section suffix</label>
-                <div><input type="text" @bind="S.PreSectionSuffix" @bind:event="oninput" /></div>
+                <div><input type="text" @bind="S.PreSectionSuffix" placeholder="]" @bind:event="oninput" /></div>
             </div>
 
             <h2>TEST PRE</h2>

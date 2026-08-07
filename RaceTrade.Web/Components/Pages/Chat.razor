@@ -52,6 +52,9 @@ else
                 }
             </select>
             <span class="spacer"></span>
+            <button class="btn" @onclick="OpenKeyDialog" disabled="@(!ChatSvc.IsRunning || string.IsNullOrEmpty(_selected))">
+                <Icon Name="lock" Size="13" /><span>Channel key</span>
+            </button>
             <span class="hint">@_users.Count users</span>
         </div>
 
@@ -85,6 +88,58 @@ else
     </div>
 }
 
+@if (_showKeyDialog)
+{
+    <div class="modal-backdrop" @onclick="CloseKeyDialog">
+        <div class="modal-card key-modal" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2><Icon Name="lock" Size="15" />Blowfish key for @CurrentSite - @CurrentChannel</h2>
+                <button class="btn" @onclick="CloseKeyDialog"><Icon Name="close" Size="13" /><span>Close</span></button>
+            </div>
+            <div class="key-modal-body">
+                <div class="form-grid wide">
+                    <label>UTF-8 key</label>
+                    <div>
+                        <input type="@(_showKey ? "text" : "password")"
+                               @bind="_channelKey"
+                               @bind:event="oninput"
+                               @onkeydown="OnKeyDialogKeyDown"
+                               autocomplete="off"
+                               placeholder="channel Blowfish key" />
+                        <div class="fh">
+                            Existing keys from the site channel list or chat-only keys are loaded here.
+                            Saving writes an encrypted <code>chat_keys</code> entry to this site config.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="key-options">
+                    <label class="check-inline">
+                        <input type="checkbox" @bind="_showKey" />
+                        <span>Show key</span>
+                    </label>
+                    <label class="check-inline">
+                        <input type="checkbox" @bind="_persistKey" />
+                        <span>Save to site config</span>
+                    </label>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_keyMessage))
+                {
+                    <div class="@($"fh {(_keyMessageIsError ? "err-text" : "")}")">@_keyMessage</div>
+                }
+
+                <div class="form-actions">
+                    <button class="btn primary" @onclick="SaveChannelKey">
+                        <Icon Name="save" Size="13" /><span>Save key</span>
+                    </button>
+                    <button class="btn" @onclick="CloseKeyDialog">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private IReadOnlyList<(string Site, string Channel)> _channels = Array.Empty<(string, string)>();
     private IReadOnlyList<WebIrcOutput.ChatLine> _lines = Array.Empty<WebIrcOutput.ChatLine>();
@@ -92,7 +147,14 @@ else
     private string _selected = "";
     private string _draft = "";
     private bool _busy;
+    private bool _showKeyDialog;
+    private bool _persistKey = true;
+    private bool _showKey;
+    private string _channelKey = "";
+    private string _keyMessage = "";
+    private bool _keyMessageIsError;
 
+    private string CurrentSite => _selected.Split('|', 2) is { Length: 2 } p ? p[0] : "";
     private string CurrentChannel => _selected.Split('|', 2) is { Length: 2 } p ? p[1] : "";
 
     protected override void OnInitialized()
@@ -123,6 +185,11 @@ else
         if (e.Key == "Enter") await Send();
     }
 
+    private async Task OnKeyDialogKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SaveChannelKey();
+    }
+
     private async Task Send()
     {
         var text = _draft;
@@ -133,6 +200,43 @@ else
 
         _draft = "";                     // cleared first: sending is async and may fail
         await ChatSvc.SendAsync(parts[0], parts[1], text);
+    }
+
+    private void OpenKeyDialog()
+    {
+        if (string.IsNullOrEmpty(CurrentSite) || string.IsNullOrEmpty(CurrentChannel))
+            return;
+
+        _channelKey = ChatSvc.GetChannelKey(CurrentSite, CurrentChannel);
+        _persistKey = true;
+        _showKey = false;
+        _keyMessageIsError = false;
+        _keyMessage = string.IsNullOrEmpty(_channelKey)
+            ? "No key is currently configured for this channel."
+            : "Existing key loaded.";
+        _showKeyDialog = true;
+    }
+
+    private void CloseKeyDialog()
+    {
+        _showKeyDialog = false;
+        _channelKey = "";
+        _keyMessage = "";
+        _keyMessageIsError = false;
+    }
+
+    private Task SaveChannelKey()
+    {
+        if (string.IsNullOrWhiteSpace(_channelKey))
+        {
+            _keyMessage = "Fill in a key first.";
+            _keyMessageIsError = true;
+            return Task.CompletedTask;
+        }
+
+        ChatSvc.SetChannelKey(CurrentSite, CurrentChannel, _channelKey, _persistKey);
+        CloseKeyDialog();
+        return Task.CompletedTask;
     }
 
     private void Refresh()
