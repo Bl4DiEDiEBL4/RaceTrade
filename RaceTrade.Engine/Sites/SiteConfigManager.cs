@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using Newtonsoft.Json;
-using RaceTrade.Engine.Logging;
 using RaceTrade;
 
 /// <summary>
@@ -13,17 +12,6 @@ public static class SiteConfigManager
 {
     private static readonly ConcurrentDictionary<string, SiteConfig> ConfigCache = new();
     private static readonly object cacheLock = new object();
-    private static readonly JsonSerializerSettings TolerantDeserializeSettings = new()
-    {
-        Error = (_, args) =>
-        {
-            var path = string.IsNullOrWhiteSpace(args.ErrorContext.Path)
-                ? "unknown path"
-                : args.ErrorContext.Path;
-            Console.WriteLine($"[SiteConfigManager] Ignoring invalid site config value at '{path}': {args.ErrorContext.Error.Message}");
-            args.ErrorContext.Handled = true;
-        }
-    };
 
     // Template/placeholder files to ignore
     private static readonly string[] IgnoredSiteNames = { "new_site", "template", "example" };
@@ -99,11 +87,7 @@ public static class SiteConfigManager
             try
             {
                 var json = File.ReadAllText(filePath);
-                // Legacy/hand-edited configs can contain values such as "" where a
-                // newer model expects int/bool/object. RaceHelper's JObject loader has
-                // always tolerated that; keep the typed loader equally forgiving so
-                // Start does not reject otherwise usable site files.
-                config = JsonConvert.DeserializeObject<SiteConfig>(json, TolerantDeserializeSettings);
+                config = JsonConvert.DeserializeObject<SiteConfig>(json);
 
                 if (config == null)
                 {
@@ -162,11 +146,8 @@ public static class SiteConfigManager
             config = GetSiteConfig(siteName);
             return true;
         }
-        catch (Exception ex)
+        catch
         {
-            var message = $"Failed to load site config '{siteName}': {ex.Message}";
-            Console.WriteLine($"[SiteConfigManager] {message}");
-            try { LogManager.Warning(message); } catch { }
             config = null;
             return false;
         }
