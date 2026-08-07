@@ -47,6 +47,7 @@ public sealed class ChatHost : IAsyncDisposable
             _cts = new CancellationTokenSource();
             _siteTasks.Clear();
             _clients.Clear();
+            SiteConfigManager.Invalidate();
 
             var token = _cts.Token;
             var started = 0;
@@ -128,12 +129,18 @@ public sealed class ChatHost : IAsyncDisposable
                 started++;
             }
 
-            IsRunning = true;
-
             if (started == 0)
+            {
+                _cts.Dispose();
+                _cts = null;
+                IsRunning = false;
                 LogManager.Warning("Chat started, but no site has IRC credentials. Check the Sites page.");
+            }
             else
+            {
+                IsRunning = true;
                 LogManager.Success($"Chat started: connecting {started} site(s).");
+            }
         }
         finally
         {

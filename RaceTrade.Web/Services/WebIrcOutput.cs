@@ -24,6 +24,7 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
     private const int MaxLinesPerChannel = 500;
 
     private readonly UiLogSink _sink;
+    private int _notifyScheduled;
 
     // (site, channel) -> recent lines, and -> user list
     private readonly ConcurrentDictionary<(string Site, string Channel), ConcurrentQueue<ChatLine>> _lines = new();
@@ -63,19 +64,21 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
         // Bound the buffer without locking; a brief overshoot is fine.
         while (q.Count > MaxLinesPerChannel && q.TryDequeue(out _)) { }
 
-        Changed?.Invoke();
+        ScheduleChanged();
     }
 
     public void AddUser(string siteName, string channelName, string username)
     {
         _users.GetOrAdd(Key(siteName, channelName),
             _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase))[username] = 0;
+        ScheduleChanged();
     }
 
     public void RemoveUser(string siteName, string channelName, string username)
     {
         if (_users.TryGetValue(Key(siteName, channelName), out var set))
             set.TryRemove(username, out _);
+        ScheduleChanged();
     }
 
     public void UpdateUserList(string siteName, string channelName, List<string> users)
@@ -85,11 +88,25 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
             set[u] = 0;
 
         _users[Key(siteName, channelName)] = set;
+        ScheduleChanged();
     }
 
     // ---- read side, for the Blazor chat page --------------------------------------
 
     public event Action? Changed;
+
+    private void ScheduleChanged()
+    {
+        if (Interlocked.Exchange(ref _notifyScheduled, 1) == 1)
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            Interlocked.Exchange(ref _notifyScheduled, 0);
+            Changed?.Invoke();
+        });
+    }
 
     public IReadOnlyList<(string Site, string Channel)> Channels =>
         _lines.Keys
