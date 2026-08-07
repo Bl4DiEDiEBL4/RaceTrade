@@ -70,12 +70,14 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
     {
         _users.GetOrAdd(Key(siteName, channelName),
             _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase))[username] = 0;
+        Changed?.Invoke();
     }
 
     public void RemoveUser(string siteName, string channelName, string username)
     {
         if (_users.TryGetValue(Key(siteName, channelName), out var set))
             set.TryRemove(username, out _);
+        Changed?.Invoke();
     }
 
     public void UpdateUserList(string siteName, string channelName, List<string> users)
@@ -85,6 +87,7 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
             set[u] = 0;
 
         _users[Key(siteName, channelName)] = set;
+        Changed?.Invoke();
     }
 
     // ---- read side, for the Blazor chat page --------------------------------------

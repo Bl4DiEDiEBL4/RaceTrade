@@ -47,9 +47,11 @@ public sealed class ChatHost : IAsyncDisposable
             _cts = new CancellationTokenSource();
             _siteTasks.Clear();
             _clients.Clear();
+            SiteConfigManager.Invalidate();
 
             var token = _cts.Token;
             var started = 0;
+            IsRunning = true;
 
             foreach (var siteName in EnumerateSiteNames())
             {
@@ -93,6 +95,7 @@ public sealed class ChatHost : IAsyncDisposable
                     client.SetUserTrackingEnabled(true);
 
                     _clients[name] = client;
+                    Changed?.Invoke();
 
                     // Create the tabs up front so the channel picker is populated while
                     // the connection is still being established.
@@ -122,16 +125,26 @@ public sealed class ChatHost : IAsyncDisposable
                     finally
                     {
                         _clients.TryRemove(name, out _);
+                        if (IsRunning && _clients.IsEmpty && _cts?.IsCancellationRequested == false)
+                        {
+                            IsRunning = false;
+                            LogManager.Warning("Chat connection stopped; press Connect chat to reconnect.");
+                        }
+
+                        Changed?.Invoke();
                     }
                 }, token));
 
                 started++;
             }
 
-            IsRunning = true;
-
             if (started == 0)
+            {
+                _cts.Dispose();
+                _cts = null;
+                IsRunning = false;
                 LogManager.Warning("Chat started, but no site has IRC credentials. Check the Sites page.");
+            }
             else
                 LogManager.Success($"Chat started: connecting {started} site(s).");
         }
@@ -201,6 +214,15 @@ public sealed class ChatHost : IAsyncDisposable
             Color.White);
     }
 
+    public async Task RequestUserListsAsync()
+    {
+        foreach (var client in _clients.Values)
+        {
+            try { await client.RequestUserList(); }
+            catch { /* a single dead connection should not break the chat page */ }
+        }
+    }
+
     public string GetChannelKey(string siteName, string channel)
     {
         if (string.IsNullOrWhiteSpace(siteName) || string.IsNullOrWhiteSpace(channel))
@@ -250,15 +272,31 @@ public sealed class ChatHost : IAsyncDisposable
         for (int i = 1; i <= 20; i++)
         {
             var value = ss.GetType().GetProperty($"Chan{i}")?.GetValue(ss) as string;
-            if (!string.IsNullOrWhiteSpace(value) && seen.Add(value.Trim()))
-                yield return value.Trim();
+            var channel = NormalizeChannel(value);
+            if (!string.IsNullOrWhiteSpace(channel) && seen.Add(channel))
+                yield return channel;
         }
 
         if (ss.ChatKeys is null) yield break;
 
         foreach (var key in ss.ChatKeys.Keys)
-            if (key.StartsWith("#") && seen.Add(key))
-                yield return key;
+        {
+            var channel = NormalizeChannel(key);
+            if (channel.StartsWith("#") && seen.Add(channel))
+                yield return channel;
+        }
+    }
+
+    private static string NormalizeChannel(string? channel)
+    {
+        if (string.IsNullOrWhiteSpace(channel))
+            return "";
+
+        channel = channel.Trim();
+        if (!channel.StartsWith("#") && !channel.StartsWith("PM:", StringComparison.OrdinalIgnoreCase))
+            channel = "#" + channel.TrimStart('#');
+
+        return channel;
     }
 
     private static IEnumerable<string> EnumerateSiteNames()

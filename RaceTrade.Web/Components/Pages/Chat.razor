@@ -45,25 +45,37 @@ else
 {
     <div class="panel chat-panel">
         <div class="toolbar chat-toolbar">
-            <div class="channel-tabs">
-                @foreach (var (site, chan) in _channels)
-                {
-                    var value = $"{site}|{chan}";
-                    <button type="button"
-                            class="@ChannelTabClass(value, chan)"
-                            @onclick="() => SelectChannel(site, chan)">
-                        <span class="channel-site">@site</span>
-                        @if (IsPrivateMessage(chan))
-                        {
-                            <span class="channel-pm">PM</span>
-                            <span class="channel-name">@PrivateNick(chan)</span>
-                        }
-                        else
-                        {
-                            <span class="channel-name">@chan</span>
-                        }
-                    </button>
-                }
+            <div class="chat-tabs">
+                <div class="site-tabs" role="tablist" aria-label="Chat sites">
+                    @foreach (var site in _sites)
+                    {
+                        <button type="button"
+                                class="@SiteTabClass(site)"
+                                @onclick="() => SelectSite(site)">
+                            @site
+                        </button>
+                    }
+                </div>
+
+                <div class="channel-tabs" role="tablist" aria-label="Site channels">
+                    @foreach (var (_, chan) in CurrentSiteChannels)
+                    {
+                        var value = $"{CurrentSite}|{chan}";
+                        <button type="button"
+                                class="@ChannelTabClass(value, chan)"
+                                @onclick="() => SelectChannel(CurrentSite, chan)">
+                            @if (IsPrivateMessage(chan))
+                            {
+                                <span class="channel-pm">PM</span>
+                                <span class="channel-name">@PrivateNick(chan)</span>
+                            }
+                            else
+                            {
+                                <span class="channel-name">@chan</span>
+                            }
+                        </button>
+                    }
+                </div>
             </div>
             <span class="spacer"></span>
             <button class="btn" @onclick="OpenKeyDialog" disabled="@(!ChatSvc.IsRunning || string.IsNullOrEmpty(_selected))">
@@ -80,17 +92,19 @@ else
         </div>
 
         <div class="chat-body">
-            <table class="grid logs chat-lines">
-                <tbody>
-                    @foreach (var l in _lines)
-                    {
-                        <tr class="lvl-@l.Level.ToString().ToLowerInvariant()">
-                            <td class="ts">@l.At.ToString("HH:mm:ss")</td>
-                            <td class="msg irc-line">@((MarkupString)l.Html)</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <div class="chat-scroll">
+                <table class="grid logs chat-lines">
+                    <tbody>
+                        @foreach (var l in _lines)
+                        {
+                            <tr class="lvl-@l.Level.ToString().ToLowerInvariant()">
+                                <td class="ts">@l.At.ToString("HH:mm:ss")</td>
+                                <td class="msg irc-line">@((MarkupString)l.Html)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
 
             <aside class="@($"userlist {(CurrentIsPm ? "pm-side" : "")}")">
                 @if (CurrentIsPm)
@@ -174,6 +188,7 @@ else
 
 @code {
     private IReadOnlyList<(string Site, string Channel)> _channels = Array.Empty<(string, string)>();
+    private IReadOnlyList<string> _sites = Array.Empty<string>();
     private IReadOnlyList<WebIrcOutput.ChatLine> _lines = Array.Empty<WebIrcOutput.ChatLine>();
     private IReadOnlyList<string> _users = Array.Empty<string>();
     private string _selected = "";
@@ -188,6 +203,8 @@ else
 
     private string CurrentSite => _selected.Split('|', 2) is { Length: 2 } p ? p[0] : "";
     private string CurrentChannel => _selected.Split('|', 2) is { Length: 2 } p ? p[1] : "";
+    private IEnumerable<(string Site, string Channel)> CurrentSiteChannels =>
+        _channels.Where(c => string.Equals(c.Site, CurrentSite, StringComparison.OrdinalIgnoreCase));
     private bool CurrentIsPm => IsPrivateMessage(CurrentChannel);
     private string CurrentTargetLabel => CurrentIsPm ? $"PM {PrivateNick(CurrentChannel)}" : CurrentChannel;
     private string KeyDialogTarget => CurrentIsPm ? $"{CurrentSite} - PM {PrivateNick(CurrentChannel)}" : $"{CurrentSite} - {CurrentChannel}";
@@ -197,6 +214,7 @@ else
         Irc.Changed += OnChanged;
         ChatSvc.Changed += OnChanged;
         Refresh();
+        _ = ChatSvc.RequestUserListsAsync();
     }
 
     private void OnChanged() => InvokeAsync(() => { Refresh(); StateHasChanged(); });
@@ -204,7 +222,11 @@ else
     private async Task Start()
     {
         _busy = true;
-        try { await ChatSvc.StartAsync(); }
+        try
+        {
+            await ChatSvc.StartAsync();
+            _ = RequestUsersAfterConnect();
+        }
         finally { _busy = false; }
     }
 
@@ -213,6 +235,12 @@ else
         _busy = true;
         try { await ChatSvc.StopAsync(); }
         finally { _busy = false; }
+    }
+
+    private async Task RequestUsersAfterConnect()
+    {
+        await Task.Delay(1500);
+        await ChatSvc.RequestUserListsAsync();
     }
 
     private async Task OnKeyDown(KeyboardEventArgs e)
@@ -280,6 +308,13 @@ else
         Refresh();
     }
 
+    private void SelectSite(string site)
+    {
+        var first = _channels.FirstOrDefault(c => string.Equals(c.Site, site, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(first.Site))
+            SelectChannel(first.Site, first.Channel);
+    }
+
     private static string UserClass(string user) => RankPrefix(user) switch
     {
         '~' => "user rank-owner",
@@ -299,6 +334,11 @@ else
         return IsPrivateMessage(channel) ? $"{classes} pm-tab" : classes;
     }
 
+    private string SiteTabClass(string site) =>
+        string.Equals(site, CurrentSite, StringComparison.OrdinalIgnoreCase)
+            ? "site-tab active"
+            : "site-tab";
+
     private static bool IsPrivateMessage(string channel) =>
         channel.StartsWith("PM:", StringComparison.OrdinalIgnoreCase);
 
@@ -308,6 +348,11 @@ else
     private void Refresh()
     {
         _channels = Irc.Channels;
+        _sites = _channels
+            .Select(c => c.Site)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         // Default to the first channel, and recover if the selected one disappeared.
         if (_channels.Count > 0 &&
