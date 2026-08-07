@@ -56,6 +56,35 @@
     </section>
 
     <section class="doc-section">
+        <h2>Port, remote access and SSL</h2>
+        <p>
+            Open <strong>Settings</strong> and use <strong>WebUI access</strong> to change the
+            WebUI port, bind address or data folder. Save the values, then quit and start
+            RaceTrade again. The app reads those startup settings before the engine starts.
+        </p>
+        <ul class="doc-list">
+            <li><code>--port 8421</code> starts another RaceTrade copy on a different WebUI port.</li>
+            <li><code>--bind 127.0.0.1</code> keeps it local-only, which is the default.</li>
+            <li><code>--bind 0.0.0.0</code> allows LAN/server access, but RaceTrade refuses this unless a password is set.</li>
+            <li><code>--data D:\RaceTrade\data</code> points the engine at another data folder.</li>
+            <li><code>--set-password</code> creates the WebUI login password hash.</li>
+            <li><code>--migrate-legacy-secrets</code> converts old WinForms <code>ENC:</code> secrets to v2 <code>ENC2:</code> secrets.</li>
+        </ul>
+        <p>
+            For public HTTPS, do not expose the RaceTrade port directly. Keep RaceTrade on
+            <code>127.0.0.1</code> and put a reverse proxy such as Caddy in front of it.
+            Caddy can handle Let's Encrypt certificates automatically:
+        </p>
+<pre class="code">racetrade.example.com {
+    reverse_proxy 127.0.0.1:8420
+}</pre>
+        <p>
+            For private remote access, a VPN, Tailscale/WireGuard or an SSH tunnel is usually
+            cleaner than opening a port to the internet.
+        </p>
+    </section>
+
+    <section class="doc-section">
         <h2>CBFTP servers and site import</h2>
         <p>
             The CBFTP servers page writes <code>cbftp/cbftp_config.json</code>. Passwords typed in
@@ -203,9 +232,9 @@
         <article class="doc-card">
             <div class="card-title">REMOTE ACCESS</div>
             <p>
-                By default the WebUI listens on loopback only. To expose it to another machine,
-                set a password with <code>RaceTrade --set-password</code> first, then change
-                <code>Web:BindAddress</code> in <code>appsettings.json</code>.
+                By default the WebUI listens on loopback only. Use Settings to change the
+                bind address and port. For HTTPS, keep RaceTrade local and use a reverse proxy
+                in front of it.
             </p>
         </article>
     </section>

@@ -4,6 +4,10 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>RaceTrade.Web</RootNamespace>
     <AssemblyName>RaceTrade</AssemblyName>
+    <Version>2.0.2</Version>
+    <AssemblyVersion>2.0.2.0</AssemblyVersion>
+    <FileVersion>2.0.2.0</FileVersion>
+    <InformationalVersion>2.0.2 WebUI</InformationalVersion>
     <!-- Enabled because the host code uses nullable annotations (string?, event Action?).
          The engine library stays on 'disable' - it is ported .NET Framework code that
          was never annotated, and turning it on there would produce thousands of warnings
@@ -35,6 +39,7 @@
     <PublishTrimmed>false</PublishTrimmed>
     <InvariantGlobalization>true</InvariantGlobalization>
     <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
+    <ApplicationIcon>Assets\RaceTrade.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -51,6 +56,9 @@
   <ItemGroup>
     <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="wwwroot\app.css" LogicalName="RaceTrade.Web.wwwroot.app.css" />
+    <EmbeddedResource Include="wwwroot\favicon.ico" LogicalName="RaceTrade.Web.wwwroot.favicon.ico" />
+    <EmbeddedResource Include="wwwroot\icon-192.png" LogicalName="RaceTrade.Web.wwwroot.icon-192.png" />
+    <EmbeddedResource Include="wwwroot\icon-512.png" LogicalName="RaceTrade.Web.wwwroot.icon-512.png" />
   </ItemGroup>
 
   <!-- Never treat local build/runtime folders as web content. Without these explicit

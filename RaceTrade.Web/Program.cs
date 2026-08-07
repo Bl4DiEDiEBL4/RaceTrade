@@ -159,6 +159,9 @@ builder.Services.AddRazorComponents()
 
 var app = builder.Build();
 var appCss = ReadEmbeddedText("RaceTrade.Web.wwwroot.app.css");
+var favicon = ReadEmbeddedBytes("RaceTrade.Web.wwwroot.favicon.ico");
+var icon192 = ReadEmbeddedBytes("RaceTrade.Web.wwwroot.icon-192.png");
+var icon512 = ReadEmbeddedBytes("RaceTrade.Web.wwwroot.icon-512.png");
 
 // Route every engine log line into the UI sink.
 LogManager.Configure(app.Services.GetRequiredService<ILogSink>());
@@ -196,6 +199,12 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapGet("/app.css", () => Results.Content(appCss, "text/css"))
+    .AllowAnonymous();
+app.MapGet("/favicon.ico", () => Results.File(favicon, "image/x-icon"))
+    .AllowAnonymous();
+app.MapGet("/icon-192.png", () => Results.File(icon192, "image/png"))
+    .AllowAnonymous();
+app.MapGet("/icon-512.png", () => Results.File(icon512, "image/png"))
     .AllowAnonymous();
 
 // --- login / logout -------------------------------------------------------------------
@@ -485,6 +494,15 @@ static string ReadEmbeddedText(string name)
         ?? throw new InvalidOperationException($"Embedded asset '{name}' was not found.");
     using var reader = new StreamReader(stream);
     return reader.ReadToEnd();
+}
+
+static byte[] ReadEmbeddedBytes(string name)
+{
+    using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
+        ?? throw new InvalidOperationException($"Embedded asset '{name}' was not found.");
+    using var memory = new MemoryStream();
+    stream.CopyTo(memory);
+    return memory.ToArray();
 }
 
 static bool IsPortAvailable(string bindAddress, int port)

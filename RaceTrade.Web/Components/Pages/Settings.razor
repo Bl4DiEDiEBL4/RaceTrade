@@ -1,5 +1,8 @@
 ﻿@page "/settings"
 @inject WebSecurityOptions Security
+@inject Microsoft.Extensions.Hosting.IHostApplicationLifetime Lifetime
+@inject EngineHost Engine
+@inject ChatHost ChatSvc
 
 <PageTitle>Settings - RaceTrade</PageTitle>
 
@@ -99,6 +102,81 @@
     </div>
 </div>
 
+<h2><Icon Name="settings" Size="14" />WEBUI ACCESS</h2>
+<div class="panel form">
+    <div class="callout">
+        Change the WebUI port, bind address or data folder here instead of editing
+        <code>appsettings.json</code> by hand. These values are read on startup, so save
+        them and restart RaceTrade. Command-line switches such as <code>--port</code>,
+        <code>--bind</code> and <code>--data</code> still win for that launch.
+    </div>
+
+    <div class="form-grid wide">
+        <label>Bind address</label>
+        <div>
+            <input type="text" @bind="_bindAddress" @bind:event="oninput" placeholder="127.0.0.1" />
+            <div class="fh">
+                Use <code>127.0.0.1</code> for local-only. Use <code>0.0.0.0</code> only for LAN/server access and only after setting a password.
+            </div>
+        </div>
+
+        <label>Port</label>
+        <div>
+            <input type="number" min="1" max="65535" @bind="_webPort" />
+            <div class="fh">
+                Use a different port when you want multiple RaceTrade copies running at the same time.
+            </div>
+        </div>
+
+        <label>Data folder</label>
+        <div>
+            <input type="text" @bind="_dataRootSetting" @bind:event="oninput" />
+            <div class="fh">
+                Absolute paths work. Relative paths are resolved next to the executable. Current data folder is <code>@DataRoot</code>.
+            </div>
+        </div>
+
+        <label>Settings file</label>
+        <div>
+            <p class="path">@AppSettingsPath</p>
+            <div class="fh">This file sits next to the executable and is read before the engine starts.</div>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button class="btn primary" @onclick="SaveWebAccess"><Icon Name="save" Size="13" /><span>Save web settings</span></button>
+        <button class="btn danger" disabled="@(!_webNeedsRestart)" @onclick="QuitToApply"><Icon Name="power" Size="13" /><span>Quit to apply</span></button>
+        @if (!string.IsNullOrWhiteSpace(_webMessage))
+        {
+            <span class="@($"fh inline {(_webMessageIsError ? "err-text" : "")}")">@_webMessage</span>
+        }
+    </div>
+</div>
+
+<h2><Icon Name="shield" Size="14" />REMOTE / SSL</h2>
+<div class="panel form">
+    <div class="callout">
+        Recommended public setup: keep RaceTrade listening on <code>127.0.0.1</code>
+        and put a reverse proxy with HTTPS in front of it. Caddy is the easiest option
+        because it can request and renew Let's Encrypt certificates automatically.
+    </div>
+
+    <div class="fh"><strong>Caddy example</strong></div>
+<pre class="code">racetrade.example.com {
+    reverse_proxy 127.0.0.1:8420
+}</pre>
+
+    <div class="fh"><strong>LAN-only example</strong></div>
+<pre class="code">RaceTrade.exe --set-password
+RaceTrade.exe --bind 0.0.0.0 --port 8420</pre>
+
+    <div class="fh">
+        Do not expose RaceTrade without a password. For internet access, prefer a VPN,
+        Tailscale/WireGuard, SSH tunnel, or a reverse proxy with HTTPS instead of opening
+        the RaceTrade port directly.
+    </div>
+</div>
+
 <h2><Icon Name="power" Size="14" />HOW THIS RUNS</h2>
 <div class="panel form">
     <div class="callout">
@@ -154,9 +232,9 @@ EOF
 sudo systemctl enable --now racetrade</pre>
 
     <div class="fh">
-        To reach it from another machine set <code>Web:BindAddress</code> to
-        <code>0.0.0.0</code> in <code>appsettings.json</code> - the app refuses to start
-        exposed until a password is set with <code>--set-password</code>.
+        To reach it from another machine, use the WebUI access settings above or start
+        with <code>--bind 0.0.0.0</code>. RaceTrade refuses to start exposed until a
+        password is set with <code>--set-password</code>.
     </div>
 </div>
 
@@ -209,6 +287,12 @@ sudo systemctl enable --now racetrade</pre>
     private string _tmdbKey = "";
     private string _tmdbBearer = "";
     private bool _hasTmdbKey, _hasTmdbBearer, _saved;
+    private string _bindAddress = "";
+    private int _webPort;
+    private string _dataRootSetting = "";
+    private string _webMessage = "";
+    private bool _webMessageIsError;
+    private bool _webNeedsRestart;
 
     // The engine reads everything by relative path, and the process working directory is
     // the data folder - so this is exactly where it looks.
@@ -217,11 +301,14 @@ sudo systemctl enable --now racetrade</pre>
     // Environment.ProcessPath is the real exe, even under PublishSingleFile where
     // AppContext.BaseDirectory points at the temporary extraction folder.
     private static string ExePath => Environment.ProcessPath ?? AppContext.BaseDirectory;
+    private static string AppDirectory => ResolveVisibleAppDirectory();
+    private static string AppSettingsPath => Path.Combine(AppDirectory, "appsettings.json");
 
     private List<(string Name, int Count)> _dataCounts = new();
 
     protected override void OnInitialized()
     {
+        LoadWebAccess();
         LoadLookup();
         CountData();
     }
@@ -238,6 +325,103 @@ sudo systemctl enable --now racetrade</pre>
         // Applied immediately: these are plain process-wide switches, no restart needed.
         EngineSettings.DebugEnabled = _debug;
         EngineSettings.AllowInsecureSsl = _insecureSsl;
+    }
+
+    private void LoadWebAccess()
+    {
+        _bindAddress = Security.BindAddress;
+        _webPort = Security.Port;
+        _dataRootSetting = DataRoot;
+
+        try
+        {
+            if (!File.Exists(AppSettingsPath)) return;
+
+            var o = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(AppSettingsPath));
+            var web = o["Web"] as Newtonsoft.Json.Linq.JObject;
+            var data = o["Data"] as Newtonsoft.Json.Linq.JObject;
+
+            _bindAddress = web?["BindAddress"]?.ToString() ?? _bindAddress;
+            _webPort = int.TryParse(web?["Port"]?.ToString(), out var port) ? port : _webPort;
+            _dataRootSetting = data?["Root"]?.ToString() ?? _dataRootSetting;
+        }
+        catch
+        {
+            // A bad appsettings file should not break the Settings page.
+        }
+    }
+
+    private void SaveWebAccess()
+    {
+        _webMessage = "";
+        _webMessageIsError = false;
+
+        var bind = string.IsNullOrWhiteSpace(_bindAddress) ? "127.0.0.1" : _bindAddress.Trim();
+        var dataRoot = string.IsNullOrWhiteSpace(_dataRootSetting) ? "data" : _dataRootSetting.Trim();
+
+        if (_webPort is < 1 or > 65535)
+        {
+            WebError("Port must be between 1 and 65535.");
+            return;
+        }
+
+        if (!IsValidBindAddress(bind))
+        {
+            WebError("Bind address must be localhost, 127.0.0.1, 0.0.0.0, ::1 or a valid IP address.");
+            return;
+        }
+
+        if (!IsLoopback(bind) && !Security.HasPassword)
+        {
+            WebError("Set a password first with RaceTrade.exe --set-password before exposing the WebUI.");
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(AppDirectory);
+
+            var o = File.Exists(AppSettingsPath)
+                ? Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(AppSettingsPath))
+                : new Newtonsoft.Json.Linq.JObject();
+
+            var web = o["Web"] as Newtonsoft.Json.Linq.JObject ?? new Newtonsoft.Json.Linq.JObject();
+            var data = o["Data"] as Newtonsoft.Json.Linq.JObject ?? new Newtonsoft.Json.Linq.JObject();
+
+            web["BindAddress"] = bind;
+            web["Port"] = _webPort;
+            data["Root"] = dataRoot;
+
+            o["Web"] = web;
+            o["Data"] = data;
+
+            AtomicFile.WriteAllText(AppSettingsPath, o.ToString(Newtonsoft.Json.Formatting.Indented));
+
+            _bindAddress = bind;
+            _dataRootSetting = dataRoot;
+            _webNeedsRestart = true;
+            _webMessage = "Saved. Quit and start RaceTrade again to apply these startup settings.";
+            LogManager.Success("Saved WebUI startup settings.");
+        }
+        catch (Exception ex)
+        {
+            WebError($"Failed to save WebUI settings: {ex.Message}");
+            LogManager.Error($"Failed to save WebUI settings: {ex.Message}");
+        }
+    }
+
+    private async Task QuitToApply()
+    {
+        try { await ChatSvc.StopAsync(); } catch { }
+        try { await Engine.StopAsync(); } catch { }
+        Lifetime.StopApplication();
+    }
+
+    private void WebError(string message)
+    {
+        _webMessage = message;
+        _webMessageIsError = true;
+        _webNeedsRestart = false;
     }
 
     private void LoadLookup()
@@ -289,4 +473,30 @@ sudo systemctl enable --now racetrade</pre>
             LogManager.Error($"Failed to save lookup settings: {ex.Message}");
         }
     }
+
+    private static string ResolveVisibleAppDirectory()
+    {
+        var exe = Environment.ProcessPath;
+
+        if (!string.IsNullOrEmpty(exe))
+        {
+            var name = Path.GetFileNameWithoutExtension(exe);
+            if (!string.Equals(name, "dotnet", StringComparison.OrdinalIgnoreCase))
+            {
+                var dir = Path.GetDirectoryName(exe);
+                if (!string.IsNullOrEmpty(dir)) return dir;
+            }
+        }
+
+        return AppContext.BaseDirectory;
+    }
+
+    private static bool IsValidBindAddress(string value) =>
+        value.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+        System.Net.IPAddress.TryParse(value, out _);
+
+    private static bool IsLoopback(string value) =>
+        value.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("::1", StringComparison.OrdinalIgnoreCase);
 }

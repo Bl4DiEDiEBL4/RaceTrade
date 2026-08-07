@@ -577,7 +577,11 @@ td.dim, .dim { color: var(--dim); }
 .btn.primary:hover { filter: brightness(1.08); background: var(--accent); }
 .btn.danger { background: #3a2028; color: var(--err); }
 .btn.danger:hover { background: #4a2830; }
+.btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+.btn:disabled:hover { background: #2b3242; }
+.btn.danger:disabled:hover { background: #3a2028; }
 a.btn { text-decoration: none; display: inline-flex; }
+.err-text { color: var(--err); }
 
 td.right, th.right { text-align: right; white-space: nowrap; }
 td.right .btn { margin-left: 5px; }
