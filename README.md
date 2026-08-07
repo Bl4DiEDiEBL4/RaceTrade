@@ -146,11 +146,10 @@ RaceTrade.Web/         local WebUI
 RaceTrade.Modern.sln   v2 solution
 publish.bat            Windows release publisher
 publish.sh             Linux/macOS shell publisher
-RaceTrade/             legacy WinForms project
 ```
 
 ## Notes
 
 - Use the Help page inside the WebUI for the current configuration guide.
 - Use the Changelog page inside the WebUI for user-facing changes.
-- The legacy WinForms project is kept in the repository for history and reference.
+- The legacy WinForms project is intentionally not part of this v2 branch.
