@@ -22,26 +22,50 @@
             <div class="timeline-version">v2.0.3 WebUI</div>
             <div class="timeline-date">August 2026</div>
             <ul>
-                <li>Added the new local WebUI that runs together with the racing engine in one app.</li>
-                <li>Added Dashboard, Sites, CBFTP servers, PreBots, Pre, FXP Client, Test release, Chat, Logs, Settings, Help and Changelog pages.</li>
+                <li>Added persistent release history so races seen survives restarts, with a full History page and reset controls in Settings.</li>
+                <li>Added a Dashboard Releases stat for unique release names seen by the race engine.</li>
+                <li>Kept history capture isolated from the race path so a history write problem cannot interrupt racing.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
+            <div class="timeline-version">v2.0.2 WebUI</div>
+            <div class="timeline-date">August 2026</div>
+            <ul>
+                <li>Added Settings controls for WebUI port, bind address, data folder, remote access notes and reverse proxy/SSL guidance.</li>
+                <li>Added Windows migration for old WinForms <code>ENC:</code> passwords and Blowfish keys to v2 <code>ENC2:</code> secrets.</li>
+                <li>Added a RaceTrade application icon for the Windows executable and browser favicon.</li>
+                <li>Updated Help with WebUI startup, data folder, remote access, Linux/headless and migration guidance.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
+            <div class="timeline-version">v2.0.1 WebUI</div>
+            <div class="timeline-date">August 2026</div>
+            <ul>
                 <li>Restored CBFTP site import from the WebUI.</li>
                 <li>Restored the CBFTP Site editor with basic settings, limits, transfer flags, affils, sections and skiplist.</li>
                 <li>Added Edit CBFTP Site from the Sites list and the Site Editor CBFTP Site tab.</li>
                 <li>Restored the Get Site Rules modal from the site editor.</li>
                 <li>Restored the dual-pane FXP Client in the WebUI.</li>
-                <li>Restored the Affil Spread &amp; Pre Manager flow in the WebUI.</li>
-                <li>Restored PreDB release import from the WebUI.</li>
+                <li>Restored the Affil Spread &amp; Pre Manager flow and PreDB release import in the WebUI.</li>
                 <li>Reworked the Site Editor Sections tab into a clearer master-detail workflow.</li>
                 <li>Restored Section Rules and CBFTP Mapping Rules in the WebUI Site Editor.</li>
                 <li>Added one-click Racing/Off toggles for IRC sections in the section list.</li>
                 <li>Restored the full IMDB and TVMaze section filter controls with preset genre, network and show type lists.</li>
                 <li>Restored request auto-fill helper labels and placeholder guidance in the Site Editor Requests tab.</li>
                 <li>Restored regex test inputs, test buttons and examples for PreBots and Site Editor announce parsing.</li>
-                <li>Added Windows migration for old WinForms <code>ENC:</code> passwords and Blowfish keys to v2 <code>ENC2:</code> secrets.</li>
-                <li>Added a RaceTrade application icon for the Windows executable and browser favicon.</li>
-                <li>Added Settings controls for WebUI port, bind address, data folder, remote access notes and reverse proxy/SSL guidance.</li>
-                <li>Added persistent release history so races seen survives restarts, with a full History page and reset controls in Settings.</li>
                 <li>Improved dark theme spacing, sidebar buttons, table forms, status labels and document pages.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
+            <div class="timeline-version">v2.0.0 WebUI</div>
+            <div class="timeline-date">August 2026</div>
+            <ul>
+                <li>Added the new local WebUI that runs together with the racing engine in one app.</li>
+                <li>Split the racing engine into <code>RaceTrade.Engine</code> and the browser UI into <code>RaceTrade.Web</code>.</li>
+                <li>Added Dashboard, Sites, CBFTP servers, PreBots, Pre, FXP Client, Test release, Chat, Logs, Settings, Help and Changelog pages.</li>
                 <li>Added self-contained builds for Windows and Linux.</li>
             </ul>
         </article>
