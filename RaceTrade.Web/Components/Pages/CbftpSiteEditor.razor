@@ -47,7 +47,6 @@
                 <option value="@site">@site</option>
             }
         </select>
-        <button class="btn" @onclick="LoadSelected" disabled="@(string.IsNullOrWhiteSpace(_selectedSiteName) || Busy)">Edit selected</button>
         <button class="btn" @onclick="NewSite" disabled="@Busy"><Icon Name="plus" Size="13" /><span>New CBFTP site</span></button>
     </div>
 
@@ -333,11 +332,16 @@
         });
     }
 
-    private void SelectExistingSite(ChangeEventArgs e)
+    private async Task SelectExistingSite(ChangeEventArgs e)
     {
         _selectedSiteName = e.Value?.ToString() ?? "";
-        if (!string.IsNullOrWhiteSpace(_selectedSiteName))
-            _model.Name = _selectedSiteName;
+        if (string.IsNullOrWhiteSpace(_selectedSiteName))
+        {
+            NewSite();
+            return;
+        }
+
+        await LoadSelected();
     }
 
     private void NewSite()
