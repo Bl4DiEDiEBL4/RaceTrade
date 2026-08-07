@@ -51,7 +51,7 @@ public sealed class UiLogSink : ILogSink, IDisposable
     {
         if (entry is null) return;
 
-        _history.Capture(entry);
+        try { _history.Capture(entry); } catch { /* history must never disturb the race path */ }
         _events.Enqueue(entry);
         Interlocked.Increment(ref _pendingSinceLastNotify);
 

@@ -17,6 +17,10 @@
         <div class="stat"><span class="stat-value">@_races</span><span class="stat-label">detected</span></div>
     </div>
     <div class="card">
+        <div class="card-title">RELEASES</div>
+        <div class="stat"><span class="stat-value ok">@_releases</span><span class="stat-label">unique</span></div>
+    </div>
+    <div class="card">
         <div class="card-title">WARNINGS</div>
         <div class="stat"><span class="stat-value warn">@_warnings</span><span class="stat-label">recent</span></div>
     </div>
@@ -137,7 +141,7 @@
     private IReadOnlyList<LogEvent> _recent = Array.Empty<LogEvent>();
     private IReadOnlyList<RaceHistoryStore.RaceReleaseSummary> _releaseHistory = Array.Empty<RaceHistoryStore.RaceReleaseSummary>();
     private RaceHistoryStore.RaceHistoryStats _historyStats = new(0, 0, 0);
-    private int _errors, _warnings, _races, _siteCount;
+    private int _errors, _warnings, _races, _releases, _siteCount;
 
     protected override void OnInitialized()
     {
@@ -157,6 +161,7 @@
         _warnings = all.Count(e => e.Level == LogLevel.Warning);
         _historyStats = History.GetStats();
         _races = _historyStats.Detected;
+        _releases = _historyStats.UniqueReleases;
         _releaseHistory = History.LatestReleases(10);
         _recent = all.Take(20).ToList();
     }
