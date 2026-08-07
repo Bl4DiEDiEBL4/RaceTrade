@@ -20,7 +20,7 @@
 <div class="panel fxp-shell">
     <div class="toolbar fxp-toolbar">
         <label>CBFTP</label>
-        <select @bind="_serverId" disabled="@Busy">
+        <select value="@_serverId" @onchange="SelectServer" disabled="@Busy">
             @foreach (var server in _servers)
             {
                 <option value="@server.Id">@DisplayServer(server)</option>
@@ -42,8 +42,8 @@
     </div>
 
     <div class="fxp-panes">
-        @Pane("left", "Left Site", _leftSite, v => _leftSite = v, _leftPath, v => _leftPath = v, _leftItems, _selectedLeft, BrowseLeft, UpLeft, DeleteLeft)
-        @Pane("right", "Right Site", _rightSite, v => _rightSite = v, _rightPath, v => _rightPath = v, _rightItems, _selectedRight, BrowseRight, UpRight, DeleteRight)
+        @Pane("left", "Left Site", _leftSite, SelectLeftSite, _leftPath, v => _leftPath = v, _leftItems, _selectedLeft, BrowseLeft, UpLeft, DeleteLeft)
+        @Pane("right", "Right Site", _rightSite, SelectRightSite, _rightPath, v => _rightPath = v, _rightItems, _selectedRight, BrowseRight, UpRight, DeleteRight)
     </div>
 
     <div class="fxp-log">
@@ -64,7 +64,22 @@
     </div>
 </div>
 
+@if (_contextMenu is not null)
+{
+    <div class="context-backdrop" @onclick="CloseContextMenu"></div>
+    <div class="fxp-context-menu" style="@ContextMenuStyle" @onclick:stopPropagation="true">
+        <button type="button" @onclick="ContextOpen" disabled="@(!_contextMenu.Item.IsDirectory || Busy)">Open</button>
+        <button type="button" @onclick="ContextTransfer" disabled="@(!CanContextTransfer || Busy)">
+            @(_contextMenu.Side == "left" ? "FXP to right" : "FXP to left")
+        </button>
+        <button type="button" @onclick="ContextDelete" disabled="@(!ContextHasSelection || Busy)">Delete selected</button>
+        <button type="button" @onclick="ContextRefresh" disabled="@Busy">Refresh</button>
+    </div>
+}
+
 @code {
+    private sealed record FxpContextMenu(string Side, FxpFileItem Item, double X, double Y);
+
     private List<CbftpServer> _servers = new();
     private List<string> _sites = new();
     private string _serverId = "";
@@ -79,6 +94,7 @@
     private readonly List<string> _log = new();
     private string? _error;
     private string? _status;
+    private FxpContextMenu? _contextMenu;
     private bool Busy { get; set; }
 
     private bool CanTransferLeftToRight =>
@@ -89,18 +105,21 @@
 
     private IEnumerable<FxpFileItem> SelectedLeftItems => _leftItems.Where(i => _selectedLeft.Contains(i.FullPath));
     private IEnumerable<FxpFileItem> SelectedRightItems => _rightItems.Where(i => _selectedRight.Contains(i.FullPath));
+    private string ContextMenuStyle => _contextMenu is null ? "" : $"left: {_contextMenu.X}px; top: {_contextMenu.Y}px;";
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         _servers = Fxp.LoadServers().ToList();
         _serverId = _servers.FirstOrDefault()?.Id ?? "";
+        if (!string.IsNullOrWhiteSpace(_serverId))
+            await LoadSites();
     }
 
     private RenderFragment Pane(
         string side,
         string title,
         string site,
-        Action<string> setSite,
+        Func<string, Task> selectSite,
         string path,
         Action<string> setPath,
         IReadOnlyList<FxpFileItem> items,
@@ -110,7 +129,7 @@
         Func<Task> delete) => @<div class="fxp-pane">
         <div class="fxp-pane-head">
             <h2>@title</h2>
-            <select value="@site" @onchange="e => setSite(e.Value?.ToString() ?? string.Empty)" disabled="@(!_sites.Any() || Busy)">
+            <select value="@site" @onchange="e => selectSite(e.Value?.ToString() ?? string.Empty)" disabled="@(!_sites.Any() || Busy)">
                 <option value="">Select site</option>
                 @foreach (var s in _sites)
                 {
@@ -138,7 +157,9 @@
                         @foreach (var item in items)
                         {
                             <tr class="@(item.IsSymlink ? "link" : item.IsDirectory ? "dir" : "")"
-                                @ondblclick="() => OpenItem(side, item)">
+                                @ondblclick="() => OpenItem(side, item)"
+                                @oncontextmenu="e => OpenContextMenu(side, item, selected, e)"
+                                @oncontextmenu:preventDefault>
                                 <td><input type="checkbox" checked="@selected.Contains(item.FullPath)" @onchange="e => Toggle(selected, item.FullPath, e.Value)" /></td>
                                 <td class="site">@item.DisplayName</td>
                                 <td>@item.TypeText</td>
@@ -172,8 +193,64 @@
             _sites = (await Fxp.FetchSitesAsync(server)).ToList();
             _leftSite = KeepOrFirst(_leftSite);
             _rightSite = KeepOrSecond(_rightSite);
+            _leftPath = "/";
+            _rightPath = "/";
+            _leftItems = Array.Empty<FxpFileItem>();
+            _rightItems = Array.Empty<FxpFileItem>();
+            _selectedLeft.Clear();
+            _selectedRight.Clear();
             _status = _sites.Count == 0 ? "No sites returned by CBFTP." : $"Loaded {_sites.Count} site(s).";
         });
+
+        if (!Busy && _sites.Count > 0)
+        {
+            if (!string.IsNullOrWhiteSpace(_leftSite))
+                await BrowseLeft();
+            if (!string.IsNullOrWhiteSpace(_rightSite))
+                await BrowseRight();
+        }
+    }
+
+    private async Task SelectServer(ChangeEventArgs e)
+    {
+        _serverId = e.Value?.ToString() ?? "";
+        _sites.Clear();
+        _leftSite = "";
+        _rightSite = "";
+        _leftPath = "/";
+        _rightPath = "/";
+        _leftItems = Array.Empty<FxpFileItem>();
+        _rightItems = Array.Empty<FxpFileItem>();
+        _selectedLeft.Clear();
+        _selectedRight.Clear();
+        CloseContextMenu();
+
+        if (!string.IsNullOrWhiteSpace(_serverId))
+            await LoadSites();
+    }
+
+    private async Task SelectLeftSite(string site)
+    {
+        _leftSite = site;
+        _leftPath = "/";
+        _leftItems = Array.Empty<FxpFileItem>();
+        _selectedLeft.Clear();
+        CloseContextMenu();
+
+        if (!string.IsNullOrWhiteSpace(_leftSite))
+            await BrowseLeft();
+    }
+
+    private async Task SelectRightSite(string site)
+    {
+        _rightSite = site;
+        _rightPath = "/";
+        _rightItems = Array.Empty<FxpFileItem>();
+        _selectedRight.Clear();
+        CloseContextMenu();
+
+        if (!string.IsNullOrWhiteSpace(_rightSite))
+            await BrowseRight();
     }
 
     private async Task BrowseLeft() => await Browse(true);
@@ -264,6 +341,68 @@
 
     private async Task DeleteLeft() => await Delete(true);
     private async Task DeleteRight() => await Delete(false);
+
+    private bool CanContextTransfer =>
+        _contextMenu is not null &&
+        ((_contextMenu.Side == "left" && CanTransferLeftToRight) ||
+         (_contextMenu.Side == "right" && CanTransferRightToLeft));
+
+    private bool ContextHasSelection =>
+        _contextMenu is not null &&
+        (_contextMenu.Side == "left" ? _selectedLeft.Count > 0 : _selectedRight.Count > 0);
+
+    private void OpenContextMenu(string side, FxpFileItem item, HashSet<string> selected, MouseEventArgs e)
+    {
+        if (!selected.Contains(item.FullPath))
+        {
+            selected.Clear();
+            selected.Add(item.FullPath);
+        }
+
+        _contextMenu = new FxpContextMenu(side, item, e.ClientX, e.ClientY);
+    }
+
+    private void CloseContextMenu() => _contextMenu = null;
+
+    private async Task ContextOpen()
+    {
+        if (_contextMenu is null)
+            return;
+
+        var context = _contextMenu;
+        CloseContextMenu();
+        await OpenItem(context.Side, context.Item);
+    }
+
+    private async Task ContextTransfer()
+    {
+        if (_contextMenu is null)
+            return;
+
+        var leftToRight = _contextMenu.Side == "left";
+        CloseContextMenu();
+        await Transfer(leftToRight);
+    }
+
+    private async Task ContextDelete()
+    {
+        if (_contextMenu is null)
+            return;
+
+        var left = _contextMenu.Side == "left";
+        CloseContextMenu();
+        await Delete(left);
+    }
+
+    private async Task ContextRefresh()
+    {
+        if (_contextMenu is null)
+            return;
+
+        var left = _contextMenu.Side == "left";
+        CloseContextMenu();
+        await Browse(left);
+    }
 
     private async Task Delete(bool left)
     {

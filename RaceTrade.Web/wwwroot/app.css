@@ -1494,6 +1494,49 @@ pre.code {
 .fxp-table th:first-child { width: 1%; }
 .fxp-table tr.dir .site { color: #4bb8ff; }
 .fxp-table tr.link .site { color: var(--accent); }
+.fxp-table tbody tr { cursor: default; }
+.fxp-table tbody tr:hover td { background: rgba(17, 215, 202, .055); }
+
+.context-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    background: transparent;
+}
+
+.fxp-context-menu {
+    position: fixed;
+    z-index: 91;
+    min-width: 150px;
+    padding: 5px;
+    border: 1px solid rgba(151, 164, 188, .24);
+    border-radius: 5px;
+    background: #101723;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, .45);
+}
+
+.fxp-context-menu button {
+    display: block;
+    width: 100%;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: #dbe7f7;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+}
+
+.fxp-context-menu button:hover:not(:disabled) {
+    background: rgba(17, 215, 202, .12);
+    color: #ffffff;
+}
+
+.fxp-context-menu button:disabled {
+    color: rgba(184, 196, 214, .42);
+    cursor: not-allowed;
+}
 
 .fxp-log {
     padding: 12px;
