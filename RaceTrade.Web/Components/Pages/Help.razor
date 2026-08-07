@@ -46,6 +46,12 @@
                 Do not guess the folder location. Open Settings and check <strong>Data folder</strong>.
                 Copy old WinForms configs into that folder if you are migrating.
             </p>
+            <p>
+                Old WinForms files can contain Windows DPAPI <code>ENC:</code> secrets.
+                On the same Windows account that created them, run
+                <code>RaceTrade.exe --migrate-legacy-secrets --data C:\Path\To\Data</code>
+                once before moving the data to another machine or Linux.
+            </p>
         </article>
     </section>
 
@@ -211,6 +217,7 @@
             <li>If CBFTP says a section is disabled, compare the IRC section and CBFTP mapping names.</li>
             <li>If chat joins channels on the wrong network, check the ZNC Network field and channel list.</li>
             <li>If settings seem missing, confirm the data folder under Settings.</li>
+            <li>If old passwords or Blowfish keys fail, migrate legacy <code>ENC:</code> secrets on the original Windows account.</li>
             <li>If the app will not start, another RaceTrade may already be using the configured port.</li>
         </ul>
     </section>

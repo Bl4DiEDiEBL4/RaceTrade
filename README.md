@@ -59,6 +59,33 @@ RaceTrade.exe --port 8422 --data D:\RaceTrade-KPN\data
 
 You can put the same command in a Windows shortcut target.
 
+## Upgrade From v1.0.9 WinForms
+
+Copy your old folders into the v2 data folder:
+
+```text
+sites\
+cbftp\
+pre_bots\
+sections\
+settings\
+db\
+```
+
+Old WinForms passwords and Blowfish keys may be stored as Windows DPAPI `ENC:`
+values. They are not portable password hashes; they can only be decrypted by the
+same Windows user that created them.
+
+Run this once on that same Windows account:
+
+```bat
+RaceTrade.exe --migrate-legacy-secrets --data D:\RaceTrade\data
+```
+
+That converts old `ENC:` secrets to v2 `ENC2:` secrets and keeps `.bak` backups
+of changed JSON files. After that, the data folder can be used by the v2 WebUI
+and copied to the Linux build if needed.
+
 ## Data Folder
 
 Default:

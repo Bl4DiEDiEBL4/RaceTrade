@@ -8,6 +8,7 @@ using RaceTrade.Engine.Logging;
 using RaceTrade.Web.Components;
 using RaceTrade.Web.Security;
 using RaceTrade.Web.Services;
+using RaceTrade;
 
 // ---- data directory -------------------------------------------------------------------
 // The engine addresses everything by relative path ("sites", "cbftp", "pre_bots", "db",
@@ -19,10 +20,12 @@ using RaceTrade.Web.Services;
 // outside the install directory - handy when replacing the binary on an update.
 var appDir = ResolveAppDirectory();
 var appArgs = NormalizeArgs(args);
+var setPassword = appArgs.Contains("--set-password", StringComparer.OrdinalIgnoreCase);
+var migrateLegacySecrets = appArgs.Contains("--migrate-legacy-secrets", StringComparer.OrdinalIgnoreCase);
 var startupSecurity = ResolveStartupSecurity(appArgs, appDir);
 var startupUrl = BuildUrl(startupSecurity);
 
-if (!IsPortAvailable(startupSecurity.BindAddress, startupSecurity.Port))
+if (!setPassword && !migrateLegacySecrets && !IsPortAvailable(startupSecurity.BindAddress, startupSecurity.Port))
 {
     Console.WriteLine($"RaceTrade web UI: {startupUrl}");
     PrintPortInUse(startupUrl);
@@ -63,8 +66,15 @@ Console.WriteLine($"Data directory: {dataRoot}");
     }
 }
 
+// --- one-off legacy migration: RaceTrade --migrate-legacy-secrets ----------------------
+if (migrateLegacySecrets)
+{
+    RunLegacySecretMigration(dataRoot);
+    return;
+}
+
 // --- one-off password setup: RaceTrade --set-password ---------------------------------
-if (appArgs.Contains("--set-password", StringComparer.OrdinalIgnoreCase))
+if (setPassword)
 {
     SetPasswordInteractive();
     return;
@@ -523,6 +533,46 @@ static void PrintPortInUse(string url)
     Console.WriteLine("Or start another copy on a different port:");
     Console.WriteLine("    RaceTrade.exe --port 8421");
     Console.WriteLine("You can also set Web:Port in appsettings.json next to the executable.");
+}
+
+static void RunLegacySecretMigration(string dataRoot)
+{
+    try
+    {
+        var result = LegacySecretMigrator.MigrateDataRoot(dataRoot);
+
+        Console.WriteLine();
+        Console.WriteLine("Legacy secret migration complete.");
+        Console.WriteLine($"  Data folder      : {dataRoot}");
+        Console.WriteLine($"  JSON files scanned: {result.FilesScanned}");
+        Console.WriteLine($"  Files changed     : {result.FilesChanged}");
+        Console.WriteLine($"  Secrets migrated  : {result.SecretsMigrated}");
+
+        if (result.Errors.Count == 0)
+            return;
+
+        Console.WriteLine();
+        Console.WriteLine("Some files could not be migrated:");
+        foreach (var error in result.Errors.Take(20))
+            Console.WriteLine($"  - {error}");
+
+        if (result.Errors.Count > 20)
+            Console.WriteLine($"  ... and {result.Errors.Count - 20} more.");
+
+        Environment.ExitCode = 1;
+    }
+    catch (PlatformNotSupportedException ex)
+    {
+        Console.WriteLine();
+        Console.WriteLine(ex.Message);
+        Environment.ExitCode = 1;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"Legacy secret migration failed: {ex.Message}");
+        Environment.ExitCode = 1;
+    }
 }
 
 static void SetPasswordInteractive()
