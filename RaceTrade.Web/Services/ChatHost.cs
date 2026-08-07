@@ -51,7 +51,6 @@ public sealed class ChatHost : IAsyncDisposable
 
             var token = _cts.Token;
             var started = 0;
-            IsRunning = true;
 
             foreach (var siteName in EnumerateSiteNames())
             {
@@ -125,12 +124,6 @@ public sealed class ChatHost : IAsyncDisposable
                     finally
                     {
                         _clients.TryRemove(name, out _);
-                        if (IsRunning && _clients.IsEmpty && _cts?.IsCancellationRequested == false)
-                        {
-                            IsRunning = false;
-                            LogManager.Warning("Chat connection stopped; press Connect chat to reconnect.");
-                        }
-
                         Changed?.Invoke();
                     }
                 }, token));
@@ -146,7 +139,10 @@ public sealed class ChatHost : IAsyncDisposable
                 LogManager.Warning("Chat started, but no site has IRC credentials. Check the Sites page.");
             }
             else
+            {
+                IsRunning = true;
                 LogManager.Success($"Chat started: connecting {started} site(s).");
+            }
         }
         finally
         {
