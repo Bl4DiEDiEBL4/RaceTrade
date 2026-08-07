@@ -685,7 +685,6 @@ public class ChatIrcClient
                         continue;
 
                     await SendMessageAsync(sslStream, $"JOIN {channel}");
-                    await SendMessageAsync(sslStream, $"NAMES {channel}");
 
                     if (chatOnlyMode)
                     {

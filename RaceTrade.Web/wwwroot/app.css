@@ -396,28 +396,14 @@ tr.lvl-debug td { color: var(--dim); }
     padding: 0;
     overflow: hidden;
     background: #111722;
-    display: flex;
-    flex-direction: column;
-    height: calc(100vh - 150px);
-    min-height: 520px;
 }
 
 .chat-toolbar {
     padding: 8px 12px;
     background: rgba(8, 10, 15, .28);
     border-bottom: 1px solid var(--line);
-    flex: 0 0 auto;
-    align-items: flex-start;
 }
 
-.chat-tabs {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: grid;
-    gap: 6px;
-}
-
-.site-tabs,
 .channel-tabs {
     display: flex;
     flex-wrap: wrap;
@@ -425,7 +411,6 @@ tr.lvl-debug td { color: var(--dim); }
     min-width: 0;
 }
 
-.site-tab,
 .channel-tab {
     min-height: 28px;
     padding: 0 10px;
@@ -436,20 +421,11 @@ tr.lvl-debug td { color: var(--dim); }
     cursor: pointer;
 }
 
-.site-tab {
-    min-width: 72px;
-    background: rgba(17, 215, 202, .08);
-    color: var(--accent);
-    font-weight: 800;
-}
-
-.site-tab:hover,
 .channel-tab:hover {
     border-color: rgba(17, 215, 202, .45);
     color: #ffffff;
 }
 
-.site-tab.active,
 .channel-tab.active {
     background: rgba(17, 215, 202, .16);
     border-color: var(--accent);
@@ -482,44 +458,15 @@ tr.lvl-debug td { color: var(--dim); }
     margin-left: 5px;
 }
 
-.chat-body {
-    display: flex;
-    align-items: stretch;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: hidden;
-}
-
-.chat-scroll {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: auto;
-    background: #090d15;
-}
-
+.chat-body { display: flex; align-items: stretch; }
 .chat-lines {
-    width: 100%;
-    height: auto;
-    table-layout: auto;
+    flex: 1;
     background: #090d15;
-}
-
-.chat-lines tr {
-    height: 25px;
 }
 
 .chat-lines td {
     background: #090d15;
     border-bottom-color: rgba(255, 255, 255, .025);
-    padding-top: 3px;
-    padding-bottom: 3px;
-    line-height: 1.45;
-    height: 25px;
-    vertical-align: top;
-}
-
-.chat-lines .ts {
-    width: 74px;
 }
 
 .chat-lines tbody tr:hover td {
@@ -534,7 +481,7 @@ tr.lvl-debug td { color: var(--dim); }
     flex: 0 0 165px;
     border-left: 1px solid var(--line);
     padding: 8px 0;
-    max-height: none;
+    max-height: 65vh;
     overflow-y: auto;
     background: #0c111b;
 }
@@ -578,7 +525,6 @@ tr.lvl-debug td { color: var(--dim); }
     padding: 9px 12px;
     border-top: 1px solid var(--line);
     background: #0c111b;
-    flex: 0 0 auto;
 }
 
 .chat-send input {
@@ -645,7 +591,6 @@ tr.lvl-debug td { color: var(--dim); }
 .irc-bg-15 { background-color: rgba(207, 216, 230, .20); }
 
 @media (max-width: 720px) {
-    .chat-panel { height: auto; min-height: 70vh; }
     .chat-body { flex-direction: column; }
     .userlist { flex: none; border-left: 0; border-top: 1px solid var(--line); max-height: 160px; }
 }
@@ -1542,6 +1487,10 @@ pre.code {
     background: rgba(17, 215, 202, .1);
     border-color: rgba(17, 215, 202, .24);
     box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.chat-body {
+    min-height: 52vh;
 }
 
 .chat-lines {
