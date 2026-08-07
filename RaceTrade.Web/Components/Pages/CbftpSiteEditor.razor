@@ -64,7 +64,7 @@
                     <label>User</label>
                     <input type="text" @bind="_model.User" @bind:event="oninput" />
                     <label>Password</label>
-                    <input type="text" @bind="_model.Password" @bind:event="oninput" />
+                    <input type="password" @bind="_model.Password" @bind:event="oninput" autocomplete="new-password" />
                     <label>Base path</label>
                     <input type="text" @bind="_model.BasePath" @bind:event="oninput" placeholder="/" />
                     <label>Disabled</label>
