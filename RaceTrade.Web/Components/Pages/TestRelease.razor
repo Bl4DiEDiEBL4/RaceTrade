@@ -11,8 +11,9 @@
 <div class="panel form">
     <div class="form-grid wide">
         <label>Announcing site</label>
-        <select @bind="_site">
+        <select value="@_site" @onchange="SelectSite">
             <option value="">-- pick a site --</option>
+            <option value="*">* (any site / prebot)</option>
             @foreach (var s in _siteNames)
             {
                 <option value="@s">@s</option>
@@ -20,7 +21,20 @@
         </select>
 
         <label>IRC section</label>
-        <input type="text" @bind="_section" placeholder="TV-HD" @bind:event="oninput" />
+        <select value="@_section" @onchange="SelectSection" disabled="@(!_sectionNames.Any())">
+            @if (_sectionNames.Count == 0)
+            {
+                <option value="">-- pick a site first --</option>
+            }
+            else
+            {
+                <option value="">-- pick an IRC section --</option>
+                @foreach (var ircSection in _sectionNames)
+                {
+                    <option value="@ircSection">@ircSection</option>
+                }
+            }
+        </select>
 
         <label>Release name</label>
         <input type="text" @bind="_release" placeholder="Some.Release.2026.1080p.WEB-GRP" @bind:event="oninput" />
@@ -29,6 +43,9 @@
     <div class="form-actions">
         <button class="btn primary" @onclick="Run" disabled="@_running">
             @(_running ? "Testing..." : "Run test")
+        </button>
+        <button class="btn danger" @onclick="ClearResults" disabled="@_running">
+            Clear
         </button>
     </div>
 </div>
@@ -54,15 +71,75 @@
     private sealed record Line(string Text, string Level);
 
     private List<string> _siteNames = new();
+    private List<string> _sectionNames = new();
     private List<Line> _results = new();
-    private string _site = "";
+    private string _site = "*";
     private string _section = "";
     private string _release = "";
     private bool _running;
 
-    protected override void OnInitialized() => _siteNames = Sites.ListNames().ToList();
+    protected override void OnInitialized()
+    {
+        _siteNames = Sites.ListNames().ToList();
+        LoadSectionNames();
+    }
 
     private void Add(string text, string level = "info") => _results.Add(new Line(text, level));
+
+    private void ClearResults()
+    {
+        _results.Clear();
+    }
+
+    private void SelectSite(ChangeEventArgs e)
+    {
+        _site = e.Value?.ToString() ?? "";
+        LoadSectionNames();
+    }
+
+    private void SelectSection(ChangeEventArgs e)
+    {
+        _section = e.Value?.ToString() ?? "";
+    }
+
+    private void LoadSectionNames()
+    {
+        var sections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        IEnumerable<string> names = _site switch
+        {
+            "" => Array.Empty<string>(),
+            "*" => _siteNames,
+            _ => new[] { _site }
+        };
+
+        foreach (var name in names)
+        {
+            var cfg = Sites.Load(name);
+
+            foreach (var section in cfg.Sections ?? new List<Section>())
+            {
+                if (!string.IsNullOrWhiteSpace(section.IrcName))
+                    sections.Add(section.IrcName.Trim());
+            }
+
+            foreach (var section in cfg.RaceSectionsEnabled ?? new List<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(section))
+                    sections.Add(section.Trim());
+            }
+        }
+
+        _sectionNames = sections
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(_section) &&
+            !_sectionNames.Contains(_section, StringComparer.OrdinalIgnoreCase))
+        {
+            _section = "";
+        }
+    }
 
     private async Task Run()
     {
@@ -81,7 +158,14 @@
             // Same pipeline the racer uses, so the outcome here matches a real announce.
             RaceHelper.LoadAllSiteConfigs();
 
-            var cfg = Sites.Load(_site);
+            var configSite = _site == "*" ? ResolveConfigSiteForSection(_section) : _site;
+            if (string.IsNullOrWhiteSpace(configSite))
+            {
+                Add($"No site config contains IRC section '{_section}'.", "error");
+                return;
+            }
+
+            var cfg = Sites.Load(configSite);
             var json = JObject.Parse(Newtonsoft.Json.JsonConvert.SerializeObject(cfg));
 
             Add($"Site: {_site}   Section: {_section}   Release: {_release}");
@@ -147,5 +231,22 @@
         {
             _running = false;
         }
+    }
+
+    private string ResolveConfigSiteForSection(string section)
+    {
+        foreach (var name in _siteNames)
+        {
+            var cfg = Sites.Load(name);
+            var hasSection = (cfg.Sections ?? new List<Section>())
+                .Any(s => string.Equals(s.IrcName, section, StringComparison.OrdinalIgnoreCase))
+                || (cfg.RaceSectionsEnabled ?? new List<string>())
+                    .Any(s => string.Equals(s, section, StringComparison.OrdinalIgnoreCase));
+
+            if (hasSection)
+                return name;
+        }
+
+        return "";
     }
 }
