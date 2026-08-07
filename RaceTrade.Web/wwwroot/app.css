@@ -499,12 +499,27 @@ tr.lvl-debug td { color: var(--dim); }
 
 .chat-lines {
     width: 100%;
+    height: auto;
+    table-layout: auto;
     background: #090d15;
+}
+
+.chat-lines tr {
+    height: 25px;
 }
 
 .chat-lines td {
     background: #090d15;
     border-bottom-color: rgba(255, 255, 255, .025);
+    padding-top: 3px;
+    padding-bottom: 3px;
+    line-height: 1.45;
+    height: 25px;
+    vertical-align: top;
+}
+
+.chat-lines .ts {
+    width: 74px;
 }
 
 .chat-lines tbody tr:hover td {
