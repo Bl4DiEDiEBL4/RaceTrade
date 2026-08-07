@@ -40,39 +40,24 @@ public sealed class EngineHost : IAsyncDisposable
             _siteTasks.Clear();
             lock (_clients) _clients.Clear();
 
+            SiteConfigManager.Invalidate();
             RaceHelper.LoadAllSiteConfigs();
 
             var started = 0;
-            foreach (var siteName in EnumerateSiteNames())
+            var readySites = CollectReadySites(logSkips: false).ToList();
+            if (readySites.Count == 0)
             {
-                if (!SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) || cfg is null)
-                    continue;
+                // A browser can hit Start very early after process launch. Re-read the
+                // on-disk configs once before deciding there are truly no connectable
+                // sites, so users do not need the old Stop/Start dance.
+                await Task.Delay(250);
+                SiteConfigManager.Invalidate();
+                RaceHelper.LoadAllSiteConfigs();
+                readySites = CollectReadySites(logSkips: true).ToList();
+            }
 
-                if (cfg.SiteSettings?.DisableSite == true)
-                    continue;
-
-                // Same preconditions the WinForms build checked before dialling out -
-                // a half-configured site should be skipped with a clear reason, not
-                // throw somewhere inside the IRC client.
-                if (string.IsNullOrEmpty(cfg.Server?.Host))
-                { LogManager.Warning($"Skipping site '{siteName}': missing IRC host."); continue; }
-
-                if (string.IsNullOrEmpty(cfg.Server?.Username))
-                { LogManager.Warning($"Skipping site '{siteName}': missing IRC username."); continue; }
-
-                if (string.IsNullOrEmpty(cfg.Server?.Password))
-                { LogManager.Warning($"Skipping site '{siteName}': missing IRC password."); continue; }
-
-                if (string.IsNullOrEmpty(cfg.SiteSettings?.BotName))
-                { LogManager.Warning($"Skipping site '{siteName}': missing bot name."); continue; }
-
-                var channels = new[] { cfg.SiteSettings.Chan1, cfg.SiteSettings.Chan2, cfg.SiteSettings.Chan3 }
-                    .Where(c => !string.IsNullOrWhiteSpace(c))
-                    .ToList();
-
-                if (channels.Count == 0)
-                { LogManager.Warning($"Skipping site '{siteName}': no IRC channels defined."); continue; }
-
+            foreach (var (siteName, cfg) in readySites)
+            {
                 var token = _cts.Token;
                 var name = siteName;
                 var config = cfg;
@@ -105,12 +90,18 @@ public sealed class EngineHost : IAsyncDisposable
                 started++;
             }
 
-            IsRunning = true;
-
             if (started == 0)
+            {
+                _cts.Dispose();
+                _cts = null;
+                IsRunning = false;
                 LogManager.Warning("Racer started, but no site is ready to connect. Check the Sites page.");
+            }
             else
+            {
+                IsRunning = true;
                 LogManager.Success($"Racer started: connecting {started} site(s).");
+            }
         }
         finally
         {
@@ -161,6 +152,64 @@ public sealed class EngineHost : IAsyncDisposable
         {
             _gate.Release();
         }
+    }
+
+    private static IEnumerable<(string Name, SiteConfig Config)> CollectReadySites(bool logSkips)
+    {
+        foreach (var siteName in EnumerateSiteNames())
+        {
+            if (!SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) || cfg is null)
+            {
+                if (logSkips) LogManager.Warning($"Skipping site '{siteName}': could not load site config.");
+                continue;
+            }
+
+            if (cfg.SiteSettings?.DisableSite == true)
+                continue;
+
+            // Same preconditions IRCClient enforces before dialling out. Keep this in
+            // sync so the Start button does not reject a site the actual client accepts.
+            if (string.IsNullOrWhiteSpace(cfg.Server?.Host))
+            { if (logSkips) LogManager.Warning($"Skipping site '{siteName}': missing IRC host."); continue; }
+
+            if (string.IsNullOrWhiteSpace(cfg.Server?.Username))
+            { if (logSkips) LogManager.Warning($"Skipping site '{siteName}': missing IRC username."); continue; }
+
+            if (RequiresPassword(cfg) && string.IsNullOrWhiteSpace(cfg.Server?.Password))
+            { if (logSkips) LogManager.Warning($"Skipping site '{siteName}': missing IRC password."); continue; }
+
+            if (string.IsNullOrWhiteSpace(cfg.SiteSettings?.BotName))
+            { if (logSkips) LogManager.Warning($"Skipping site '{siteName}': missing bot name."); continue; }
+
+            if (ConfiguredChannels(cfg.SiteSettings).Count == 0)
+            { if (logSkips) LogManager.Warning($"Skipping site '{siteName}': no IRC channels defined."); continue; }
+
+            yield return (siteName, cfg);
+        }
+    }
+
+    private static bool RequiresPassword(SiteConfig cfg)
+    {
+        var mode = cfg.SiteSettings?.PreOrSite;
+        var isGlobalPrebot = mode?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true;
+        var isPrebot = string.Equals(mode, "PreBot", StringComparison.OrdinalIgnoreCase);
+        return !isGlobalPrebot && !isPrebot;
+    }
+
+    private static List<string> ConfiguredChannels(SiteSettings? settings)
+    {
+        var channels = new List<string>();
+        if (settings is null)
+            return channels;
+
+        for (var i = 1; i <= 20; i++)
+        {
+            var value = settings.GetType().GetProperty($"Chan{i}")?.GetValue(settings) as string;
+            if (!string.IsNullOrWhiteSpace(value))
+                channels.Add(value);
+        }
+
+        return channels;
     }
 
     private static IEnumerable<string> EnumerateSiteNames()

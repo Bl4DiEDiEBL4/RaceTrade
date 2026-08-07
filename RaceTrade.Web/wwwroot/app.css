@@ -37,6 +37,47 @@ a { color: var(--accent); }
 
 .app { display: flex; min-height: 100vh; }
 
+.shell-content {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    flex: 0 0 auto;
+    min-height: 54px;
+    padding: 10px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: rgba(13, 17, 24, .88);
+    border-bottom: 1px solid rgba(255, 255, 255, .065);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, .20);
+    backdrop-filter: blur(14px);
+}
+
+.header-community,
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.header-community {
+    flex-wrap: wrap;
+}
+
+.header-actions {
+    justify-content: flex-end;
+    flex: 0 0 auto;
+}
+
 .sidebar {
     width: 210px;
     flex: 0 0 210px;
@@ -995,14 +1036,14 @@ body {
 .sidebar-scroll {
     flex: 1 1 auto;
     min-height: 0;
-    overflow-y: auto;
+    overflow-y: visible;
     overflow-x: hidden;
-    scrollbar-gutter: stable;
     padding-bottom: 8px;
 }
 
 .sidebar-scroll::-webkit-scrollbar {
-    width: 8px;
+    width: 0;
+    height: 0;
 }
 
 .sidebar-scroll::-webkit-scrollbar-track {
@@ -1114,6 +1155,13 @@ body {
     font-weight: 700;
 }
 
+.app-header .community {
+    color: var(--accent);
+    font-size: 12px;
+    letter-spacing: .2px;
+    white-space: nowrap;
+}
+
 .community-row {
     display: flex;
     align-items: center;
@@ -1138,6 +1186,61 @@ body {
     color: var(--fg);
     border-color: rgba(17, 215, 202, .35);
     background: rgba(17, 215, 202, .10);
+}
+
+.app-header .github-link {
+    width: auto;
+    min-width: 0;
+    height: 32px;
+    padding: 0 11px;
+    gap: 7px;
+    color: #d7e3f3;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.app-header .logout {
+    margin: 0;
+}
+
+.app-header .logout button,
+.app-header .quit {
+    width: auto;
+    min-width: 104px;
+    min-height: 32px;
+    margin: 0;
+    padding: 0 12px;
+    justify-content: center;
+}
+
+.app-header .logout button {
+    background: rgba(17, 215, 202, .08);
+    border-color: rgba(17, 215, 202, .24);
+}
+
+.app-header .logout button:hover {
+    background: rgba(17, 215, 202, .16);
+    border-color: rgba(17, 215, 202, .48);
+}
+
+.app-header .quit {
+    background: rgba(225, 79, 100, .13);
+    border-color: rgba(225, 79, 100, .30);
+    color: #ffc5cf;
+}
+
+.app-header .quit:hover {
+    background: rgba(225, 79, 100, .20);
+    border-color: rgba(225, 79, 100, .50);
+    color: #ffffff;
+}
+
+.app-header .quit-confirm {
+    margin: 0;
+    padding: 5px 6px;
+    border: 1px solid rgba(225, 79, 100, .28);
+    background: rgba(20, 24, 32, .94);
+    border-radius: 5px;
 }
 
 main {
@@ -1441,6 +1544,27 @@ pre.code {
     }
     .brand { flex: 1 0 100%; padding: 2px 6px 6px; }
     .nav-item { margin: 0; }
+    .shell-content {
+        width: 100%;
+    }
+    .app-header {
+        position: static;
+        padding: 9px 10px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    .header-community,
+    .header-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+    .app-header .logout,
+    .app-header .logout button,
+    .app-header .quit {
+        flex: 1 1 0;
+        min-width: 0;
+    }
     .page-head { align-items: flex-start; gap: 10px; flex-direction: column; }
     .head-actions { flex-wrap: wrap; }
     table.grid { min-width: 680px; }
@@ -1496,6 +1620,31 @@ pre.code {
 .fxp-table tr.link .site { color: var(--accent); }
 .fxp-table tbody tr { cursor: default; }
 .fxp-table tbody tr:hover td { background: rgba(17, 215, 202, .055); }
+
+.sort-header {
+    appearance: none;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.sort-header span {
+    display: inline-block;
+    min-width: 10px;
+    margin-left: 4px;
+    color: var(--accent);
+}
+
+.sort-header:hover,
+.sort-header.active {
+    color: var(--accent);
+}
 
 .context-backdrop {
     position: fixed;

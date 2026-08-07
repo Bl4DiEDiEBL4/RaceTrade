@@ -95,6 +95,10 @@
     private string? _error;
     private string? _status;
     private FxpContextMenu? _contextMenu;
+    private string _leftSort = "name";
+    private string _rightSort = "name";
+    private bool _leftSortDesc;
+    private bool _rightSortDesc;
     private bool Busy { get; set; }
 
     private bool CanTransferLeftToRight =>
@@ -127,6 +131,9 @@
         Func<Task> browse,
         Func<Task> up,
         Func<Task> delete) => @<div class="fxp-pane">
+        @{
+            var sortedItems = SortItems(side, items);
+        }
         <div class="fxp-pane-head">
             <h2>@title</h2>
             <select value="@site" @onchange="e => selectSite(e.Value?.ToString() ?? string.Empty)" disabled="@(!_sites.Any() || Busy)">
@@ -145,16 +152,21 @@
         <div class="fxp-table-wrap">
             <table class="grid fxp-table">
                 <thead>
-                    <tr><th></th><th>NAME</th><th>SIZE</th><th>MODIFIED</th></tr>
+                    <tr>
+                        <th></th>
+                        <th><button type="button" class='@SortHeaderClass(side, "name")' @onclick='@(() => SetSort(side, "name"))'>NAME <span>@SortGlyph(side, "name")</span></button></th>
+                        <th><button type="button" class='@SortHeaderClass(side, "size")' @onclick='@(() => SetSort(side, "size"))'>SIZE <span>@SortGlyph(side, "size")</span></button></th>
+                        <th><button type="button" class='@SortHeaderClass(side, "modified")' @onclick='@(() => SetSort(side, "modified"))'>MODIFIED <span>@SortGlyph(side, "modified")</span></button></th>
+                    </tr>
                 </thead>
                 <tbody>
-                    @if (items.Count == 0)
+                    @if (sortedItems.Count == 0)
                     {
                         <tr><td colspan="4" class="dim">No listing loaded.</td></tr>
                     }
                     else
                     {
-                        @foreach (var item in items)
+                        @foreach (var item in sortedItems)
                         {
                             <tr class="@(item.IsSymlink ? "link" : item.IsDirectory ? "dir" : "")"
                                 @ondblclick="() => OpenItem(side, item)"
@@ -469,5 +481,68 @@
         var on = value is bool b && b;
         if (on) set.Add(key);
         else set.Remove(key);
+    }
+
+    private IReadOnlyList<FxpFileItem> SortItems(string side, IReadOnlyList<FxpFileItem> items)
+    {
+        var column = side == "left" ? _leftSort : _rightSort;
+        var descending = side == "left" ? _leftSortDesc : _rightSortDesc;
+
+        IOrderedEnumerable<FxpFileItem> ordered = items.OrderBy(i => !i.IsDirectory);
+
+        ordered = column switch
+        {
+            "size" => descending
+                ? ordered.ThenByDescending(i => i.Size)
+                : ordered.ThenBy(i => i.Size),
+            "modified" => descending
+                ? ordered.ThenByDescending(i => i.Modified ?? DateTime.MinValue)
+                : ordered.ThenBy(i => i.Modified ?? DateTime.MinValue),
+            _ => descending
+                ? ordered.ThenByDescending(i => i.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : ordered.ThenBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase)
+        };
+
+        return ordered
+            .ThenBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void SetSort(string side, string column)
+    {
+        if (side == "left")
+        {
+            if (string.Equals(_leftSort, column, StringComparison.OrdinalIgnoreCase))
+                _leftSortDesc = !_leftSortDesc;
+            else
+            {
+                _leftSort = column;
+                _leftSortDesc = false;
+            }
+        }
+        else
+        {
+            if (string.Equals(_rightSort, column, StringComparison.OrdinalIgnoreCase))
+                _rightSortDesc = !_rightSortDesc;
+            else
+            {
+                _rightSort = column;
+                _rightSortDesc = false;
+            }
+        }
+
+        CloseContextMenu();
+    }
+
+    private string SortHeaderClass(string side, string column) =>
+        string.Equals(side == "left" ? _leftSort : _rightSort, column, StringComparison.OrdinalIgnoreCase)
+            ? "sort-header active"
+            : "sort-header";
+
+    private string SortGlyph(string side, string column)
+    {
+        var active = string.Equals(side == "left" ? _leftSort : _rightSort, column, StringComparison.OrdinalIgnoreCase);
+        if (!active) return "";
+        return (side == "left" ? _leftSortDesc : _rightSortDesc) ? "v" : "^";
     }
 }

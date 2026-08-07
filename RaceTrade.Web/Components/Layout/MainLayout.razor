@@ -32,10 +32,12 @@
             <NavLink class="nav-item" href="help"><Icon Name="help" /><span>Help</span></NavLink>
             <NavLink class="nav-item" href="changelog"><Icon Name="changelog" /><span>Changelog</span></NavLink>
         </div>
+    </nav>
 
-        <div class="sidebar-foot">
-            <div class="community-row">
-                <div class="community">linknet / #racetrade</div>
+    <section class="shell-content">
+        <header class="app-header">
+            <div class="header-community">
+                <span class="community">linknet / #racetrade</span>
                 <a class="github-link"
                    href="https://github.com/Bl4DiEDiEBL4/RaceTrade"
                    target="_blank"
@@ -43,16 +45,20 @@
                    title="RaceTrade on GitHub"
                    aria-label="RaceTrade on GitHub">
                     <Icon Name="github" Size="15" />
+                    <span>GitHub</span>
                 </a>
             </div>
-            <form class="logout" action="/auth/logout" method="post">
-                <button type="submit"><Icon Name="signout" Size="14" /><span>Sign out</span></button>
-            </form>
-            <ShutdownButton />
-        </div>
-    </nav>
 
-    <main>
-        @Body
-    </main>
+            <div class="header-actions">
+                <form class="logout" action="/auth/logout" method="post">
+                    <button type="submit"><Icon Name="signout" Size="14" /><span>Sign out</span></button>
+                </form>
+                <ShutdownButton />
+            </div>
+        </header>
+
+        <main>
+            @Body
+        </main>
+    </section>
 </div>
