@@ -695,6 +695,23 @@ public class ChatIrcClient
                         AppendOutput($"[INFO] Monitoring channel for chat: {channel}", Color.Cyan);
                     }
                 }
+
+                // Ask for the member list explicitly.
+                //
+                // JOIN only produces RPL_NAMREPLY when the server actually processes a
+                // *new* join. Against ZNC we are usually already in the channel from a
+                // previous attach, so the JOIN is absorbed and no 353/366 ever arrives —
+                // which left the user list permanently empty. An explicit NAMES always
+                // answers. (The WinForms build got this for free: opening the chat window
+                // called SetUserTrackingEnabled(true) on an already-connected client,
+                // which fires RequestUserList().)
+                foreach (var channel in channels)
+                {
+                    if (string.IsNullOrWhiteSpace(channel))
+                        continue;
+
+                    await SendMessageAsync(sslStream, $"NAMES {channel}");
+                }
             }
 
             listeningTask = ListenForMessagesAsync(sslStream);
@@ -882,6 +899,44 @@ public class ChatIrcClient
         }
     }
 
+    /// <summary>Channel status mode letter to its nick prefix, '\0' if it is not one.</summary>
+    private static char PrefixForMode(char mode)
+    {
+        switch (mode)
+        {
+            case 'q': return '~';   // owner
+            case 'a': return '&';   // admin / protected
+            case 'o': return '@';   // op
+            case 'h': return '%';   // half-op
+            case 'v': return '+';   // voice
+            default: return '\0';
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the prefixed member list for a channel and pushes it to the UI.
+    /// Used after MODE changes, where only a single nick moved but the consumer wants a
+    /// consistent snapshot rather than an incremental patch it has to merge itself.
+    /// </summary>
+    private void PushUserList(string channel)
+    {
+        List<string> raw;
+
+        lock (userTrackingLock)
+        {
+            if (!channelUsers.TryGetValue(channel, out var members))
+                return;
+
+            channelUserPrefixes.TryGetValue(channel, out var prefixes);
+
+            raw = members
+                .Select(n => prefixes != null && prefixes.TryGetValue(n, out var p) ? p + n : n)
+                .ToList();
+        }
+
+        SafeTabbedLogAction(t => t.UpdateUserList(siteName, channel, raw));
+    }
+
     private string NormalizeNick(string raw)
     {
         if (string.IsNullOrEmpty(raw))
@@ -1060,6 +1115,66 @@ public class ChatIrcClient
                         pendingKeyExchanges.Remove(oldNick);
                     }
                 }
+
+                return;
+            }
+
+            // MODE — keeps the user list ranks live.
+            // Without this a +o/-o after join is invisible until the next NAMES, so
+            // someone opped an hour ago still shows as a plain user.
+            var modeMatch = Regex.Match(line, @"^:(\S+)!\S+@\S+ MODE (#\S+) (\S+)(?:\s+(.*))?$");
+            if (modeMatch.Success)
+            {
+                string channel = modeMatch.Groups[2].Value;
+                string modes = modeMatch.Groups[3].Value;
+                var modeArgs = modeMatch.Groups[4].Value
+                    .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+                bool touched = false;
+                bool adding = true;
+                int argIndex = 0;
+
+                lock (userTrackingLock)
+                {
+                    if (!channelUserPrefixes.ContainsKey(channel))
+                        channelUserPrefixes[channel] = new Dictionary<string, char>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var m in modes)
+                    {
+                        if (m == '+') { adding = true; continue; }
+                        if (m == '-') { adding = false; continue; }
+
+                        char prefix = PrefixForMode(m);
+
+                        // Only status modes consume a nick argument here. Other
+                        // argument-taking modes (k, l, b, e, I) would desync the index,
+                        // so anything unknown stops the walk instead of guessing.
+                        if (prefix == '\0')
+                        {
+                            if ("klbeI".IndexOf(m) >= 0) break;
+                            continue;
+                        }
+
+                        if (argIndex >= modeArgs.Length) break;
+
+                        string nick = NormalizeNick(modeArgs[argIndex++]);
+
+                        if (!channelUsers.ContainsKey(channel))
+                            channelUsers[channel] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                        channelUsers[channel].Add(nick);
+
+                        if (adding)
+                            channelUserPrefixes[channel][nick] = prefix;
+                        else
+                            channelUserPrefixes[channel].Remove(nick);
+
+                        touched = true;
+                    }
+                }
+
+                if (touched)
+                    PushUserList(channel);
 
                 return;
             }

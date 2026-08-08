@@ -44,15 +44,31 @@
 else
 {
     <div class="panel chat-panel">
+        @* Two rows: sites on top, then the channels belonging to the selected site.
+           One flat list mixed both together and became unreadable past a few sites. *@
+        <div class="site-tabs">
+            @foreach (var site in Sites)
+            {
+                <button type="button"
+                        class="site-tab @(SameSite(site, _site) ? "active" : "")"
+                        @onclick="() => SelectSite(site)">
+                    <Icon Name="sites" Size="13" />
+                    <span>@site</span>
+                </button>
+            }
+        </div>
+
         <div class="toolbar chat-toolbar">
             <div class="channel-tabs">
-                @foreach (var (site, chan) in _channels)
+                @foreach (var (site, chan) in SiteChannels)
                 {
                     var value = $"{site}|{chan}";
-                    <button type="button"
-                            class="@ChannelTabClass(value, chan)"
-                            @onclick="() => SelectChannel(site, chan)">
-                        <span class="channel-site">@site</span>
+                    @* Not a <button> wrapping a <button>: nested buttons are invalid HTML
+                       and the inner click never fires reliably. A div with a role does. *@
+                    <div class="@ChannelTabClass(value, chan)"
+                         role="button"
+                         tabindex="0"
+                         @onclick="() => SelectChannel(site, chan)">
                         @if (IsPrivateMessage(chan))
                         {
                             <span class="channel-pm">PM</span>
@@ -62,7 +78,11 @@ else
                         {
                             <span class="channel-name">@chan</span>
                         }
-                    </button>
+                        <span class="tab-close"
+                              title="Close this tab"
+                              @onclick="() => CloseTab(site, chan)"
+                              @onclick:stopPropagation="true">&times;</span>
+                    </div>
                 }
             </div>
             <span class="spacer"></span>
@@ -80,17 +100,23 @@ else
         </div>
 
         <div class="chat-body">
-            <table class="grid logs chat-lines">
-                <tbody>
-                    @foreach (var l in _lines)
-                    {
-                        <tr class="lvl-@l.Level.ToString().ToLowerInvariant()">
-                            <td class="ts">@l.At.ToString("HH:mm:ss")</td>
-                            <td class="msg irc-line">@((MarkupString)l.Html)</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            @* column-reverse keeps the newest line pinned to the bottom without any JS,
+               and makes a nearly-empty channel hug the bottom instead of stretching its
+               first few rows across the whole panel. Row order stays normal: the table
+               is a single flex item. *@
+            <div class="chat-scroll">
+                <table class="grid logs chat-lines">
+                    <tbody>
+                        @foreach (var l in _lines)
+                        {
+                            <tr class="lvl-@l.Level.ToString().ToLowerInvariant()">
+                                <td class="ts">@l.At.ToString("HH:mm:ss")</td>
+                                <td class="msg irc-line">@((MarkupString)l.Html)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
 
             <aside class="@($"userlist {(CurrentIsPm ? "pm-side" : "")}")">
                 @if (CurrentIsPm)
@@ -98,14 +124,23 @@ else
                     <div class="pm-meta">
                         <span class="pm-kicker">Private message</span>
                         <strong>@PrivateNick(CurrentChannel)</strong>
-                        <span>Messages go straight to this nick with <code>PRIVMSG</code>.</span>
+                        <span>
+                            A FiSH key is negotiated automatically (DH1080) when the tab
+                            opens. Set one by hand only if the other side does not answer.
+                        </span>
                     </div>
                 }
                 else
                 {
+                    <div class="userlist-head">@_users.Count users</div>
                     @foreach (var u in _users)
                     {
-                        <div class="@UserClass(u)">@u</div>
+                        var nick = PlainNick(u);
+                        <div class="@UserClass(u)"
+                             title="Double-click to open a private message, right-click for more"
+                             @ondblclick="() => OpenPm(nick)"
+                             @oncontextmenu="e => OpenUserMenu(nick, e)"
+                             @oncontextmenu:preventDefault="true">@u</div>
                     }
                 }
             </aside>
@@ -117,6 +152,29 @@ else
                    disabled="@(!ChatSvc.IsRunning)" />
             <button class="btn primary" @onclick="Send" disabled="@(!ChatSvc.IsRunning)"><Icon Name="send" Size="13" /><span>Send</span></button>
         </div>
+    </div>
+}
+
+@if (_menuNick is not null)
+{
+    @* Backdrop catches the click that dismisses the menu, including a second
+       right-click somewhere else. *@
+    <div class="menu-backdrop"
+         @onclick="CloseUserMenu"
+         @oncontextmenu="CloseUserMenu"
+         @oncontextmenu:preventDefault="true"></div>
+
+    <div class="ctx-menu" style="@MenuStyle">
+        <div class="ctx-head">@_menuNick</div>
+        <button type="button" @onclick="() => OpenPm(_menuNick!)">
+            <Icon Name="chat" Size="13" /><span>Send private message</span>
+        </button>
+        <button type="button" @onclick="() => OpenPmKey(_menuNick!)">
+            <Icon Name="lock" Size="13" /><span>Blowfish key for this user</span>
+        </button>
+        <button type="button" @onclick="() => Mention(_menuNick!)">
+            <Icon Name="send" Size="13" /><span>Mention in channel</span>
+        </button>
     </div>
 }
 
@@ -177,8 +235,13 @@ else
     private IReadOnlyList<WebIrcOutput.ChatLine> _lines = Array.Empty<WebIrcOutput.ChatLine>();
     private IReadOnlyList<string> _users = Array.Empty<string>();
     private string _selected = "";
+    private string _site = "";
     private string _draft = "";
     private bool _busy;
+
+    // user context menu
+    private string? _menuNick;
+    private double _menuX, _menuY;
     private bool _showKeyDialog;
     private bool _persistKey = true;
     private bool _showKey;
@@ -191,6 +254,19 @@ else
     private bool CurrentIsPm => IsPrivateMessage(CurrentChannel);
     private string CurrentTargetLabel => CurrentIsPm ? $"PM {PrivateNick(CurrentChannel)}" : CurrentChannel;
     private string KeyDialogTarget => CurrentIsPm ? $"{CurrentSite} - PM {PrivateNick(CurrentChannel)}" : $"{CurrentSite} - {CurrentChannel}";
+
+    private IEnumerable<string> Sites =>
+        _channels.Select(c => c.Site).Distinct(StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<(string Site, string Channel)> SiteChannels =>
+        _channels.Where(c => SameSite(c.Site, _site));
+
+    private static bool SameSite(string a, string b) =>
+        string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    private string MenuStyle =>
+        $"left:{_menuX.ToString(System.Globalization.CultureInfo.InvariantCulture)}px;" +
+        $"top:{_menuY.ToString(System.Globalization.CultureInfo.InvariantCulture)}px";
 
     protected override void OnInitialized()
     {
@@ -276,8 +352,92 @@ else
 
     private void SelectChannel(string site, string channel)
     {
+        _site = site;
         _selected = $"{site}|{channel}";
         Refresh();
+    }
+
+    private void SelectSite(string site)
+    {
+        _site = site;
+
+        // Jump to that site's first channel; staying on another site's channel while its
+        // tab row is shown would be confusing.
+        var first = _channels.FirstOrDefault(c => SameSite(c.Site, site));
+        _selected = first.Channel is null ? "" : $"{first.Site}|{first.Channel}";
+
+        Refresh();
+    }
+
+    // ---- user context menu / PM ----------------------------------------------------
+
+    private void OpenUserMenu(string nick, MouseEventArgs e)
+    {
+        _menuNick = nick;
+
+        // Client coordinates: the menu is position:fixed, so it uses the viewport frame.
+        _menuX = e.ClientX;
+        _menuY = e.ClientY;
+    }
+
+    private void CloseUserMenu() => _menuNick = null;
+
+    /// <summary>
+    /// Opens (or switches to) a private-message tab for a nick on the current site and
+    /// negotiates a FiSH key automatically — no manual key entry, same as the old app.
+    /// </summary>
+    private async Task OpenPm(string nick)
+    {
+        var site = CurrentSite;
+        if (string.IsNullOrEmpty(site) || string.IsNullOrWhiteSpace(nick)) return;
+
+        var pm = $"PM:{nick}";
+        Irc.EnsureChannel(site, pm);
+
+        CloseUserMenu();
+        SelectChannel(site, pm);
+
+        // Fire and await: the exchange itself is one NOTICE, the reply arrives later on
+        // the IRC thread and updates the tab on its own.
+        await ChatSvc.EnsurePmKeyAsync(site, nick);
+    }
+
+    private async Task OpenPmKey(string nick)
+    {
+        await OpenPm(nick);
+        OpenKeyDialog();
+    }
+
+    /// <summary>
+    /// Closes a tab. This is a VIEW action only — we stay joined to the channel, so a new
+    /// line re-creates the tab. Parting for real belongs in the site config, not in a
+    /// throwaway UI click.
+    /// </summary>
+    private void CloseTab(string site, string channel)
+    {
+        Irc.CloseChannel(site, channel);
+
+        if (_selected == $"{site}|{channel}")
+            _selected = "";
+
+        Refresh();
+    }
+
+    private void Mention(string nick)
+    {
+        _draft = string.IsNullOrWhiteSpace(_draft) ? $"{nick}: " : $"{_draft.TrimEnd()} {nick} ";
+        CloseUserMenu();
+    }
+
+    private static string PlainNick(string user)
+    {
+        if (string.IsNullOrWhiteSpace(user)) return "";
+
+        var s = user.Trim();
+        while (s.Length > 0 && "~&@%+".IndexOf(s[0]) >= 0)
+            s = s[1..];
+
+        return s;
     }
 
     private static string UserClass(string user) => RankPrefix(user) switch
@@ -309,11 +469,24 @@ else
     {
         _channels = Irc.Channels;
 
-        // Default to the first channel, and recover if the selected one disappeared.
-        if (_channels.Count > 0 &&
-            (string.IsNullOrEmpty(_selected) || !_channels.Any(c => $"{c.Site}|{c.Channel}" == _selected)))
+        if (_channels.Count == 0)
         {
-            _selected = $"{_channels[0].Site}|{_channels[0].Channel}";
+            _selected = "";
+            _site = "";
+            _lines = Array.Empty<WebIrcOutput.ChatLine>();
+            _users = Array.Empty<string>();
+            return;
+        }
+
+        // Recover if the selected site disappeared (site disabled, chat stopped).
+        if (string.IsNullOrEmpty(_site) || !_channels.Any(c => SameSite(c.Site, _site)))
+            _site = _channels[0].Site;
+
+        // Same for the channel, but keep it within the selected site.
+        if (string.IsNullOrEmpty(_selected) || !_channels.Any(c => $"{c.Site}|{c.Channel}" == _selected))
+        {
+            var first = _channels.First(c => SameSite(c.Site, _site));
+            _selected = $"{first.Site}|{first.Channel}";
         }
 
         if (string.IsNullOrEmpty(_selected)) return;

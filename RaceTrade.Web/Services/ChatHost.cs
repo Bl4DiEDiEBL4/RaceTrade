@@ -208,6 +208,38 @@ public sealed class ChatHost : IAsyncDisposable
             Color.White);
     }
 
+    /// <summary>
+    /// Starts a DH1080 key exchange with a nick, unless a PM key is already in place.
+    ///
+    /// The engine only ever *answered* an incoming DH1080_INIT automatically; nothing
+    /// ever sent one, so a PM we opened ourselves stayed plaintext until someone typed a
+    /// key in by hand. Opening a PM tab now negotiates the key the way a normal FiSH
+    /// client does.
+    /// </summary>
+    public async Task EnsurePmKeyAsync(string siteName, string nick)
+    {
+        if (string.IsNullOrWhiteSpace(siteName) || string.IsNullOrWhiteSpace(nick))
+            return;
+
+        if (!_clients.TryGetValue(siteName, out var client))
+            return;
+
+        // Already keyed (saved in chat_keys, or negotiated earlier this session).
+        if (!string.IsNullOrEmpty(client.GetChannelKey($"PM:{nick}")))
+            return;
+
+        try
+        {
+            await client.InitiateFishKeyExchange(nick);
+        }
+        catch (Exception ex)
+        {
+            // A peer without FiSH simply never answers; that is not an error worth
+            // interrupting the user for.
+            LogManager.Debug($"Chat: key exchange with {nick} on '{siteName}' failed: {ex.Message}");
+        }
+    }
+
     public string GetChannelKey(string siteName, string channel)
     {
         if (string.IsNullOrWhiteSpace(siteName) || string.IsNullOrWhiteSpace(channel))

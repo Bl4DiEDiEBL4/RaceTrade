@@ -412,14 +412,40 @@ tr.lvl-debug td { color: var(--dim); }
 }
 
 .channel-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
     min-height: 28px;
-    padding: 0 10px;
+    padding: 0 4px 0 10px;
     border: 1px solid rgba(151, 164, 188, .22);
     border-radius: 4px;
     background: #151c28;
     color: #b8c7dd;
+    font-size: 12px;
     cursor: pointer;
+    user-select: none;
 }
+
+/* Close button. Reserved space at all times (via visibility, not display) so tabs do
+   not resize under the cursor while you are aiming at one. */
+.tab-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    margin-left: 4px;
+    border-radius: 3px;
+    color: var(--dim);
+    font-size: 15px;
+    line-height: 1;
+    visibility: hidden;
+}
+
+.channel-tab:hover .tab-close,
+.channel-tab.active .tab-close { visibility: visible; }
+
+.tab-close:hover { background: #3a2028; color: var(--err); }
 
 .channel-tab:hover {
     border-color: rgba(17, 215, 202, .45);
@@ -458,10 +484,73 @@ tr.lvl-debug td { color: var(--dim); }
     margin-left: 5px;
 }
 
-.chat-body { display: flex; align-items: stretch; }
-.chat-lines {
+/* ---- site tab row (above the channel row) ---- */
+.site-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 8px 10px 0;
+    border-bottom: 1px solid var(--line);
+    background: #0c111b;
+}
+
+.site-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    border-radius: 5px 5px 0 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    cursor: pointer;
+    position: relative;
+    top: 1px;
+}
+
+.site-tab:hover { color: var(--fg); background: #131a26; }
+
+.site-tab.active {
+    color: var(--accent);
+    background: var(--card);
+    border-color: var(--line);
+}
+
+/* ---- message area ----
+   Fixed height so the panel does not grow as lines arrive, and column-reverse so the
+   newest line stays pinned to the bottom without any JS scroll handling. A nearly empty
+   channel then hugs the bottom instead of stretching its first rows over the panel. */
+.chat-body {
+    display: flex;
+    align-items: stretch;
+    height: 58vh;
+    min-height: 300px;
+}
+
+.chat-scroll {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column-reverse;
+    overflow-y: auto;
     background: #090d15;
+}
+
+.chat-lines {
+    width: 100%;
+    background: #090d15;
+}
+
+/* Compact rows: the shared .grid padding is sized for data tables and made three chat
+   lines look like a spreadsheet. */
+.chat-lines td {
+    padding: 1px 10px;
+    line-height: 1.5;
+    vertical-align: top;
 }
 
 .chat-lines td {
@@ -478,12 +567,24 @@ tr.lvl-debug td { color: var(--dim); }
 }
 
 .userlist {
-    flex: 0 0 165px;
+    flex: 0 0 175px;
     border-left: 1px solid var(--line);
-    padding: 8px 0;
-    max-height: 65vh;
+    padding: 0 0 8px;
     overflow-y: auto;
     background: #0c111b;
+}
+
+.userlist-head {
+    position: sticky;
+    top: 0;
+    padding: 7px 13px 6px;
+    background: #0c111b;
+    border-bottom: 1px solid var(--line);
+    color: var(--dim);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
 }
 
 .userlist.pm-side {
@@ -510,13 +611,68 @@ tr.lvl-debug td { color: var(--dim); }
     text-transform: uppercase;
 }
 
-.user { padding: 2px 13px; color: var(--muted); font-size: 12px; font-weight: 600; }
-.user:hover { color: var(--fg); }
+.user {
+    padding: 2px 13px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user:hover { color: var(--fg); background: #141b27; }
 .user.rank-owner { color: #ff80d5; }
 .user.rank-admin { color: #f5df5a; }
 .user.rank-op { color: #20d7ca; }
 .user.rank-halfop { color: #8bf58b; }
 .user.rank-voice { color: #78b7ff; }
+
+/* ---- right-click menu on a nick ---- */
+.menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+
+.ctx-menu {
+    position: fixed;
+    z-index: 41;
+    min-width: 210px;
+    padding: 4px;
+    background: #171d29;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .55);
+}
+
+.ctx-head {
+    padding: 6px 10px 7px;
+    margin-bottom: 3px;
+    border-bottom: 1px solid var(--line);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.ctx-menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    color: var(--fg);
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ctx-menu button:hover { background: #232c3c; }
 
 /* send bar pinned under the message list */
 .chat-send {
@@ -591,8 +747,9 @@ tr.lvl-debug td { color: var(--dim); }
 .irc-bg-15 { background-color: rgba(207, 216, 230, .20); }
 
 @media (max-width: 720px) {
-    .chat-body { flex-direction: column; }
-    .userlist { flex: none; border-left: 0; border-top: 1px solid var(--line); max-height: 160px; }
+    .chat-body { flex-direction: column; height: 70vh; }
+    .chat-scroll { flex: 1; min-height: 0; }
+    .userlist { flex: 0 0 150px; border-left: 0; border-top: 1px solid var(--line); }
 }
 
 /* compact channel table + filter blocks */

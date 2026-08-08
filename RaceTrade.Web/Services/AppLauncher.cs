@@ -63,6 +63,22 @@ internal static class AppLauncher
             if (count != 1) return;
 
             Console.Out.Flush();
+
+            // MUST happen before FreeConsole.
+            //
+            // Console.Out/Error/In are cached streams wrapping the console handles. Once
+            // FreeConsole runs those handles are dead, and the NEXT Console.WriteLine
+            // anywhere in the process throws IOException("The handle is invalid") — which
+            // is exactly what killed the Start button: SiteConfigManager writes a
+            // "Loaded and cached configuration" line while loading site configs, so the
+            // exception surfaced as "Failed to start the racer: The handle is invalid".
+            //
+            // Swapping in the null writers first means later console output is discarded
+            // instead of throwing. Everything worth seeing already goes to the UI log.
+            Console.SetOut(TextWriter.Null);
+            Console.SetError(TextWriter.Null);
+            Console.SetIn(TextReader.Null);
+
             FreeConsole();
         }
         catch

@@ -26,9 +26,18 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
     private readonly UiLogSink _sink;
     private int _notifyScheduled;
 
-    // (site, channel) -> recent lines, and -> user list
-    private readonly ConcurrentDictionary<(string Site, string Channel), ConcurrentQueue<ChatLine>> _lines = new();
-    private readonly ConcurrentDictionary<(string Site, string Channel), ConcurrentDictionary<string, byte>> _users = new();
+    // (site, channel) -> recent lines, and -> nick => status prefix ('\0' = plain user).
+    //
+    // Both keyed case-insensitively: IRC channel names and nicks are case-insensitive,
+    // and the name we get back from the server ("#Site-Chat") often differs in case from
+    // the one in the site config ("#site-chat"). With an ordinal key that produced two
+    // separate entries — a chat tab with messages and a *different* one holding the user
+    // list, which is why the list rendered empty.
+    private readonly ConcurrentDictionary<(string Site, string Channel), ConcurrentQueue<ChatLine>> _lines =
+        new(ChannelKeyComparer.Instance);
+
+    private readonly ConcurrentDictionary<(string Site, string Channel), ConcurrentDictionary<string, char>> _users =
+        new(ChannelKeyComparer.Instance);
 
     public WebIrcOutput(UiLogSink sink) => _sink = sink;
 
@@ -53,7 +62,22 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
     {
         var key = Key(siteName, channelName);
         _lines.GetOrAdd(key, _ => new ConcurrentQueue<ChatLine>());
-        _users.GetOrAdd(key, _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
+        _users.GetOrAdd(key, _ => new ConcurrentDictionary<string, char>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Drops a channel's buffered lines and member list, which removes its tab.
+    ///
+    /// A view-level action: the IRC client stays joined. If traffic arrives afterwards
+    /// the tab simply comes back, which is what you want for a channel and harmless for
+    /// a PM.
+    /// </summary>
+    public void CloseChannel(string siteName, string channelName)
+    {
+        var key = Key(siteName, channelName);
+        _lines.TryRemove(key, out _);
+        _users.TryRemove(key, out _);
+        ScheduleChanged();
     }
 
     public void AppendChannelMessage(string siteName, string channelName, string message, Color color)
@@ -67,25 +91,41 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
         ScheduleChanged();
     }
 
+    // Nick and status prefix are stored SEPARATELY, not as the raw "@nick" string the
+    // engine hands us. NAMES delivers prefixed nicks while JOIN/PART/NICK deliver bare
+    // ones; keeping the raw form meant a PART for "bob" could never remove the "@bob"
+    // that NAMES had inserted, and the list slowly filled with ghosts.
+
     public void AddUser(string siteName, string channelName, string username)
     {
+        var (nick, prefix) = SplitPrefix(username);
+        if (nick.Length == 0) return;
+
         _users.GetOrAdd(Key(siteName, channelName),
-            _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase))[username] = 0;
+            _ => new ConcurrentDictionary<string, char>(StringComparer.OrdinalIgnoreCase))[nick] = prefix;
+
         ScheduleChanged();
     }
 
     public void RemoveUser(string siteName, string channelName, string username)
     {
+        var (nick, _) = SplitPrefix(username);
+
         if (_users.TryGetValue(Key(siteName, channelName), out var set))
-            set.TryRemove(username, out _);
+            set.TryRemove(nick, out _);
+
         ScheduleChanged();
     }
 
     public void UpdateUserList(string siteName, string channelName, List<string> users)
     {
-        var set = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+        var set = new ConcurrentDictionary<string, char>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var u in users ?? new List<string>())
-            set[u] = 0;
+        {
+            var (nick, prefix) = SplitPrefix(u);
+            if (nick.Length > 0) set[nick] = prefix;
+        }
 
         _users[Key(siteName, channelName)] = set;
         ScheduleChanged();
@@ -118,39 +158,68 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
     public IReadOnlyList<ChatLine> Lines(string site, string channel) =>
         _lines.TryGetValue(Key(site, channel), out var q) ? q.ToArray() : Array.Empty<ChatLine>();
 
+    /// <summary>
+    /// Members of a channel as "@nick" style strings, ordered owner → admin → op →
+    /// half-op → voice → plain user, then alphabetically within each rank.
+    /// </summary>
     public IReadOnlyList<string> Users(string site, string channel) =>
         _users.TryGetValue(Key(site, channel), out var set)
-            ? set.Keys
-                .OrderBy(UserRank)
-                .ThenBy(PlainNick, StringComparer.OrdinalIgnoreCase)
+            ? set.ToArray()                       // snapshot: the IRC thread keeps writing
+                .OrderBy(kv => Rank(kv.Value))
+                .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(kv => kv.Value == '\0' ? kv.Key : kv.Value + kv.Key)
                 .ToList()
             : Array.Empty<string>();
 
     private static (string, string) Key(string site, string channel) =>
         (site ?? "", channel ?? "");
 
-    private static int UserRank(string user) => RankPrefix(user) switch
+    private const string StatusPrefixes = "~&@%+";
+
+    private static int Rank(char prefix) => prefix switch
     {
-        '~' => 0,
-        '&' => 1,
-        '@' => 2,
-        '%' => 3,
-        '+' => 4,
-        _ => 5
+        '~' => 0,   // owner
+        '&' => 1,   // admin
+        '@' => 2,   // op
+        '%' => 3,   // half-op
+        '+' => 4,   // voice
+        _ => 5      // regular
     };
 
-    private static char RankPrefix(string user) =>
-        string.IsNullOrWhiteSpace(user) ? '\0' : user.Trim()[0];
-
-    private static string PlainNick(string user)
+    /// <summary>Splits "@nick" into ("nick", '@'). Keeps only the highest prefix.</summary>
+    private static (string Nick, char Prefix) SplitPrefix(string user)
     {
-        if (string.IsNullOrWhiteSpace(user)) return "";
+        if (string.IsNullOrWhiteSpace(user)) return ("", '\0');
 
-        var clean = user.Trim();
-        while (clean.Length > 0 && "~&@%+".Contains(clean[0]))
-            clean = clean[1..];
+        var s = user.Trim();
+        var prefix = '\0';
 
-        return clean;
+        // Some servers list every mode a user holds ("@+bob"); the first one is the
+        // highest, which is the one worth showing.
+        while (s.Length > 0 && StatusPrefixes.IndexOf(s[0]) >= 0)
+        {
+            if (prefix == '\0') prefix = s[0];
+            s = s[1..];
+        }
+
+        return (s, prefix);
+    }
+
+    /// <summary>
+    /// Case-insensitive key comparer for (site, channel). Both are case-insensitive in
+    /// IRC, and the server's spelling routinely differs from the config's.
+    /// </summary>
+    private sealed class ChannelKeyComparer : IEqualityComparer<(string Site, string Channel)>
+    {
+        public static readonly ChannelKeyComparer Instance = new();
+
+        public bool Equals((string Site, string Channel) a, (string Site, string Channel) b) =>
+            string.Equals(a.Site, b.Site, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(a.Channel, b.Channel, StringComparison.OrdinalIgnoreCase);
+
+        public int GetHashCode((string Site, string Channel) k) => HashCode.Combine(
+            StringComparer.OrdinalIgnoreCase.GetHashCode(k.Site ?? ""),
+            StringComparer.OrdinalIgnoreCase.GetHashCode(k.Channel ?? ""));
     }
 
     private static bool IsPrivateMessage(string channel) =>
