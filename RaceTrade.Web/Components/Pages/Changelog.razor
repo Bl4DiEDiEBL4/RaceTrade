@@ -10,7 +10,7 @@
     <section class="doc-hero">
         <div>
             <span class="doc-kicker">Current branch</span>
-            <h2>v2.0.3 WebUI</h2>
+            <h2>v2.0.4 WebUI</h2>
             <p>
                 This page tracks user-facing RaceTrade changes for the new web build.
             </p>
@@ -19,6 +19,16 @@
 
     <section class="timeline">
         <article class="timeline-item current">
+            <div class="timeline-version">v2.0.4 WebUI</div>
+            <div class="timeline-date">August 2026</div>
+            <ul>
+                <li>Added a per-channel chat connected status after IRC confirms the channel member list.</li>
+                <li>Fixed Chat user list refresh for channels that miss the first NAMES snapshot and removed the duplicate toolbar user count.</li>
+                <li>Restored Global PreBot selection/startup from site configs and fixed PreBot pretime storage.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
             <div class="timeline-version">v2.0.3 WebUI</div>
             <div class="timeline-date">August 2026</div>
             <ul>
@@ -35,7 +45,6 @@
                 <li>Fixed first Start after app launch so site configs are reloaded before deciding no sites are ready.</li>
                 <li>Fixed site config loading used by Start so synced/legacy site files are not rejected after the main scan loaded them.</li>
                 <li>Fixed Chat user list refresh without reintroducing the unstable chat tab/render changes.</li>
-                <li>Restored Global PreBot selection/startup from site configs and fixed PreBot pretime storage.</li>
             </ul>
         </article>
 
