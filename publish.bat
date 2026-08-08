@@ -10,7 +10,8 @@ rem    is not a bug and it is not what you ship. The single self-contained file 
 rem    produced by `dotnet publish`, which is what this script runs.
 rem
 rem  Result:  Release\win-x64\RaceTrade.exe     (one file, no .NET install needed)
-rem           Release\linux-x64\RaceTrade       (one file, same deal)
+rem           Release\linux-x64\RaceTrade
+rem           Release\linux-arm64\RaceTrade     (Raspberry Pi 5 / ARM64 Linux)
 rem ============================================================================
 
 set ROOT=%~dp0
@@ -19,7 +20,7 @@ set WORK=%TEMP%\RaceTrade-publish-%RANDOM%-%RANDOM%
 set PROJ=%ROOT%RaceTrade.Web\RaceTrade.Web.csproj
 
 rem Clean old one-folder WinForms release files that may still sit directly under
-rem Release\. The v2 release lives only in Release\win-x64 and Release\linux-x64.
+rem Release\. The v2 release lives only in Release\<runtime-id>.
 if exist "%OUT%" del /q "%OUT%\*" 2>nul
 
 where dotnet >nul 2>&1
@@ -35,7 +36,7 @@ echo.
 echo === Restoring ===
 dotnet restore "%PROJ%" || exit /b 1
 
-for %%R in (win-x64 linux-x64) do (
+for %%R in (win-x64 linux-x64 linux-arm64) do (
     echo.
     echo === Publishing %%R ===
 
@@ -74,6 +75,7 @@ dir /b "%OUT%\win-x64"
 echo.
 echo   Windows : Release\win-x64\RaceTrade.exe
 echo   Linux   : Release\linux-x64\RaceTrade   (chmod +x it after copying)
+echo   Linux ARM64: Release\linux-arm64\RaceTrade   (Raspberry Pi 5 / ARM64 Linux)
 echo.
 echo   Ship only the per-platform executable.
 echo   The data\ folder is created on first run next to the executable.

@@ -29,9 +29,15 @@ racing engine runs in the same process.
 
 ## Download And Start
 
-1. Download the Windows release.
-2. Put `RaceTrade.exe` in its own folder, for example `D:\RaceTrade`.
-3. Start `RaceTrade.exe`.
+Choose the release for your machine:
+
+- Windows: `RaceTrade-v2.x.x-win-x64.zip`
+- Linux PC/server: `RaceTrade-v2.x.x-linux-x64.zip`
+- Raspberry Pi 5 / ARM64 Linux: `RaceTrade-v2.x.x-linux-arm64.zip`
+
+1. Download the release for your platform.
+2. Put the executable in its own folder, for example `D:\RaceTrade` on Windows.
+3. Start `RaceTrade.exe` on Windows or `RaceTrade` on Linux.
 4. Open the WebUI at:
 
 ```text
@@ -40,6 +46,20 @@ http://127.0.0.1:8420
 
 On first start RaceTrade creates a `data` folder next to the executable. That is
 normal. It contains your sites, CBFTP settings, prebots, logs and databases.
+
+On Linux/Raspberry Pi, make the binary executable and set a WebUI password before
+exposing it to another machine:
+
+```bash
+chmod +x RaceTrade
+./RaceTrade --set-password
+```
+
+Then run it for LAN access:
+
+```bash
+./RaceTrade --no-browser --bind 0.0.0.0
+```
 
 ## Run Multiple Copies
 

@@ -82,6 +82,11 @@
             For private remote access, a VPN, Tailscale/WireGuard or an SSH tunnel is usually
             cleaner than opening a port to the internet.
         </p>
+        <p>
+            Raspberry Pi 5 and other ARM64 Linux hosts use the <code>linux-arm64</code>
+            release. Use a 64-bit OS, make <code>RaceTrade</code> executable, set a WebUI
+            password, then run it with <code>--no-browser --bind 0.0.0.0</code> for LAN access.
+        </p>
     </section>
 
     <section class="doc-section">

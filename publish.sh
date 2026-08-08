@@ -6,6 +6,7 @@
 #  what you ship. `dotnet publish` produces the single self-contained binary.
 #
 #  Result:  Release/linux-x64/RaceTrade      (one file, no .NET install needed)
+#           Release/linux-arm64/RaceTrade    (Raspberry Pi 5 / ARM64 Linux)
 #           Release/win-x64/RaceTrade.exe
 # ============================================================================
 set -euo pipefail
@@ -29,10 +30,15 @@ if ! command -v dotnet >/dev/null 2>&1; then
     exit 1
 fi
 
-# Default to the host platform only; pass runtimes explicitly to cross-publish:
-#   ./publish.sh linux-x64 win-x64
+# Default to the host Linux architecture; pass runtimes explicitly to cross-publish:
+#   ./publish.sh linux-x64 linux-arm64 win-x64
 RIDS=("$@")
-[ ${#RIDS[@]} -eq 0 ] && RIDS=(linux-x64)
+if [ ${#RIDS[@]} -eq 0 ]; then
+    case "$(uname -m)" in
+        aarch64|arm64) RIDS=(linux-arm64) ;;
+        *) RIDS=(linux-x64) ;;
+    esac
+fi
 
 echo "=== Restoring ==="
 dotnet restore "$PROJ"
