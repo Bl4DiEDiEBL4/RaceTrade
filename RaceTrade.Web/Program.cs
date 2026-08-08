@@ -40,6 +40,8 @@ Directory.SetCurrentDirectory(dataRoot);
 foreach (var sub in new[] { "sites", "cbftp", "pre_bots", "sections", "settings", "db", "userdata", "logs", "history" })
     Directory.CreateDirectory(sub);
 
+LoadEngineSettings();
+
 Console.WriteLine($"Data directory: {dataRoot}");
 
 // Report what was actually found, and catch the most common mistake: config files
@@ -487,6 +489,57 @@ static string ResolveDataRoot(string[] args, string appDir)
     }
 
     return Path.Combine(appDir, "data");
+}
+
+static void LoadEngineSettings()
+{
+    var settings = Path.Combine("settings", "settings.json");
+    if (!File.Exists(settings)) return;
+
+    try
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(settings));
+        var root = doc.RootElement;
+
+        if (TryReadBool(root, out var debug, "debug_logging", "debug_enabled", "DebugEnabled"))
+            EngineSettings.DebugEnabled = debug;
+
+        if (TryReadBool(root, out var insecureSsl, "allow_insecure_ssl", "allow_insecure_ssl_certificates", "AllowInsecureSsl"))
+            EngineSettings.AllowInsecureSsl = insecureSsl;
+    }
+    catch
+    {
+        // Malformed runtime settings should not stop startup; defaults apply.
+    }
+}
+
+static bool TryReadBool(System.Text.Json.JsonElement root, out bool value, params string[] names)
+{
+    foreach (var name in names)
+    {
+        if (!root.TryGetProperty(name, out var property)) continue;
+
+        if (property.ValueKind == System.Text.Json.JsonValueKind.True)
+        {
+            value = true;
+            return true;
+        }
+
+        if (property.ValueKind == System.Text.Json.JsonValueKind.False)
+        {
+            value = false;
+            return true;
+        }
+
+        if (property.ValueKind == System.Text.Json.JsonValueKind.String &&
+            bool.TryParse(property.GetString(), out value))
+        {
+            return true;
+        }
+    }
+
+    value = false;
+    return false;
 }
 
 static string ReadEmbeddedText(string name)

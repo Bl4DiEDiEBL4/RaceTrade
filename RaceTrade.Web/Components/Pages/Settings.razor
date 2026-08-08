@@ -80,6 +80,16 @@
                 <span class="fh">Accept self-signed cbftp certificates.</span>
             </span>
         </label>
+
+        <div class="card-actions">
+            <button class="btn primary" @onclick="SaveEngine">
+                <Icon Name="save" Size="13" /><span>Save</span>
+            </button>
+            @if (!string.IsNullOrWhiteSpace(_engineMessage))
+            {
+                <span class="@($"fh inline {(_engineMessageIsError ? "err-text" : "")}")">@_engineMessage</span>
+            }
+        </div>
     </div>
 
     <div class="card">
@@ -319,6 +329,8 @@ sudo systemctl enable --now racetrade</pre>
 
     private bool _debug = EngineSettings.DebugEnabled;
     private bool _insecureSsl = EngineSettings.AllowInsecureSsl;
+    private string _engineMessage = "";
+    private bool _engineMessageIsError;
 
     private string _movieProvider = "tiffara";
     private string _tmdbKey = "";
@@ -348,6 +360,7 @@ sudo systemctl enable --now racetrade</pre>
 
     protected override void OnInitialized()
     {
+        LoadEngine();
         LoadWebAccess();
         LoadLookup();
         CountData();
@@ -382,6 +395,57 @@ sudo systemctl enable --now racetrade</pre>
         // Applied immediately: these are plain process-wide switches, no restart needed.
         EngineSettings.DebugEnabled = _debug;
         EngineSettings.AllowInsecureSsl = _insecureSsl;
+    }
+
+    private void LoadEngine()
+    {
+        try
+        {
+            if (!File.Exists(SettingsFile)) return;
+
+            var o = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(SettingsFile));
+
+            _debug = ReadBool(o, "debug_logging", "debug_enabled", "DebugEnabled")
+                     ?? EngineSettings.DebugEnabled;
+            _insecureSsl = ReadBool(o, "allow_insecure_ssl", "allow_insecure_ssl_certificates", "AllowInsecureSsl")
+                           ?? EngineSettings.AllowInsecureSsl;
+
+            ApplyEngine();
+        }
+        catch
+        {
+            // A malformed settings file shouldn't break the page; defaults apply.
+        }
+    }
+
+    private void SaveEngine()
+    {
+        _engineMessage = "";
+        _engineMessageIsError = false;
+
+        try
+        {
+            Directory.CreateDirectory("settings");
+
+            var o = File.Exists(SettingsFile)
+                ? Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(SettingsFile))
+                : new Newtonsoft.Json.Linq.JObject();
+
+            o["debug_logging"] = _debug;
+            o["allow_insecure_ssl"] = _insecureSsl;
+
+            AtomicFile.WriteAllText(SettingsFile, o.ToString(Newtonsoft.Json.Formatting.Indented));
+
+            ApplyEngine();
+            _engineMessage = "Saved.";
+            LogManager.Success("Saved engine settings.");
+        }
+        catch (Exception ex)
+        {
+            _engineMessage = $"Failed to save: {ex.Message}";
+            _engineMessageIsError = true;
+            LogManager.Error($"Failed to save engine settings: {ex.Message}");
+        }
     }
 
     private void LoadWebAccess()
@@ -501,6 +565,23 @@ sudo systemctl enable --now racetrade</pre>
         {
             // A malformed settings file shouldn't break the page; defaults apply.
         }
+    }
+
+    private static bool? ReadBool(Newtonsoft.Json.Linq.JObject o, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            var token = o[key];
+            if (token == null) continue;
+
+            if (token.Type == Newtonsoft.Json.Linq.JTokenType.Boolean)
+                return token.ToObject<bool>();
+
+            if (bool.TryParse(token.ToString(), out var value))
+                return value;
+        }
+
+        return null;
     }
 
     private void SaveLookup()

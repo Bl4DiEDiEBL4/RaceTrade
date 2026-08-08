@@ -1563,11 +1563,7 @@ public class ChatIrcClient
                     return;
                 }
             }
-            else
-            {
-                tabbedLogOutput?.AppendChannelMessage(siteName, channel,
-                    $"[DEBUG] No FiSH key found for {keyName}", Color.Orange);
-            }
+            // No configured FiSH key means this channel/PM is plaintext.
 
             await SendMessageAsync(currentSslStream, $"PRIVMSG {target} :{messageToSend}");
 
