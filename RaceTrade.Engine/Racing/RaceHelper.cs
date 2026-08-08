@@ -309,11 +309,28 @@ public static class RaceHelper
 
 
     /// <summary>
+    /// Compact one-line summary of the attributes the rule engine saw. The engine only
+    /// returns ALLOW/DROP, so this is the next best thing: it shows what it judged.
+    /// </summary>
+    private static string DescribeInput(Dictionary<string, string> input)
+    {
+        if (input == null) return "";
+
+        var interesting = new[] { "group", "resolution", "source", "codec", "range", "year", "repeat" };
+
+        return string.Join(", ", interesting
+            .Where(k => input.ContainsKey(k) && !string.IsNullOrEmpty(input[k]))
+            .Select(k => $"{k}={input[k]}"));
+    }
+
+    /// <summary>
     /// Filters allowed sites for a release.
-    /// FIXED: Returns FilterResult with proper status codes.
-    /// FIXED: Checks database for duplicates.
-    /// FIXED: Uses cached lookups for performance.
-    /// FIXED: For Global PreBots, checks original IRC section instead of reverse mapping.
+    /// Returns a FilterResult with a proper status code, checks the database for
+    /// duplicates, uses cached lookups, and for Global PreBots checks the original IRC
+    /// section instead of the reverse mapping.
+    ///
+    /// Every rejection is also recorded in <see cref="FilterResult.Skips"/> and pushed to
+    /// <see cref="RaceDiagnostics"/>, which is what the Skips page and Test Release read.
     /// </summary>
     public static async Task<FilterResult> FilterAllowedSites(
         Dictionary<string, string> raceSections,
@@ -327,23 +344,44 @@ public static class RaceHelper
         string currentSiteName,
         string originalIrcSection = null)
     {
+        // Declared before the early returns so those results carry their reason too —
+        // otherwise Test Release showed a bare status for a globally blacklisted release.
+        var skips = new List<SkipRecord>();
+
+        SkipRecord Skip(string site, SkipReason reason, string detail, string section)
+        {
+            var record = RaceDiagnostics.Report(
+                releaseName, reason, detail, site, section ?? cbftpSection, currentSiteName);
+            skips.Add(record);
+            return record;
+        }
+
+        FilterResult WithSkips(FilterResult result)
+        {
+            result.Skips.AddRange(skips);
+            return result;
+        }
+
         if (IsGloballyBlacklisted(releaseName, out string matchedPattern))
         {
             LogManager.Warning($"Release '{releaseName}' globally blacklisted by pattern '{matchedPattern}'");
-            return FilterResult.GloballyBlacklisted(releaseName, matchedPattern);
+            Skip(null, SkipReason.GlobalBlacklist, $"pattern '{matchedPattern}'", null);
+            return WithSkips(FilterResult.GloballyBlacklisted(releaseName, matchedPattern));
         }
 
         bool alreadyProcessed = await SQLiteHelper.IsReleaseProcessedAsync(releaseName);
         if (alreadyProcessed)
         {
             LogManager.Warning($"Release '{releaseName}' already in database");
-            return FilterResult.Duplicate(releaseName);
+            Skip(null, SkipReason.Duplicate, "already in the processed database", null);
+            return WithSkips(FilterResult.Duplicate(releaseName));
         }
 
         if (!InProgressReleases.TryAdd(releaseName, true))
         {
             LogManager.Warning($"Release '{releaseName}' is already being processed");
-            return FilterResult.Duplicate(releaseName);
+            Skip(null, SkipReason.Duplicate, "already in flight from another announce", null);
+            return WithSkips(FilterResult.Duplicate(releaseName));
         }
 
         try
@@ -358,7 +396,10 @@ public static class RaceHelper
             }
 
             if (!siteConfigsSnapshot.Any())
-                return FilterResult.Error(releaseName, "No site configurations loaded");
+            {
+                Skip(null, SkipReason.Error, "no site configurations are loaded", cbftpSection);
+                return WithSkips(FilterResult.Error(releaseName, "No site configurations loaded"));
+            }
 
             var allowedSites = new List<string>();
 
@@ -383,6 +424,8 @@ public static class RaceHelper
                 if (string.IsNullOrWhiteSpace(siteName) || disableSite)
                 {
                     LogManager.Debug($"Skipping site [{siteName}]: disabled or unnamed.");
+                    Skip(siteName, SkipReason.SiteDisabled,
+                        string.IsNullOrWhiteSpace(siteName) ? "site has no name" : "site is disabled", null);
                     continue;
                 }
 
@@ -423,6 +466,8 @@ public static class RaceHelper
                         else
                         {
                             LogManager.Debug($"[{siteName}]: No IRC section mapping found for CBFTP [{cbftpSection}], skipping");
+                            Skip(siteName, SkipReason.NoCbftpMapping,
+                                $"no IRC section on this site maps to cbftp section '{cbftpSection}'", cbftpSection);
                             continue;
                         }
                     }
@@ -439,6 +484,8 @@ public static class RaceHelper
                     if (!IsAllowedSection(ircSectionToCheck, siteConfig))
                     {
                         LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}]: IRC section [{LogColors.Green(ircSectionToCheck)}] NOT enabled in Race Sections, skipping");
+                        Skip(siteName, SkipReason.SectionDisabled,
+                            $"section '{ircSectionToCheck}' is not in this site's enabled race sections", ircSectionToCheck);
                         continue;
                     }
 
@@ -458,6 +505,8 @@ public static class RaceHelper
                         LogManager.LogCBFTP(
                             CBFTPEventType.Info,
                             $"[{LogColors.Magenta(siteName)}] Release skiplist matched [{LogColors.Yellow(skipPattern)}], skipping [{LogColors.Orange(releaseName)}]");
+                        Skip(siteName, SkipReason.Skiplist,
+                            $"section skiplist pattern '{skipPattern}'", ircSectionToCheck);
                         continue;
                     }
 
@@ -493,6 +542,8 @@ public static class RaceHelper
                             LogManager.LogCBFTP(
                                 CBFTPEventType.Info,
                                 $"[{LogColors.Magenta(siteName)}] Pretime check: BLOCKED - {pretimeSeconds}s exceeds {pretimeSource} max {maxPretimeSeconds}s");
+                            Skip(siteName, SkipReason.Pretime,
+                                $"{pretimeSeconds}s old, {pretimeSource} allows {maxPretimeSeconds}s", ircSectionToCheck);
                             continue;
                         }
 
@@ -521,9 +572,11 @@ public static class RaceHelper
                         {
                             LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Checking filters");
 
-                            if (!await ValidateIMDB(releaseName, imdb, siteName))
+                            var imdbBlock = await ValidateIMDB(releaseName, imdb, siteName);
+                            if (imdbBlock != null)
                             {
                                 LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Filtered");
+                                Skip(siteName, SkipReason.Imdb, imdbBlock, ircSectionToCheck);
                                 continue;
                             }
 
@@ -536,9 +589,11 @@ public static class RaceHelper
                         {
                             LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Checking filters");
 
-                            if (!await ValidateTVMaze(releaseName, tvmaze, siteName))
+                            var tvmazeBlock = await ValidateTVMaze(releaseName, tvmaze, siteName);
+                            if (tvmazeBlock != null)
                             {
                                 LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Filtered");
+                                Skip(siteName, SkipReason.TvMaze, tvmazeBlock, ircSectionToCheck);
                                 continue;
                             }
 
@@ -609,16 +664,24 @@ public static class RaceHelper
                     if (string.Equals(evaluationResult, "DROP", StringComparison.OrdinalIgnoreCase))
                     {
                         LogManager.Warning($"[{siteName}] dropped by rules.");
+                        Skip(siteName, SkipReason.Rules,
+                            $"rule engine returned DROP ({DescribeInput(input)})", ircSectionToCheck);
                         continue;
                     }
 
                     // Same wildcard semantics as the global blacklist: * and ? are
                     // wildcards (Regex.Escape alone made them literal, so entries like
                     // "*French*" could never match anything).
-                    if (blacklist != null && blacklist.Any(bl =>
-                        MatchesBlacklistPattern(releaseName, bl)))
+                    // FirstOrDefault instead of Any: the pattern that matched is the whole
+                    // point of the skip feed, and Any() threw it away.
+                    var matchedBlacklist = blacklist?.FirstOrDefault(bl =>
+                        MatchesBlacklistPattern(releaseName, bl));
+
+                    if (matchedBlacklist != null)
                     {
                         LogManager.Warning($"[{siteName}] blacklisted for [{LogColors.Orange(releaseName)}]");
+                        Skip(siteName, SkipReason.Blacklist,
+                            $"pattern '{matchedBlacklist}'", ircSectionToCheck);
                         continue;
                     }
 
@@ -640,27 +703,43 @@ public static class RaceHelper
                 catch (Exception ex)
                 {
                     LogManager.Error($"Exception processing site [{LogColors.Magenta(siteName)}]: {ex.Message}");
+                    Skip(siteName, SkipReason.Error, ex.Message, null);
                 }
             }
 
             // CHECK AFTER ALL SITES HAVE BEEN PROCESSED
             if (!allowedSites.Any())
             {
-                return FilterResult.NoSites(releaseName, cbftpSection, "All sites were filtered out");
+                Skip(null, SkipReason.NoSites,
+                    skips.Count > 0
+                        ? $"every site was filtered out ({skips.Count} reason(s) above)"
+                        : "no site is configured for this section",
+                    cbftpSection);
+
+                return WithSkips(FilterResult.NoSites(releaseName, cbftpSection, "All sites were filtered out"));
             }
 
             if (allowedSites.Count < 2)
             {
-                return FilterResult.InsufficientSites(releaseName, cbftpSection, allowedSites.Count, allowedSites);
+                Skip(null, SkipReason.InsufficientSites,
+                    $"only {allowedSites.Count} site ({string.Join(", ", allowedSites)}) passed; a race needs 2",
+                    cbftpSection);
+
+                return WithSkips(
+                    FilterResult.InsufficientSites(releaseName, cbftpSection, allowedSites.Count, allowedSites));
             }
 
             LogManager.LogCBFTP(CBFTPEventType.Info, $"{allowedSites.Count} site(s) allowed for release [{LogColors.Orange(releaseName)}]: [{LogColors.Magenta(string.Join(", ", allowedSites))}]");
-            return FilterResult.Success(releaseName, cbftpSection, allowedSites, dlOnlySites);
+
+            // Carried on success too: a race that ran on 2 of 6 sites still raises the
+            // question of what happened to the other four.
+            return WithSkips(FilterResult.Success(releaseName, cbftpSection, allowedSites, dlOnlySites));
         }
         catch (Exception ex)
         {
             LogManager.Error($"Exception in FilterAllowedSites: {ex.Message}");
-            return FilterResult.Error(releaseName, ex.Message);
+            Skip(null, SkipReason.Error, ex.Message, cbftpSection);
+            return WithSkips(FilterResult.Error(releaseName, ex.Message));
         }
         finally
         {
@@ -1188,7 +1267,12 @@ public static class RaceHelper
     /// <summary>
     /// Validates release against IMDB filters
     /// </summary>
-    private static async Task<bool> ValidateIMDB(string releaseName, JObject config, string siteName)
+    /// <summary>
+    /// Checks a release against the section's IMDB filters.
+    /// Returns null when it passes, otherwise the reason it was blocked — the reason is
+    /// what makes the skip feed useful, and a bare bool threw it away.
+    /// </summary>
+    private static async Task<string> ValidateIMDB(string releaseName, JObject config, string siteName)
     {
         try
         {
@@ -1201,7 +1285,7 @@ public static class RaceHelper
                 {
                     LogManager.Warning($"[{siteName}] [IMDB] ❌ No data found, blocking");
                 }
-                return fallback;
+                return fallback ? null : "no metadata found for this release";
             }
 
             var movie = releaseInfo.Movie;
@@ -1214,24 +1298,24 @@ public static class RaceHelper
             if (minRating > 0 && !movie.ImdbRating.HasValue)
             {
                 LogManager.Warning($"[{siteName}] [IMDB] ❌ No rating available while minimum {minRating} is configured");
-                return false;
+                return $"No rating available while minimum {minRating} is configured";
             }
             if (minRating > 0 && movie.ImdbRating.HasValue && movie.ImdbRating.Value < minRating)
             {
                 LogManager.Warning($"[{siteName}] [IMDB] ❌ Rating {movie.ImdbRating.Value} < {minRating}");
-                return false;
+                return $"Rating {movie.ImdbRating.Value} < {minRating}";
             }
 
             int minVotes = config["min_votes"]?.Value<int>() ?? 0;
             if (minVotes > 0 && !movie.ImdbVotes.HasValue)
             {
                 LogManager.Warning($"[{siteName}] [IMDB] ❌ No vote count available while minimum {minVotes:N0} is configured");
-                return false;
+                return $"No vote count available while minimum {minVotes:N0} is configured";
             }
             if (minVotes > 0 && movie.ImdbVotes.HasValue && movie.ImdbVotes.Value < minVotes)
             {
                 LogManager.Warning($"[{siteName}] [IMDB] ❌ Votes {movie.ImdbVotes.Value:N0} < {minVotes:N0}");
-                return false;
+                return $"Votes {movie.ImdbVotes.Value:N0} < {minVotes:N0}";
             }
 
             if (config["only_english"]?.Value<bool>() == true)
@@ -1239,7 +1323,7 @@ public static class RaceHelper
                 if (movie.Languages == null || !movie.Languages.Any(l => l.Equals("English", StringComparison.OrdinalIgnoreCase)))
                 {
                     LogManager.Warning($"[{siteName}] [IMDB] ❌ Not English ({movie.Language})");
-                    return false;
+                    return $"Not English ({movie.Language})";
                 }
             }
 
@@ -1248,7 +1332,7 @@ public static class RaceHelper
                 if (movie.Countries == null || !movie.Countries.Any(c => c.ToLower().Contains("united states")))
                 {
                     LogManager.Warning($"[{siteName}] [IMDB] ❌ Not US ({movie.Country})");
-                    return false;
+                    return $"Not US ({movie.Country})";
                 }
             }
 
@@ -1258,13 +1342,13 @@ public static class RaceHelper
                 if (movie.Genres == null || !movie.Genres.Any())
                 {
                     LogManager.Warning($"[{siteName}] [IMDB] ❌ No genre data available while genre allow-list is configured");
-                    return false;
+                    return $"No genre data available while genre allow-list is configured";
                 }
 
                 if (!movie.Genres.Any(g => allowedGenres.Contains(g, StringComparer.OrdinalIgnoreCase)))
                 {
                     LogManager.Warning($"[{siteName}] [IMDB] ❌ Genre not allowed: {string.Join(", ", movie.Genres)}");
-                    return false;
+                    return $"Genre not allowed: {string.Join(", ", movie.Genres)}";
                 }
             }
 
@@ -1274,50 +1358,51 @@ public static class RaceHelper
                 if (movie.Genres.Any(g => blockedGenres.Contains(g, StringComparer.OrdinalIgnoreCase)))
                 {
                     LogManager.Warning($"[{siteName}] [IMDB] ❌ Genre blocked: {string.Join(", ", movie.Genres)}");
-                    return false;
+                    return $"Genre blocked: {string.Join(", ", movie.Genres)}";
                 }
             }
 
             if (config["no_documentary"]?.Value<bool>() == true && HasGenre(movie.Genres, "Documentary"))
             {
                 LogManager.Warning($"[{siteName}] [IMDB] ❌ Documentary genre blocked");
-                return false;
+                return $"Documentary genre blocked";
             }
 
             if (config["no_music"]?.Value<bool>() == true &&
                 (HasGenre(movie.Genres, "Music") || HasGenre(movie.Genres, "Musical")))
             {
                 LogManager.Warning($"[{siteName}] [IMDB] ❌ Music/Musical genre blocked");
-                return false;
+                return $"Music/Musical genre blocked";
             }
 
             if (config["no_comedy"]?.Value<bool>() == true && HasGenre(movie.Genres, "Comedy"))
             {
                 LogManager.Warning($"[{siteName}] [IMDB] ❌ Comedy genre blocked");
-                return false;
+                return $"Comedy genre blocked";
             }
 
             if (config["no_show"]?.Value<bool>() == true &&
                 !string.Equals(movie.Type, "movie", StringComparison.OrdinalIgnoreCase))
             {
                 LogManager.Warning($"[{siteName}] [IMDB] ❌ IMDb title type '{movie.Type}' blocked by movies-only filter");
-                return false;
+                return $"IMDb title type '{movie.Type}' blocked by movies-only filter";
             }
 
-            return true;
+            return null;
         }
         catch (Exception ex)
         {
             LogManager.Error($"[{siteName}] [IMDB] ERROR: {ex.Message}");
             bool fallback = config["fallback_on_error"]?.Value<bool>() ?? true;
-            return fallback;
+            return fallback ? null : $"IMDB lookup failed: {ex.Message}";
         }
     }
 
     /// <summary>
-    /// Validates release against TVMaze filters
+    /// Validates release against TVMaze filters.
+    /// Returns null when it passes, otherwise the reason it was blocked.
     /// </summary>
-    private static async Task<bool> ValidateTVMaze(string releaseName, JObject config, string siteName)
+    private static async Task<string> ValidateTVMaze(string releaseName, JObject config, string siteName)
     {
         try
         {
@@ -1333,7 +1418,7 @@ public static class RaceHelper
                 {
                     LogManager.Warning($"[{siteName}] [TVMaze] ❌ No data found, blocking");
                 }
-                return fallback;
+                return fallback ? null : "no metadata found for this release";
             }
 
             var show = releaseInfo.Show;
@@ -1343,19 +1428,19 @@ public static class RaceHelper
             if (config["skip_ended_shows"]?.Value<bool>() == true && show.Status == "Ended")
             {
                 LogManager.Warning($"[{siteName}] [TVMaze] ❌ Show has ended");
-                return false;
+                return $"Show has ended";
             }
 
             double minRating = config["min_rating"]?.Value<double>() ?? 0;
             if (minRating > 0 && show.Rating?.Average == null)
             {
                 LogManager.Warning($"[{siteName}] [TVMaze] ❌ No rating available while minimum {minRating} is configured");
-                return false;
+                return $"No rating available while minimum {minRating} is configured";
             }
             if (minRating > 0 && show.Rating?.Average != null && show.Rating.Average < minRating)
             {
                 LogManager.Warning($"[{siteName}] [TVMaze] ❌ Rating {show.Rating.Average:F1} < {minRating}");
-                return false;
+                return $"Rating {show.Rating.Average:F1} < {minRating}";
             }
 
             var allowedGenres = config["allowed_genres"]?.ToObject<List<string>>() ?? new List<string>();
@@ -1364,13 +1449,13 @@ public static class RaceHelper
                 if (show.Genres == null || !show.Genres.Any())
                 {
                     LogManager.Warning($"[{siteName}] [TVMaze] ❌ No genre data available while genre allow-list is configured");
-                    return false;
+                    return $"No genre data available while genre allow-list is configured";
                 }
 
                 if (!show.Genres.Any(g => allowedGenres.Contains(g, StringComparer.OrdinalIgnoreCase)))
                 {
                     LogManager.Warning($"[{siteName}] [TVMaze] ❌ Genre not allowed: {string.Join(", ", show.Genres)}");
-                    return false;
+                    return $"Genre not allowed: {string.Join(", ", show.Genres)}";
                 }
             }
 
@@ -1380,7 +1465,7 @@ public static class RaceHelper
                 if (show.Genres.Any(g => blockedGenres.Contains(g, StringComparer.OrdinalIgnoreCase)))
                 {
                     LogManager.Warning($"[{siteName}] [TVMaze] ❌ Genre blocked: {string.Join(", ", show.Genres)}");
-                    return false;
+                    return $"Genre blocked: {string.Join(", ", show.Genres)}";
                 }
             }
 
@@ -1391,7 +1476,7 @@ public static class RaceHelper
                 if (!allowedNetworks.Contains(network, StringComparer.OrdinalIgnoreCase))
                 {
                     LogManager.Warning($"[{siteName}] [TVMaze] ❌ Network '{network}' not allowed");
-                    return false;
+                    return $"Network '{network}' not allowed";
                 }
             }
 
@@ -1402,25 +1487,26 @@ public static class RaceHelper
                 if (string.IsNullOrWhiteSpace(showType))
                 {
                     LogManager.Warning($"[{siteName}] [TVMaze] ❌ Show type missing while allowed types are configured: {string.Join(", ", allowedShowTypes)}");
-                    return false;
+                    return $"Show type missing while allowed types are configured: {string.Join(", ", allowedShowTypes)}";
                 }
 
                 if (!allowedShowTypes.Contains(showType, StringComparer.OrdinalIgnoreCase))
                 {
                     LogManager.Warning($"[{siteName}] [TVMaze] ❌ Show type '{showType}' not allowed");
-                    return false;
+                    return $"Show type '{showType}' not allowed";
                 }
             }
 
-            return true;
+            return null;
         }
         catch (Exception ex)
         {
             LogManager.Error($"[{siteName}] [TVMaze] ERROR: {ex.Message}");
             bool fallback = config["fallback_on_error"]?.Value<bool>() ?? true;
-            return fallback;
+            return fallback ? null : $"TVMaze lookup failed: {ex.Message}";
         }
     }
+
     /// <summary>
     /// Clears all caches. Call this when reloading configurations.
     /// </summary>

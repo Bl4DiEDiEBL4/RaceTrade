@@ -222,6 +222,21 @@
                     Add(result.Message, "warning");
                     break;
             }
+
+            // The per-site reasons. Previously a release rejected by twelve different site
+            // rules rendered as one line ("All sites were filtered out"), which told you
+            // nothing about which rule to change.
+            if (result.Skips.Count > 0)
+            {
+                Add("", "info");
+                Add($"Skipped ({result.Skips.Count}):", "warning");
+
+                foreach (var s in result.Skips)
+                {
+                    var where = string.IsNullOrEmpty(s.Site) ? "" : $"{s.Site}: ";
+                    Add($"   {where}{s.Reason} — {s.Detail}", "warning");
+                }
+            }
         }
         catch (Exception ex)
         {

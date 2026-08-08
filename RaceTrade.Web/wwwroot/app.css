@@ -985,6 +985,7 @@ td.dim, .dim { color: var(--dim); }
 .btn.danger:disabled:hover { background: #3a2028; }
 a.btn { text-decoration: none; display: inline-flex; }
 .err-text { color: var(--err); }
+.ok-text { color: var(--accent); }
 
 td.right, th.right { text-align: right; white-space: nowrap; }
 td.right .btn { margin-left: 5px; }
@@ -2640,3 +2641,176 @@ pre.code {
         flex-direction: column;
     }
 }
+
+/* ---------- skips page ----------
+   The point of this page is scanability: reason chips on top act as both a summary and
+   a filter, so "what is eating my races" is answered before you read a single row. */
+.reason-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.reason-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 11px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: var(--card);
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.reason-chip em {
+    font-style: normal;
+    font-weight: 700;
+    color: var(--fg);
+}
+
+.reason-chip:hover { border-color: var(--dim); color: var(--fg); }
+
+.reason-chip.active {
+    border-color: var(--accent);
+    color: var(--fg);
+    background: rgba(17, 215, 202, .12);
+}
+
+.reason-tag {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 3px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    white-space: nowrap;
+    background: rgba(150, 160, 178, .16);
+    color: var(--muted);
+}
+
+.reason-tag.r-config, .reason-chip.r-config em { color: #f5c05a; }
+.reason-tag.r-config { background: rgba(245, 192, 90, .14); }
+.reason-tag.r-error, .reason-chip.r-error em { color: var(--err); }
+.reason-tag.r-error { background: rgba(255, 93, 104, .14); }
+.reason-tag.r-dupe { background: rgba(120, 183, 255, .13); color: #78b7ff; }
+.reason-tag.r-filter { background: rgba(17, 215, 202, .12); color: var(--accent); }
+
+.skip-table .w-reason { width: 1%; white-space: nowrap; }
+.skip-table .w-site { width: 1%; white-space: nowrap; }
+.skip-table td.rel { color: var(--fg); }
+.skip-table td.detail { color: var(--muted); }
+.skip-table td { padding: 3px 10px; }
+
+.toolbar input.search { flex: 0 1 260px; }
+
+/* ---------- FXP job list ----------
+   One block per job: badge + name on top, progress bar underneath. The bar carries the
+   state colour, so the row reads at a glance without parsing the numbers. */
+.fxp-jobs { display: flex; flex-direction: column; gap: 10px; }
+
+.job {
+    padding: 9px 11px 10px;
+    background: #10131c;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+}
+
+.job-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    min-width: 0;
+}
+
+.job-badge {
+    flex: 0 0 auto;
+    min-width: 74px;
+    padding: 3px 9px;
+    border-radius: 3px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    text-align: center;
+}
+
+.job-name {
+    /* flex + min-width:0 is what actually lets a long release name ellipsis instead of
+       shoving the size/speed column off the row. */
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--fg);
+    font-size: 12.5px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.job-meta {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-family: Consolas, monospace;
+    white-space: nowrap;
+}
+
+.job-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: #1c2331;
+    overflow: hidden;
+}
+
+.job-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width .4s ease;
+}
+
+/* state colours */
+.job-ok .job-badge   { background: rgba(17, 215, 202, .16); color: var(--accent); }
+.job-ok .job-fill    { background: var(--accent); }
+.job-bad .job-badge  { background: rgba(255, 93, 104, .16); color: var(--err); }
+.job-bad .job-fill   { background: var(--err); }
+.job-run .job-badge  { background: rgba(245, 192, 90, .16); color: #f5c05a; }
+.job-run .job-fill   { background: #f5c05a; }
+
+/* No file counts from cbftp yet: sweep instead of parking at 0%, which reads as stuck. */
+.job-bar.indet .job-fill {
+    width: 35% !important;
+    background: linear-gradient(90deg, transparent, #f5c05a, transparent);
+    animation: job-sweep 1.2s linear infinite;
+}
+
+@keyframes job-sweep {
+    from { transform: translateX(-100%); }
+    to   { transform: translateX(300%); }
+}
+
+@media (max-width: 720px) {
+    .job-head { flex-wrap: wrap; }
+    .job-meta { width: 100%; }
+}
+
+/* Parent-directory row in the FXP panes. Single click, not double: it is a navigation
+   control rather than a file, which is how FTP clients have always treated it. */
+.fxp-table .parent-row { cursor: pointer; }
+.fxp-table .parent-row:hover td { background: #262d3b; }
+
+.fxp-table .parent-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.parent-arrow { transform: rotate(90deg); }
+.parent-dots { font-family: Consolas, monospace; letter-spacing: 1px; }
+.parent-label { color: var(--muted); font-weight: 500; }
+.fxp-table .parent-row:hover .parent-label { color: var(--fg); }

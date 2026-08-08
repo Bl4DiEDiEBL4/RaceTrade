@@ -57,6 +57,7 @@
   <ItemGroup>
     <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="wwwroot\app.css" LogicalName="RaceTrade.Web.wwwroot.app.css" />
+    <EmbeddedResource Include="wwwroot\racetrade-logo.svg" LogicalName="RaceTrade.Web.wwwroot.racetrade-logo.svg" />
     <EmbeddedResource Include="wwwroot\favicon.ico" LogicalName="RaceTrade.Web.wwwroot.favicon.ico" />
     <EmbeddedResource Include="wwwroot\icon-192.png" LogicalName="RaceTrade.Web.wwwroot.icon-192.png" />
     <EmbeddedResource Include="wwwroot\icon-512.png" LogicalName="RaceTrade.Web.wwwroot.icon-512.png" />

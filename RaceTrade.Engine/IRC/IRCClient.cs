@@ -1106,6 +1106,8 @@ public class IRCClient
             if (await SQLiteHelper.IsReleaseProcessedAsync(releaseName))
             {
                 LogManager.LogRace(RaceStatus.Filtered, releaseName, siteName, filterReason: "Already processed");
+                RaceDiagnostics.Report(releaseName, SkipReason.Duplicate,
+                    "already in the processed database", null, section, siteName);
                 return;
             }
                       
@@ -1118,6 +1120,8 @@ public class IRCClient
                 if (!RaceHelper.IsAllowedSection(section, siteConfigJson))
                 {
                     LogManager.LogRace(RaceStatus.Filtered, releaseName, siteName, filterReason: $"Section '{section}' disabled");
+                    RaceDiagnostics.Report(releaseName, SkipReason.SectionDisabled,
+                        $"section '{section}' is not enabled on the announcing site", siteName, section, siteName);
                     return;
                 }
             }
@@ -1143,6 +1147,8 @@ public class IRCClient
             {
                 LogManager.Warning($"[{siteName}] IRC section [{section}] is not configured in any site.");
                 LogManager.Info($"[{siteName}] To race this section: Add [{section}] to a site's IRC sections and map it with a CBFTP mapping and enable it in Race Sections.");
+                RaceDiagnostics.Report(releaseName, SkipReason.NoSectionMapping,
+                    $"IRC section '{section}' has no cbftp mapping on any site", null, section, siteName);
                 return;
             }
 

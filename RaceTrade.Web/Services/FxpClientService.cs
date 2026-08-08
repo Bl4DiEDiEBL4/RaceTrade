@@ -71,6 +71,7 @@ public sealed class FxpClientService
         destinationPath = NormalizePath(destinationPath);
         var password = DecryptPassword(server);
         var logs = new List<string>();
+        var queued = new List<string>();
         var success = 0;
         var failed = 0;
 
@@ -98,6 +99,7 @@ public sealed class FxpClientService
             if (result.Success)
             {
                 success++;
+                queued.Add(releaseName);
                 logs.Add($"Queued {releaseName}: {sourceSite}:{parentPath} -> {destinationSite}:{destinationPath}");
             }
             else
@@ -110,7 +112,56 @@ public sealed class FxpClientService
         return new FxpOperationResult(
             failed == 0,
             $"FXP queued: {success}, failed: {failed}",
-            logs);
+            logs,
+            queued);
+    }
+
+    /// <summary>
+    /// Asks cbftp how a queued job is doing.
+    ///
+    /// "Queued" only means cbftp accepted the POST — it says nothing about whether the
+    /// transfer ran. The WinForms client polled this and reported DONE/FAILED/RUNNING;
+    /// the web client did not, which is why a job that never moved looked identical to
+    /// one that finished.
+    ///
+    /// Returns null when cbftp does not know the job (404) or cannot be reached.
+    /// </summary>
+    public async Task<FxpJobProgress?> GetJobProgressAsync(string releaseName)
+    {
+        try
+        {
+            var stats = await CbftpRacer.GetTransferJobStats(releaseName);
+            if (stats is null)
+                return null;
+
+            return new FxpJobProgress(
+                releaseName,
+                stats.Status ?? "UNKNOWN",
+                stats.BytesTransferred,
+                stats.FilesTransferred,
+                stats.FilesTotal,
+                stats.AverageSpeed,
+                stats.TimeElapsed);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static string FormatSize(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB", "TB" };
+        double len = bytes;
+        var order = 0;
+
+        while (len >= 1024 && order < units.Length - 1)
+        {
+            order++;
+            len /= 1024;
+        }
+
+        return $"{len:0.##} {units[order]}";
     }
 
     public async Task<FxpOperationResult> DeleteAsync(CbftpServer server, string siteName, string currentPath, IEnumerable<FxpFileItem> items)
@@ -371,4 +422,49 @@ public sealed class FxpFileItem
     }
 }
 
-public sealed record FxpOperationResult(bool Success, string Message, IReadOnlyList<string> Logs);
+/// <summary>
+/// Result of an FXP action. <paramref name="Queued"/> holds the job names cbftp accepted,
+/// so the page can follow them to completion instead of assuming "queued" means "done".
+/// </summary>
+public sealed record FxpOperationResult(
+    bool Success,
+    string Message,
+    IReadOnlyList<string> Logs,
+    IReadOnlyList<string>? Queued = null);
+
+/// <summary>A cbftp transfer job as it currently stands.</summary>
+public sealed record FxpJobProgress(
+    string Name,
+    string Status,
+    long BytesTransferred,
+    int FilesTransferred,
+    int FilesTotal,
+    double AverageSpeed,
+    TimeSpan Elapsed)
+{
+    public bool IsDone => Status.Equals("DONE", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsFailed =>
+        Status.Equals("FAILED", StringComparison.OrdinalIgnoreCase) ||
+        Status.Equals("TIMEOUT", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsUnknown => Status.Equals("UNKNOWN", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsFinished => IsDone || IsFailed;
+
+    /// <summary>
+    /// 0-100. Based on the file count, which is the only progress cbftp reports for a
+    /// transfer job. Null when it reports nothing, so the bar can go indeterminate
+    /// instead of sitting at a fake 0%.
+    /// </summary>
+    public int? Percent =>
+        IsDone ? 100
+        : FilesTotal > 0 ? (int)Math.Round(100.0 * FilesTransferred / FilesTotal)
+        : null;
+
+    /// <summary>
+    /// cbftp reports whole seconds, so a transfer that took under two of them produces a
+    /// wild figure (a 1.25 GB job "at 1282 MB/s"). Better to say nothing than to lie.
+    /// </summary>
+    public bool HasMeaningfulSpeed => AverageSpeed > 0 && Elapsed.TotalSeconds >= 2;
+}

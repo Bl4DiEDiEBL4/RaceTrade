@@ -1,4 +1,7 @@
 ﻿using RaceTrade.Engine.Logging;
+// RequestAutoFillRunner/RequestAutoFillManager live in the RaceTrader namespace, a
+// leftover from the WinForms build.
+using RaceTrader;
 
 using System.Text.RegularExpressions;
 
@@ -107,6 +110,13 @@ public sealed class EngineHost : IAsyncDisposable
             else
             {
                 IsRunning = true;
+
+                // Request auto-fill polls each site for open requests and fills them from
+                // a source site. It was fully implemented in the engine but nothing ever
+                // called StartForAllSites — the WinForms MainApp did it right here, so in
+                // the web build the whole feature was silently dead.
+                StartRequestAutoFill();
+
                 LogManager.Success($"Racer started: connecting {started} site(s).");
             }
         }
@@ -124,6 +134,9 @@ public sealed class EngineHost : IAsyncDisposable
             if (!IsRunning) return;
 
             LogManager.Info("Stopping racer...");
+
+            try { RequestAutoFillRunner.Stop(); RequestFillSites = Array.Empty<string>(); }
+            catch (Exception ex) { LogManager.Error($"Failed to stop request auto-fill: {ex.Message}"); }
 
             // Cancel first so the IRC read loops exit, then ask each client to close its
             // socket - cancellation alone leaves a blocking read parked on the socket.
@@ -158,6 +171,68 @@ public sealed class EngineHost : IAsyncDisposable
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Sites the auto-fill runner is currently polling, for the UI.
+    /// </summary>
+    public IReadOnlyCollection<string> RequestFillSites { get; private set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Re-reads the site configs and hands them to the auto-fill runner again.
+    ///
+    /// Called after a site is saved: the runner snapshots its site list at start, so
+    /// ticking "Auto-fill enabled" used to do nothing until the next Stop/Start. No-op
+    /// while the racer is stopped — Start does it anyway.
+    /// </summary>
+    public void RefreshRequestAutoFill()
+    {
+        if (!IsRunning) return;
+
+        StartRequestAutoFill();
+    }
+
+    /// <summary>
+    /// Hands every site to the request auto-fill runner.
+    ///
+    /// It gets ALL enabled sites, not just the IRC-ready ones: the runner polls the sites
+    /// that have auto-fill switched on, and searches the rest as fill sources (the ones
+    /// marked "can fill source"). A site with no IRC bot can still be a perfectly good
+    /// source. The runner itself no-ops when nothing has auto-fill enabled.
+    /// </summary>
+    private void StartRequestAutoFill()
+    {
+        try
+        {
+            // The cache must go first, otherwise a checkbox that was just saved to disk
+            // is read back from the copy that was loaded before the edit.
+            SiteConfigManager.Invalidate();
+
+            var sites = new List<SiteConfig>();
+            var polled = new List<string>();
+
+            foreach (var siteName in EnumerateSiteNames())
+            {
+                if (!SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) || cfg is null)
+                    continue;
+
+                if (cfg.SiteSettings?.DisableSite == true)
+                    continue;
+
+                sites.Add(cfg);
+
+                if (cfg.SiteSettings?.RequestAutoFillEnabled == true)
+                    polled.Add(cfg.SiteSettings.Sitename ?? siteName);
+            }
+
+            RequestAutoFillRunner.StartForAllSites(sites);
+            RequestFillSites = polled;
+        }
+        catch (Exception ex)
+        {
+            // Auto-fill is a side feature; it must never stop the racer from starting.
+            LogManager.Error($"Failed to start request auto-fill: {ex.Message}");
         }
     }
 

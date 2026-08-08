@@ -124,6 +124,9 @@ builder.Services.AddSingleton<EngineHost>();
 // the trader, exactly like the WinForms build's chat-only IRC clients.
 builder.Services.AddSingleton<ChatHost>();
 builder.Services.AddSingleton<RacerState>();
+// Constructed eagerly below so it starts collecting from the first announce, not from
+// the first time somebody opens the Skips page.
+builder.Services.AddSingleton<SkipStore>();
 builder.Services.AddSingleton<SiteStore>();
 builder.Services.AddSingleton<CbftpStore>();
 builder.Services.AddSingleton<PreBotStore>();
@@ -165,9 +168,14 @@ var appCss = ReadEmbeddedText("RaceTrade.Web.wwwroot.app.css");
 var favicon = ReadEmbeddedBytes("RaceTrade.Web.wwwroot.favicon.ico");
 var icon192 = ReadEmbeddedBytes("RaceTrade.Web.wwwroot.icon-192.png");
 var icon512 = ReadEmbeddedBytes("RaceTrade.Web.wwwroot.icon-512.png");
+var logoSvg = ReadEmbeddedText("RaceTrade.Web.wwwroot.racetrade-logo.svg");
 
 // Route every engine log line into the UI sink.
 LogManager.Configure(app.Services.GetRequiredService<ILogSink>());
+
+// Touch the skip store so its constructor subscribes to RaceDiagnostics now. A lazily
+// resolved singleton would miss every skip until the page was first opened.
+_ = app.Services.GetRequiredService<SkipStore>();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -208,6 +216,11 @@ app.MapGet("/favicon.ico", () => Results.File(favicon, "image/x-icon"))
 app.MapGet("/icon-192.png", () => Results.File(icon192, "image/png"))
     .AllowAnonymous();
 app.MapGet("/icon-512.png", () => Results.File(icon512, "image/png"))
+    .AllowAnonymous();
+// The sidebar logo. Everything under wwwroot has to be served from an embedded resource,
+// because publish strips the physical wwwroot folder so only the single exe ships — a new
+// file dropped in wwwroot is a 404 until it is listed here AND in the csproj.
+app.MapGet("/racetrade-logo.svg", () => Results.Content(logoSvg, "image/svg+xml"))
     .AllowAnonymous();
 
 // --- login / logout -------------------------------------------------------------------

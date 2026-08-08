@@ -46,6 +46,15 @@ namespace RaceTrade
         public string ReleaseName { get; set; }
 
         /// <summary>
+        /// Per-site rejections collected while filtering.
+        ///
+        /// Without this the caller only ever learned "all sites were filtered out" — a
+        /// release dropped by twelve different site rules produced one useless line. The
+        /// Skips page and Test Release both read this.
+        /// </summary>
+        public List<SkipRecord> Skips { get; } = new List<SkipRecord>();
+
+        /// <summary>
         /// Creates a successful result.
         /// </summary>
         public static FilterResult Success(string releaseName, string cbftpSection, List<string> allowedSites, List<string> dlOnlySites = null)

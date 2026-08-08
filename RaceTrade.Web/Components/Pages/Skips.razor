@@ -1,0 +1,194 @@
+@page "/skips"
+@implements IDisposable
+@inject SkipStore Store
+
+<PageTitle>Skips - RaceTrade</PageTitle>
+
+@* Answers the question the logs never did: why did it not race this?
+   Every rejection carries the exact rule that fired, not just "filtered". *@
+<div class="page-head">
+    <h1><Icon Name="warn" Size="18" />Skips</h1>
+    <div class="head-actions">
+        <span class="hint">@Store.Total since start</span>
+        @* Refresh explicitly: Store.Clear() fires Changed, but OnChanged ignores it while
+           Live is off, which would leave the cleared rows on screen. *@
+        <button class="btn" @onclick="Clear">
+            <Icon Name="trash" Size="13" /><span>Clear</span>
+        </button>
+    </div>
+</div>
+
+@if (_byReason.Count > 0)
+{
+    <div class="reason-bar">
+        <button class="reason-chip @(_reason is null ? "active" : "")" @onclick="() => SetReason(null)">
+            All <em>@_byReason.Sum(x => x.Count)</em>
+        </button>
+        @foreach (var (reason, count) in _byReason)
+        {
+            <button class="reason-chip @(_reason == reason ? "active" : "") @ReasonClass(reason)"
+                    @onclick="() => SetReason(reason)">
+                @Label(reason) <em>@count</em>
+            </button>
+        }
+    </div>
+}
+
+<div class="panel">
+    <div class="toolbar">
+        <select @bind="_site" @bind:after="Refresh">
+            <option value="">All sites</option>
+            @foreach (var s in _sites)
+            {
+                <option value="@s">@s</option>
+            }
+        </select>
+
+        <select @bind="_section" @bind:after="Refresh">
+            <option value="">All sections</option>
+            @foreach (var s in _sections)
+            {
+                <option value="@s">@s</option>
+            }
+        </select>
+
+        <input class="search" @bind="_search" @bind:event="oninput" @bind:after="Refresh"
+               placeholder="Filter on release or reason" />
+
+        <span class="spacer"></span>
+        <label class="chk">
+            <input type="checkbox" @bind="_live" />
+            <span>Live</span>
+        </label>
+    </div>
+
+    @if (_rows.Count == 0)
+    {
+        <div class="empty">
+            @if (Store.Total == 0)
+            {
+                <text>
+                    Nothing skipped yet. Once the racer is running, every release that is
+                    rejected shows up here with the rule that rejected it.
+                </text>
+            }
+            else
+            {
+                <text>No skips match this filter.</text>
+            }
+        </div>
+    }
+    else
+    {
+        <table class="grid logs skip-table">
+            <thead>
+                <tr>
+                    <th class="ts">Time</th>
+                    <th class="w-reason">Reason</th>
+                    <th>Release</th>
+                    <th class="w-site">Site</th>
+                    <th class="w-site">Section</th>
+                    <th>Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td class="ts">@r.At.ToString("HH:mm:ss")</td>
+                        <td><span class="reason-tag @ReasonClass(r.Reason)">@Label(r.Reason)</span></td>
+                        <td class="msg rel">@r.Release</td>
+                        <td class="site">@(string.IsNullOrEmpty(r.Site) ? "—" : r.Site)</td>
+                        <td class="ch">@(string.IsNullOrEmpty(r.Section) ? "—" : r.Section)</td>
+                        <td class="msg detail">@r.Detail</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<SkipRecord> _rows = Array.Empty<SkipRecord>();
+    private IReadOnlyList<(SkipReason Reason, int Count)> _byReason = Array.Empty<(SkipReason, int)>();
+    private IReadOnlyList<string> _sites = Array.Empty<string>();
+    private IReadOnlyList<string> _sections = Array.Empty<string>();
+
+    private string _site = "";
+    private string _section = "";
+    private string _search = "";
+    private SkipReason? _reason;
+    private bool _live = true;
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += OnChanged;
+        Refresh();
+    }
+
+    private void OnChanged()
+    {
+        // "Live" off freezes the view so you can actually read a busy feed.
+        if (!_live) return;
+
+        InvokeAsync(() => { Refresh(); StateHasChanged(); });
+    }
+
+    private void SetReason(SkipReason? reason)
+    {
+        _reason = reason;
+        Refresh();
+    }
+
+    private void Clear()
+    {
+        Store.Clear();
+        Refresh();
+    }
+
+    private void Refresh()
+    {
+        _rows = Store.Recent(_site, _section, _reason, _search);
+        _sites = Store.Sites();
+        _sections = Store.Sections();
+
+        // Counts respect the site/section/search filters but NOT the reason filter —
+        // otherwise picking a chip would zero out every other chip and you could never
+        // see what else is being skipped.
+        _byReason = Store.CountsByReason(_site, _section, _search);
+    }
+
+    private static string Label(SkipReason reason) => reason switch
+    {
+        SkipReason.Duplicate => "duplicate",
+        SkipReason.NoSectionMapping => "no mapping",
+        SkipReason.SiteDisabled => "site off",
+        SkipReason.SectionDisabled => "section off",
+        SkipReason.NoCbftpMapping => "no cbftp map",
+        SkipReason.Skiplist => "skiplist",
+        SkipReason.Blacklist => "blacklist",
+        SkipReason.GlobalBlacklist => "global blacklist",
+        SkipReason.Pretime => "pretime",
+        SkipReason.Imdb => "IMDB",
+        SkipReason.TvMaze => "TVMaze",
+        SkipReason.Rules => "rules",
+        SkipReason.NoSites => "no sites",
+        SkipReason.InsufficientSites => "too few sites",
+        SkipReason.Error => "error",
+        _ => reason.ToString().ToLowerInvariant()
+    };
+
+    // Grouped by what the operator should do about it: config problems are amber,
+    // deliberate filtering is neutral, errors are red.
+    private static string ReasonClass(SkipReason reason) => reason switch
+    {
+        SkipReason.Error => "r-error",
+        SkipReason.NoSectionMapping or SkipReason.NoCbftpMapping or
+        SkipReason.SectionDisabled or SkipReason.SiteDisabled or
+        SkipReason.InsufficientSites or SkipReason.NoSites => "r-config",
+        SkipReason.Duplicate => "r-dupe",
+        _ => "r-filter"
+    };
+
+    public void Dispose() => Store.Changed -= OnChanged;
+}

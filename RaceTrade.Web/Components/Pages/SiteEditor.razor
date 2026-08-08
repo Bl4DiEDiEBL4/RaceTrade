@@ -4,6 +4,7 @@
 @inject SiteStore Store
 @inject PreBotStore PreBots
 @inject NavigationManager Nav
+@inject EngineHost Engine
 
 <PageTitle>@(_isNew ? "New site" : $"{_originalName} - RaceTrade")</PageTitle>
 
@@ -831,11 +832,31 @@
         matching releases from sites marked as source.
     </div>
 
+    @* Status, not just a checkbox: auto-fill only runs while the racer runs, and that
+       was invisible before — the box was ticked and nothing ever happened. *@
     <div class="form-grid wide">
         <label>Auto-fill enabled</label>
         <div>
             <input type="checkbox" @bind="S.RequestAutoFillEnabled" />
             <span class="fh inline">Enable auto-fill of requests.</span>
+
+            <div class="fh">
+                @if (!Engine.IsRunning)
+                {
+                    <text>
+                        Polling only runs while the racer is running — start it from the
+                        sidebar.
+                    </text>
+                }
+                else if (Engine.RequestFillSites.Contains(S.Sitename ?? "", StringComparer.OrdinalIgnoreCase))
+                {
+                    <span class="ok-text">Currently polling this site every @(S.RequestPollSeconds > 0 ? S.RequestPollSeconds : 300)s.</span>
+                }
+                else
+                {
+                    <text>Not being polled yet. Save to apply.</text>
+                }
+            </div>
         </div>
 
         <label>List command</label>
@@ -1421,6 +1442,12 @@
             SiteStore.WriteChannels(S, merged);
 
             Store.Save(_cfg, _isNew ? null : _originalName);
+
+            // Pick up request auto-fill changes immediately. The runner snapshots its
+            // site list when it starts, so without this, ticking "Auto-fill enabled"
+            // did nothing until the racer was stopped and started again.
+            Engine.RefreshRequestAutoFill();
+
             Nav.NavigateTo("sites");
         }
         catch (Exception ex)

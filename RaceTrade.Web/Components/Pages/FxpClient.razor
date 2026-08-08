@@ -46,6 +46,34 @@
         @Pane("right", "Right Site", _rightSite, SelectRightSite, _rightPath, v => _rightPath = v, _rightItems, _selectedRight, BrowseRight, UpRight, DeleteRight)
     </div>
 
+    @* Live job list. cbftp accepting the POST only means the job was created; whether it
+       actually moves bytes is a separate question, and this is where it gets answered. *@
+    @if (_jobs.Count > 0)
+    {
+        <div class="fxp-log">
+            <div class="card-title">ACTIVE TRANSFERS</div>
+            <div class="fxp-jobs">
+                @foreach (var j in _jobs)
+                {
+                    <div class="job @JobClass(j)">
+                        <div class="job-head">
+                            <span class="job-badge">@JobLabel(j)</span>
+                            <span class="job-name">@j.Name</span>
+                            <span class="spacer"></span>
+                            <span class="job-meta">@JobDetail(j)</span>
+                        </div>
+
+                        @* Indeterminate when cbftp reports no file counts: a bar parked at
+                           0% reads as "stuck", which is exactly the wrong impression. *@
+                        <div class="job-bar @(j.Percent is null && !j.IsFinished ? "indet" : "")">
+                            <div class="job-fill" style="width:@(j.Percent ?? 100)%"></div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
     <div class="fxp-log">
         <div class="card-title">TRANSFER LOG</div>
         <div class="log-box">
@@ -92,6 +120,9 @@
     private readonly HashSet<string> _selectedLeft = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedRight = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _log = new();
+
+    // Jobs we queued this session, newest first, updated by MonitorJobsAsync.
+    private readonly List<FxpJobProgress> _jobs = new();
     private string? _error;
     private string? _status;
     private FxpContextMenu? _contextMenu;
@@ -160,6 +191,26 @@
                     </tr>
                 </thead>
                 <tbody>
+                    @* Parent-directory row, the way every FTP client does it: always the
+                       first row, no checkbox, single click goes up. Hidden at the root,
+                       where there is nothing above to go to. *@
+                    @if (!IsRootPath(path))
+                    {
+                        <tr class="dir parent-row" @onclick="up">
+                            <td></td>
+                            @* The flex lives on a span, not on the td: display:flex on a
+                               table cell takes it out of the table layout and the row
+                               stops lining up with the columns below it. *@
+                            <td class="site" colspan="3">
+                                <span class="parent-cell">
+                                    <Icon Name="back" Size="13" Class="parent-arrow" />
+                                    <span class="parent-dots">..</span>
+                                    <span class="parent-label">Parent Directory</span>
+                                </span>
+                            </td>
+                        </tr>
+                    }
+
                     @if (sortedItems.Count == 0)
                     {
                         <tr><td colspan="4" class="dim">No listing loaded.</td></tr>
@@ -189,6 +240,10 @@
             </button>
         </div>
     </div>;
+
+    /// <summary>True for "/" or an empty path — there is no parent to show.</summary>
+    private static bool IsRootPath(string path) =>
+        string.IsNullOrWhiteSpace(path) || path.Trim() == "/";
 
     private async Task LoadSites()
     {
@@ -338,6 +393,8 @@
         if (server is null)
             return;
 
+        IReadOnlyList<string> queued = Array.Empty<string>();
+
         await RunAsync(async () =>
         {
             var result = leftToRight
@@ -346,9 +403,126 @@
 
             AddLog(result);
             _status = result.Message;
+            queued = result.Queued ?? Array.Empty<string>();
+        });
+
+        // Started after RunAsync so the buttons are usable again while it runs; the old
+        // WinForms client did the same with a fire-and-forget MonitorTransferProgressAsync.
+        if (queued.Count > 0)
+            _ = MonitorJobsAsync(queued);
+    }
+
+    /// <summary>
+    /// Polls cbftp until every queued job reaches DONE/FAILED/TIMEOUT, or five minutes
+    /// pass. Both panes are refreshed at the end so the moved files actually show up.
+    /// </summary>
+    private async Task MonitorJobsAsync(IReadOnlyList<string> names)
+    {
+        var pending = names.ToList();
+
+        // cbftp needs a moment before the job is queryable.
+        await Task.Delay(2000);
+
+        for (var i = 0; i < 60 && pending.Count > 0; i++)
+        {
+            foreach (var name in pending.ToList())
+            {
+                var progress = await Fxp.GetJobProgressAsync(name);
+
+                if (progress is null)
+                {
+                    // Unknown to cbftp. Right after queueing that is normal; after a few
+                    // rounds it means the job never materialised, which is worth saying.
+                    if (i >= 3)
+                    {
+                        UpsertJob(new FxpJobProgress(name, "UNKNOWN", 0, 0, 0, 0, TimeSpan.Zero));
+                        AddLine($"cbftp does not know job '{name}' — it was accepted but never created.");
+                        pending.Remove(name);
+                    }
+                    continue;
+                }
+
+                UpsertJob(progress);
+
+                if (progress.IsFinished)
+                {
+                    pending.Remove(name);
+                    AddLine(progress.IsFailed
+                        ? $"Failed: {name} ({progress.Status})"
+                        : $"Complete: {name} — {FxpClientService.FormatSize(progress.BytesTransferred)}");
+                }
+            }
+
+            await InvokeAsync(StateHasChanged);
+
+            if (pending.Count > 0)
+                await Task.Delay(5000);
+        }
+
+        if (pending.Count > 0)
+            AddLine($"Still running after 5 minutes: {string.Join(", ", pending)}");
+
+        try
+        {
             await BrowseLeft();
             await BrowseRight();
-        });
+        }
+        catch
+        {
+            // A refresh failure must not swallow the transfer result above.
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void UpsertJob(FxpJobProgress progress)
+    {
+        var index = _jobs.FindIndex(j => string.Equals(j.Name, progress.Name, StringComparison.OrdinalIgnoreCase));
+
+        if (index >= 0)
+            _jobs[index] = progress;
+        else
+            _jobs.Insert(0, progress);
+    }
+
+    private static string JobLabel(FxpJobProgress j) => j.Status.ToUpperInvariant() switch
+    {
+        "DONE" => "Done",
+        "FAILED" => "Failed",
+        "TIMEOUT" => "Timeout",
+        "RUNNING" => "Running",
+        "UNKNOWN" => "Not found",
+        _ => j.Status
+    };
+
+    private static string JobClass(FxpJobProgress j) =>
+        j.IsFailed || j.IsUnknown ? "job-bad"
+        : j.IsDone ? "job-ok"
+        : "job-run";
+
+    private static string JobDetail(FxpJobProgress j)
+    {
+        if (j.IsUnknown)
+            return "no such job in cbftp";
+
+        var parts = new List<string>();
+
+        if (j.Percent is { } pct && !j.IsDone)
+            parts.Add($"{pct}%");
+
+        if (j.FilesTotal > 0)
+            parts.Add($"{j.FilesTransferred}/{j.FilesTotal} files");
+
+        if (j.BytesTransferred > 0)
+            parts.Add(FxpClientService.FormatSize(j.BytesTransferred));
+
+        if (j.HasMeaningfulSpeed)
+            parts.Add($"{j.AverageSpeed:F1} MB/s");
+
+        if (j.Elapsed.TotalSeconds >= 1)
+            parts.Add(j.Elapsed.TotalMinutes >= 1 ? $"{j.Elapsed:mm\\:ss}" : $"{j.Elapsed.TotalSeconds:F0}s");
+
+        return parts.Count > 0 ? string.Join(" · ", parts) : "waiting...";
     }
 
     private async Task DeleteLeft() => await Delete(true);
@@ -458,6 +632,17 @@
         foreach (var line in result.Logs.Reverse())
             _log.Insert(1, "  " + line);
 
+        Trim();
+    }
+
+    private void AddLine(string text)
+    {
+        _log.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {text}");
+        Trim();
+    }
+
+    private void Trim()
+    {
         if (_log.Count > 200)
             _log.RemoveRange(200, _log.Count - 200);
     }

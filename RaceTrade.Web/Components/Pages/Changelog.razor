@@ -10,7 +10,7 @@
     <section class="doc-hero">
         <div>
             <span class="doc-kicker">Current branch</span>
-            <h2>v2.0.4 WebUI</h2>
+            <h2>v2.0.5 WebUI</h2>
             <p>
                 This page tracks user-facing RaceTrade changes for the new web build.
             </p>
@@ -19,6 +19,21 @@
 
     <section class="timeline">
         <article class="timeline-item current">
+            <div class="timeline-version">v2.0.5 WebUI</div>
+            <div class="timeline-date">August 2026</div>
+            <ul>
+                <li>Fixed the FXP Client transfer flow with live cbftp job progress, completion/failure status and pane refresh after queued transfers.</li>
+                <li>Added a parent-directory row to the FXP browser panes so moving up is visible and works like a normal FTP client.</li>
+                <li>Fixed request auto-fill startup so enabled request sites are polled when the racer starts and refreshed immediately after saving a site.</li>
+                <li>Added request auto-fill status text in the Site Editor so it is clear whether the selected site is currently being polled.</li>
+                <li>Added a Skips page showing why releases were rejected, grouped by duplicate, section, skiplist, blacklist, pretime, IMDB, TVMaze, rules and site config reasons.</li>
+                <li>Expanded Test Release output with per-site skip reasons instead of only showing that all sites were filtered out.</li>
+                <li>Fixed the RaceTrade logo in single-file releases by bundling the logo asset with the WebUI executable.</li>
+                <li>Moved Pre under the Tools section in the sidebar.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
             <div class="timeline-version">v2.0.4 WebUI</div>
             <div class="timeline-date">August 2026</div>
             <ul>
