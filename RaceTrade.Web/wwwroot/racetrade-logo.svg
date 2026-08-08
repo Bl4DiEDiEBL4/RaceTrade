@@ -1,40 +1,51 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="178" height="38" viewBox="0 0 178 38" role="img" aria-labelledby="title desc">
   <title id="title">RaceTrade</title>
-  <desc id="desc">Transparent RaceTrade logo with a cyan route mark and futuristic wordmark.</desc>
+  <desc id="desc">Transparent RaceTrade logo with a cyan route mark and split futuristic wordmark.</desc>
   <defs>
-    <linearGradient id="mark" x1="3" y1="3" x2="31" y2="31" gradientUnits="userSpaceOnUse">
+    <linearGradient id="mark" x1="1" y1="1" x2="36" y2="36" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#22f7ff"/>
       <stop offset=".55" stop-color="#10c7d7"/>
       <stop offset="1" stop-color="#1f8dff"/>
     </linearGradient>
-    <linearGradient id="word" x1="38" y1="0" x2="178" y2="32" gradientUnits="userSpaceOnUse">
+    <linearGradient id="white-word" x1="43" y1="6" x2="102" y2="29" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#ffffff"/>
-      <stop offset=".62" stop-color="#e7f2ff"/>
-      <stop offset="1" stop-color="#7defff"/>
+      <stop offset="1" stop-color="#d9e8f8"/>
     </linearGradient>
-    <filter id="soft-glow" x="-30%" y="-45%" width="160%" height="190%">
-      <feGaussianBlur stdDeviation="1.6" result="blur"/>
+    <linearGradient id="cyan-word" x1="101" y1="5" x2="177" y2="31" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#25f7ff"/>
+      <stop offset=".58" stop-color="#11d7ca"/>
+      <stop offset="1" stop-color="#1f8dff"/>
+    </linearGradient>
+    <filter id="soft-glow" x="-35%" y="-55%" width="170%" height="210%">
+      <feGaussianBlur stdDeviation="2.1" result="blur"/>
       <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.04  0 0 0 0 0.85  0 0 0 0 0.90  0 0 0 0.42 0"/>
       <feMerge>
         <feMergeNode/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
+    <filter id="word-shadow" x="-8%" y="-25%" width="116%" height="150%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.2" flood-color="#000814" flood-opacity=".55"/>
+    </filter>
     <style>
       .wordmark {
         font-family: "Bahnschrift SemiCondensed", "Bahnschrift", "Agency FB", "Arial Narrow", Arial, sans-serif;
-        font-size: 21px;
+        font-size: 21.5px;
         font-weight: 800;
-        letter-spacing: 1.8px;
+        letter-spacing: 1.15px;
       }
     </style>
   </defs>
   <g filter="url(#soft-glow)">
-    <path d="M17.5 2.5 32 17 17.5 31.5 3 17 17.5 2.5Z" fill="url(#mark)"/>
-    <path d="M17.5 7.6 26.9 17 17.5 26.4 8.1 17 17.5 7.6Z" fill="#101827"/>
-    <path d="M17.5 11.6 22.9 17 17.5 22.4 12.1 17 17.5 11.6Z" fill="url(#mark)"/>
-    <path d="M11 17h13" stroke="#21f5ff" stroke-width="2.3" stroke-linecap="round"/>
-    <path d="M17.5 10.8v12.4" stroke="#21f5ff" stroke-width="2.3" stroke-linecap="round"/>
+    <path d="M18.8 1.8 35.1 18.1 18.8 34.4 2.5 18.1 18.8 1.8Z" fill="url(#mark)"/>
+    <path d="M18.8 7 29.9 18.1 18.8 29.2 7.7 18.1 18.8 7Z" fill="#101827"/>
+    <path d="M18.8 11.4 25.5 18.1 18.8 24.8 12.1 18.1 18.8 11.4Z" fill="url(#mark)"/>
+    <path d="M11.8 18.1h14" stroke="#22f7ff" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M18.8 11.1v14" stroke="#22f7ff" stroke-width="2.4" stroke-linecap="round"/>
   </g>
-  <text class="wordmark" x="39" y="25" fill="url(#word)">RACETRADE</text>
+  <g transform="skewX(-7)" filter="url(#word-shadow)">
+    <text class="wordmark" x="43.3" y="26">
+      <tspan fill="url(#white-word)">RACE</tspan><tspan fill="url(#cyan-word)" dx=".25">TRADE</tspan>
+    </text>
+  </g>
 </svg>
