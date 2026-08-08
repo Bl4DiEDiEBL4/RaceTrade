@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="178" height="38" viewBox="0 0 178 38" role="img" aria-labelledby="title desc">
+  <title id="title">RaceTrade</title>
+  <desc id="desc">Transparent RaceTrade logo with a cyan route mark and futuristic wordmark.</desc>
+  <defs>
+    <linearGradient id="mark" x1="3" y1="3" x2="31" y2="31" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22f7ff"/>
+      <stop offset=".55" stop-color="#10c7d7"/>
+      <stop offset="1" stop-color="#1f8dff"/>
+    </linearGradient>
+    <linearGradient id="word" x1="38" y1="0" x2="178" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".62" stop-color="#e7f2ff"/>
+      <stop offset="1" stop-color="#7defff"/>
+    </linearGradient>
+    <filter id="soft-glow" x="-30%" y="-45%" width="160%" height="190%">
+      <feGaussianBlur stdDeviation="1.6" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.04  0 0 0 0 0.85  0 0 0 0 0.90  0 0 0 0.42 0"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      .wordmark {
+        font-family: "Bahnschrift SemiCondensed", "Bahnschrift", "Agency FB", "Arial Narrow", Arial, sans-serif;
+        font-size: 21px;
+        font-weight: 800;
+        letter-spacing: 1.8px;
+      }
+    </style>
+  </defs>
+  <g filter="url(#soft-glow)">
+    <path d="M17.5 2.5 32 17 17.5 31.5 3 17 17.5 2.5Z" fill="url(#mark)"/>
+    <path d="M17.5 7.6 26.9 17 17.5 26.4 8.1 17 17.5 7.6Z" fill="#101827"/>
+    <path d="M17.5 11.6 22.9 17 17.5 22.4 12.1 17 17.5 11.6Z" fill="url(#mark)"/>
+    <path d="M11 17h13" stroke="#21f5ff" stroke-width="2.3" stroke-linecap="round"/>
+    <path d="M17.5 10.8v12.4" stroke="#21f5ff" stroke-width="2.3" stroke-linecap="round"/>
+  </g>
+  <text class="wordmark" x="39" y="25" fill="url(#word)">RACETRADE</text>
+</svg>

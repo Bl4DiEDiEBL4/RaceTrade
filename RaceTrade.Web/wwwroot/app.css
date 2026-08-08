@@ -120,13 +120,22 @@ h1, h2 {
 .brand {
     padding: 0 18px;
     display: flex;
-    align-items: center;
-    gap: 7px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2px;
 }
 
 .brand-mark {
     display: inline-flex;
     color: var(--accent);
+}
+
+.brand-logo {
+    display: block;
+    width: 164px;
+    max-width: 100%;
+    height: auto;
 }
 
 .brand-name {
@@ -136,7 +145,13 @@ h1, h2 {
     color: var(--fg);
 }
 
-.brand-ver { font-size: 11px; color: var(--muted); }
+.brand-ver {
+    margin-left: 31px;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--accent);
+    font-weight: 700;
+}
 
 /* status card, mirrors the WinForms "TRADER STATUS" panel */
 .status-card {
@@ -1217,8 +1232,8 @@ body {
 }
 
 .brand {
-    padding: 4px 20px 0;
-    min-height: 34px;
+    padding: 4px 18px 0;
+    min-height: 42px;
 }
 
 .brand-mark {
@@ -1237,7 +1252,7 @@ body {
 }
 
 .brand-ver {
-    margin-left: auto;
+    margin-left: 31px;
     color: var(--accent);
     font-weight: 700;
 }
@@ -1700,6 +1715,8 @@ pre.code {
         scrollbar-gutter: auto;
     }
     .brand { flex: 1 0 100%; padding: 2px 6px 6px; }
+    .brand-logo { width: 154px; }
+    .brand-ver { margin-left: 29px; }
     .nav-item { margin: 0; }
     .shell-content {
         width: 100%;
