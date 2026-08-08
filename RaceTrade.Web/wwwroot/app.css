@@ -53,9 +53,9 @@ a { color: var(--accent); }
     padding: 10px 32px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 16px;
-    background: rgba(13, 17, 24, .88);
+    background: var(--sidebar);
     border-bottom: 1px solid rgba(255, 255, 255, .065);
     box-shadow: 0 10px 24px rgba(0, 0, 0, .20);
     backdrop-filter: blur(14px);
@@ -214,6 +214,10 @@ h1, h2 {
     color: var(--fg);
     background: #10131c;
     border-left-color: var(--accent);
+}
+
+.nav-external {
+    width: auto;
 }
 
 .sidebar-foot { margin-top: auto; padding: 14px 18px 16px; }
@@ -1327,11 +1331,17 @@ body {
     font-weight: 700;
 }
 
-.app-header .community {
+.community-corner {
+    position: fixed;
+    right: 24px;
+    bottom: 14px;
+    z-index: 35;
     color: var(--accent);
     font-size: 12px;
+    font-weight: 700;
     letter-spacing: .2px;
     white-space: nowrap;
+    text-shadow: 0 1px 10px rgba(0, 0, 0, .55);
 }
 
 .community-row {
@@ -1416,7 +1426,7 @@ body {
 }
 
 main {
-    padding: 28px 32px 36px;
+    padding: 28px 32px 58px;
 }
 
 .page-head {
@@ -1731,7 +1741,11 @@ pre.code {
     .header-community,
     .header-actions {
         width: 100%;
-        justify-content: space-between;
+        justify-content: flex-end;
+    }
+    .community-corner {
+        right: 14px;
+        bottom: 10px;
     }
     .app-header .logout,
     .app-header .logout button,
