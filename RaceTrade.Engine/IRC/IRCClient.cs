@@ -1059,7 +1059,13 @@ public class IRCClient
             AppendOutput($"[{siteName}] [{botName}] [{section}] {releaseName}", Color.LightBlue);
 
             // Store pretime immediately (BEFORE ANY CHECKS!)
-            if (PreOrSite?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true)
+            // A Global PreBot feeds multiple linked sites; a plain PreBot feeds one
+            // site. Both announce "pre" data and must populate the pretime database.
+            var isPreBotAnnounceMode =
+                PreOrSite?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true ||
+                string.Equals(PreOrSite, "PreBot", StringComparison.OrdinalIgnoreCase);
+
+            if (isPreBotAnnounceMode)
             {
                 // The pretime write stays awaited: the value is used by the pretime
                 // rules further down. The read-back exists only to log whether we

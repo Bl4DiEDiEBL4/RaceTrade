@@ -2,6 +2,7 @@
 @page "/sites/new"
 @using Newtonsoft.Json.Linq
 @inject SiteStore Store
+@inject PreBotStore PreBots
 @inject NavigationManager Nav
 
 <PageTitle>@(_isNew ? "New site" : $"{_originalName} - RaceTrade")</PageTitle>
@@ -52,11 +53,19 @@
             <select @bind="S.PreOrSite">
                 <option value="Site">Site - own sitebot announces</option>
                 <option value="PreBot">PreBot</option>
-                <option value="Global PreBot">Global PreBot - one feed for all sites</option>
+                @if (S.PreOrSite == "Global PreBot")
+                {
+                    <option value="Global PreBot">Global PreBot - select a prebot</option>
+                }
+                @foreach (var prebot in _preBotNames)
+                {
+                    <option value="@GlobalPreBotMode(prebot)">Global PreBot (@prebot)</option>
+                }
             </select>
             <div class="fh">
-                With a <strong>Global PreBot</strong> the announce carries one section name that is
-                matched literally against every site, so all sites must use that same IRC section name.
+                With a <strong>Global PreBot</strong>, this site uses the selected PreBot feed from
+                <code>pre_bots</code>. The PreBot parser lives on the PreBots page; this site still
+                controls which IRC sections race and how they map to CBFTP.
             </div>
         </div>
 
@@ -960,6 +969,7 @@
     private bool _loadingRules;
     private bool _showRules;
     private string _rulesText = "";
+    private IReadOnlyList<string> _preBotNames = Array.Empty<string>();
 
     private string _password = "";
     private bool _hasStoredPassword;
@@ -977,6 +987,7 @@
 
     protected override void OnParametersSet()
     {
+        _preBotNames = PreBots.ListNames();
         _isNew = string.IsNullOrEmpty(Name);
 
         if (_isNew)
@@ -1021,6 +1032,8 @@
         _announceTestResult = null;
         _preAnnounceTestResult = null;
     }
+
+    private static string GlobalPreBotMode(string name) => $"Global PreBot ({name})";
 
     private void TestNormalAnnounceRegex()
     {

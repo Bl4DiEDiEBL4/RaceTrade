@@ -1,5 +1,7 @@
 ﻿using RaceTrade.Engine.Logging;
 
+using System.Text.RegularExpressions;
+
 namespace RaceTrade.Web.Services;
 
 /// <summary>
@@ -13,13 +15,18 @@ namespace RaceTrade.Web.Services;
 public sealed class EngineHost : IAsyncDisposable
 {
     private readonly WebIrcOutput _output;
+    private readonly PreBotStore _preBots;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     private CancellationTokenSource? _cts;
     private readonly List<Task> _siteTasks = new();
     private readonly Dictionary<string, IRCClient> _clients = new(StringComparer.OrdinalIgnoreCase);
 
-    public EngineHost(WebIrcOutput output) => _output = output;
+    public EngineHost(WebIrcOutput output, PreBotStore preBots)
+    {
+        _output = output;
+        _preBots = preBots;
+    }
 
     public bool IsRunning { get; private set; }
 
@@ -44,7 +51,7 @@ public sealed class EngineHost : IAsyncDisposable
             RaceHelper.LoadAllSiteConfigs();
 
             var started = 0;
-            var readySites = CollectReadySites(logSkips: false).ToList();
+            var readySites = CollectReadyClients(logSkips: false).ToList();
             if (readySites.Count == 0)
             {
                 // A browser can hit Start very early after process launch. Re-read the
@@ -53,7 +60,7 @@ public sealed class EngineHost : IAsyncDisposable
                 await Task.Delay(250);
                 SiteConfigManager.Invalidate();
                 RaceHelper.LoadAllSiteConfigs();
-                readySites = CollectReadySites(logSkips: true).ToList();
+                readySites = CollectReadyClients(logSkips: true).ToList();
             }
 
             foreach (var (siteName, cfg) in readySites)
@@ -154,6 +161,15 @@ public sealed class EngineHost : IAsyncDisposable
         }
     }
 
+    private IEnumerable<(string Name, SiteConfig Config)> CollectReadyClients(bool logSkips)
+    {
+        foreach (var site in CollectReadySites(logSkips))
+            yield return site;
+
+        foreach (var prebot in CollectGlobalPreBotClients(logSkips))
+            yield return prebot;
+    }
+
     private static IEnumerable<(string Name, SiteConfig Config)> CollectReadySites(bool logSkips)
     {
         foreach (var siteName in EnumerateSiteNames())
@@ -165,6 +181,9 @@ public sealed class EngineHost : IAsyncDisposable
             }
 
             if (cfg.SiteSettings?.DisableSite == true)
+                continue;
+
+            if (IsGlobalPreBotMode(cfg.SiteSettings?.PreOrSite))
                 continue;
 
             // Same preconditions IRCClient enforces before dialling out. Keep this in
@@ -188,12 +207,159 @@ public sealed class EngineHost : IAsyncDisposable
         }
     }
 
+    private IEnumerable<(string Name, SiteConfig Config)> CollectGlobalPreBotClients(bool logSkips)
+    {
+        var sitesByPreBot = new Dictionary<string, List<SiteConfig>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var siteName in EnumerateSiteNames())
+        {
+            if (!SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) || cfg is null)
+                continue;
+
+            if (cfg.SiteSettings?.DisableSite == true)
+                continue;
+
+            var mode = cfg.SiteSettings?.PreOrSite;
+            if (!IsGlobalPreBotMode(mode))
+                continue;
+
+            var prebotName = ExtractGlobalPreBotName(mode);
+            if (string.IsNullOrWhiteSpace(prebotName))
+            {
+                if (logSkips)
+                    LogManager.Warning($"Site '{siteName}' uses Global PreBot, but no PreBot name is selected.");
+                continue;
+            }
+
+            if (!sitesByPreBot.TryGetValue(prebotName, out var sites))
+            {
+                sites = new List<SiteConfig>();
+                sitesByPreBot[prebotName] = sites;
+            }
+
+            sites.Add(cfg);
+        }
+
+        var availablePreBots = _preBots.ListNames();
+
+        foreach (var pair in sitesByPreBot)
+        {
+            var prebotName = pair.Key;
+            var linkedSites = pair.Value;
+
+            if (!availablePreBots.Contains(prebotName, StringComparer.OrdinalIgnoreCase))
+            {
+                if (logSkips)
+                    LogManager.Warning($"PreBot '{prebotName}' is selected by a site, but pre_bots\\{prebotName}.json was not found.");
+                continue;
+            }
+
+            var prebotConfig = _preBots.Load(prebotName);
+            if (!TryBuildGlobalPreBotConfig(prebotName, prebotConfig, linkedSites, logSkips, out var mergedConfig))
+                continue;
+
+            yield return (prebotName, mergedConfig);
+        }
+    }
+
+    private static bool TryBuildGlobalPreBotConfig(
+        string prebotName,
+        PreBotConfig prebotConfig,
+        List<SiteConfig> linkedSites,
+        bool logSkips,
+        out SiteConfig mergedConfig)
+    {
+        mergedConfig = null!;
+
+        var firstSite = linkedSites.FirstOrDefault();
+        if (firstSite is null)
+            return false;
+
+        var znc = prebotConfig.ZncServer ?? new ZncServerSettings();
+        var settings = prebotConfig.SiteSettings ?? new PreBotSiteSettings();
+
+        if (string.IsNullOrWhiteSpace(znc.Host))
+        { if (logSkips) LogManager.Warning($"Skipping PreBot '{prebotName}': missing IRC host."); return false; }
+
+        if (string.IsNullOrWhiteSpace(znc.Username))
+        { if (logSkips) LogManager.Warning($"Skipping PreBot '{prebotName}': missing IRC username."); return false; }
+
+        if (string.IsNullOrWhiteSpace(settings.BotName))
+        { if (logSkips) LogManager.Warning($"Skipping PreBot '{prebotName}': missing bot name."); return false; }
+
+        if (string.IsNullOrWhiteSpace(settings.Channel1))
+        { if (logSkips) LogManager.Warning($"Skipping PreBot '{prebotName}': missing channel."); return false; }
+
+        var enabledSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var mergedSections = new List<Section>();
+
+        foreach (var site in linkedSites)
+        {
+            foreach (var section in site.RaceSectionsEnabled ?? new List<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(section))
+                    enabledSections.Add(section);
+            }
+
+            foreach (var section in site.Sections ?? new List<Section>())
+            {
+                if (string.IsNullOrWhiteSpace(section.IrcName))
+                    continue;
+
+                if (!mergedSections.Any(s => string.Equals(s.IrcName, section.IrcName, StringComparison.OrdinalIgnoreCase)))
+                    mergedSections.Add(section);
+            }
+        }
+
+        mergedConfig = new SiteConfig
+        {
+            Server = new ServerSettings
+            {
+                Host = znc.Host,
+                Port = znc.Port,
+                Username = znc.Username,
+                Password = znc.Password
+            },
+            SiteSettings = new SiteSettings
+            {
+                Sitename = firstSite.SiteSettings?.Sitename,
+                BotName = settings.BotName,
+                Chan1 = settings.Channel1,
+                BlowfishKey1 = settings.BlowfishKey1,
+                SectionRegexPattern = settings.SectionRegex,
+                SectionPrefix = settings.SectionPrefix,
+                SectionSuffix = settings.SectionSuffix,
+                ReleaseRegexPattern = settings.NameRegex,
+                PreOrSite = $"Global PreBot ({prebotName})"
+            },
+            RaceSectionsEnabled = enabledSections.ToList(),
+            Sections = mergedSections,
+            GlobalBlacklist = firstSite.GlobalBlacklist ?? new List<string>(),
+            Affils = firstSite.Affils ?? new List<string>()
+        };
+
+        LogManager.Success($"PreBot '{prebotName}' configured for {linkedSites.Count} site(s), monitoring {enabledSections.Count} section(s).");
+        return true;
+    }
+
     private static bool RequiresPassword(SiteConfig cfg)
     {
         var mode = cfg.SiteSettings?.PreOrSite;
         var isGlobalPrebot = mode?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true;
         var isPrebot = string.Equals(mode, "PreBot", StringComparison.OrdinalIgnoreCase);
         return !isGlobalPrebot && !isPrebot;
+    }
+
+    private static bool IsGlobalPreBotMode(string? mode) =>
+        mode?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static string? ExtractGlobalPreBotName(string? mode)
+    {
+        if (!IsGlobalPreBotMode(mode))
+            return null;
+
+        var match = Regex.Match(mode ?? "", @"\((.*?)\)");
+        return match.Success ? match.Groups[1].Value.Trim() : null;
     }
 
     private static List<string> ConfiguredChannels(SiteSettings? settings)
