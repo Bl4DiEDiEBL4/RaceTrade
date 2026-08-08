@@ -164,7 +164,7 @@
         <h2>Sections tab</h2>
         <p>
             Sections are now shown as a list on the left and a single editor on the right.
-            This is the important flow:
+            This page replaces the old WinForms Race Sections and Mapping area.
         </p>
         <ol class="doc-steps">
             <li>Select the IRC section on the left.</li>
@@ -176,11 +176,238 @@
             <li>Save the site after changing routing or filters.</li>
         </ol>
         <p>
-            Rule syntax is the same as the old WinForms editor, for example
-            <code>[release] contains INTERNAL DROP</code>,
-            <code>[group] isin BadGroup1,BadGroup2 DROP</code>, or
-            <code>[release] contains 1080p ALLOW</code>. Section DROP rules run before
-            mapping rules; mapping DROP rules run before mapping ALLOW rules.
+            Core terms: <strong>IRC section</strong> is what the announce says, for example
+            <code>TV-DE</code> or <code>X264-HD</code>. <strong>CBFTP section</strong> is the shared
+            section name sent to CBFTP. <strong>Mapping</strong> is the link between them plus an
+            optional trigger regex and mapping rules.
+        </p>
+    </section>
+
+    <section class="doc-section">
+        <h2>Section routing and mappings</h2>
+        <p>
+            When an announce arrives, RaceTrade parses the release name and IRC section,
+            checks that the IRC section is enabled, then picks a CBFTP mapping from the
+            selected site's Sections tab.
+        </p>
+        <ol class="doc-steps">
+            <li>RaceTrade strips the configured section prefix/suffix, for example <code>[</code> and <code>]</code>.</li>
+            <li>It finds the matching IRC section in the site config.</li>
+            <li>It walks the mappings for that IRC section in order.</li>
+            <li>A mapping with a trigger regex is only considered when the regex matches the release name.</li>
+            <li>A mapping with an empty trigger acts as the default/catch-all mapping; keep it after more specific mappings.</li>
+            <li>The first mapping that is allowed by its trigger and rules becomes the CBFTP section for the race.</li>
+        </ol>
+        <p>
+            Trigger regex may be plain regex such as <code>2160p|UHD|HEVC</code>, or delimited
+            as <code>/2160p|UHD|HEVC/i</code>. The <code>i</code> flag makes the trigger
+            case-insensitive. Use <code>.*</code> only as a deliberate catch-all.
+        </p>
+<pre class="code">IRC section: TV
+Mapping 1: CBFTP TV-2160P  Trigger: 2160p|UHD|HEVC
+Mapping 2: CBFTP TV-1080P  Trigger: 1080p|H264|x264
+Mapping 3: CBFTP TV        Trigger: empty fallback</pre>
+    </section>
+
+    <section class="doc-section">
+        <h2>Rule format</h2>
+        <p>
+            Section Rules and CBFTP Mapping Rules use the same syntax:
+        </p>
+<pre class="code">[key] operator value ACTION</pre>
+        <ul class="doc-list">
+            <li><code>[key]</code> is the field to inspect, such as <code>[release]</code> or <code>[group]</code>.</li>
+            <li><code>operator</code> is the comparison type.</li>
+            <li><code>value</code> is the value, list, wildcard or regex to compare with.</li>
+            <li><code>ACTION</code> is <code>DROP</code>, <code>ALLOW</code> or <code>EXCEPT</code>. If omitted, the engine treats it as <code>ALLOW</code>; write it explicitly for clarity.</li>
+        </ul>
+<pre class="code">[release] contains INTERNAL DROP
+[group] isin BadGroup1,BadGroup2 DROP
+[release] contains 1080p ALLOW
+[group] isin APPROVED1,APPROVED2 EXCEPT</pre>
+    </section>
+
+    <section class="doc-section">
+        <h2>Rule operators</h2>
+        <div class="doc-grid compact">
+            <article class="doc-card">
+                <h3>String checks</h3>
+                <ul class="doc-list">
+                    <li><code>==</code> exact match, case-insensitive.</li>
+                    <li><code>!=</code> not equal, case-insensitive.</li>
+                    <li><code>contains</code> substring exists.</li>
+                    <li><code>startswith</code> begins with text.</li>
+                    <li><code>endswith</code> ends with text.</li>
+                </ul>
+            </article>
+            <article class="doc-card">
+                <h3>Lists and patterns</h3>
+                <ul class="doc-list">
+                    <li><code>isin</code> exact membership in a comma or pipe separated list.</li>
+                    <li><code>iswm</code> wildcard match with <code>*</code> and <code>?</code>.</li>
+                    <li><code>matches</code> regex match. Regex is evaluated case-insensitive with a safety timeout.</li>
+                </ul>
+            </article>
+        </div>
+        <p>
+            <code>isin</code> is exact membership, not substring matching:
+            <code>[group] isin GRP1,GRP2</code> matches <code>GRP1</code>, but not
+            <code>MYGRP1</code>. Use <code>contains</code> or <code>matches</code> for substring
+            behaviour.
+        </p>
+    </section>
+
+    <section class="doc-section">
+        <h2>Rule keys</h2>
+        <p>
+            Rules only match when the key exists for that release. If a key cannot be
+            parsed from the release name, that rule is skipped.
+        </p>
+        <div class="doc-grid compact">
+            <article class="doc-card">
+                <h3>Always useful</h3>
+                <ul class="doc-list">
+                    <li><code>[release]</code> full release name.</li>
+                    <li><code>[section]</code> IRC section name after prefix/suffix stripping.</li>
+                    <li><code>[group]</code> release group when parsed from the final dash.</li>
+                    <li><code>[year]</code> movie/show year when parsed.</li>
+                </ul>
+            </article>
+            <article class="doc-card">
+                <h3>Media metadata</h3>
+                <ul class="doc-list">
+                    <li><code>[quality]</code> or <code>[resolution]</code>, for example <code>1080p</code> or <code>2160p</code>.</li>
+                    <li><code>[source]</code>, for example <code>WEB</code> or <code>BluRay</code>.</li>
+                    <li><code>[codec]</code>, for example <code>H264</code>, <code>x265</code> or <code>HEVC</code>.</li>
+                    <li><code>[range]</code> or <code>[hdr]</code>, for example <code>HDR</code>, <code>DV</code> or <code>HLG</code>.</li>
+                    <li><code>[repeat]</code> or <code>[proper]</code>, for <code>PROPER</code>, <code>REPACK</code> and similar tags.</li>
+                    <li><code>[internal]</code> and <code>[multi]</code>, boolean strings <code>true</code> or <code>false</code>.</li>
+                </ul>
+            </article>
+        </div>
+        <p>
+            During mapping selection the engine mainly has <code>release</code>,
+            <code>section</code>, <code>year</code>, <code>group</code>, <code>quality</code> and
+            <code>source</code>. During final site filtering it can also use the richer media keys
+            above.
+        </p>
+    </section>
+
+    <section class="doc-section">
+        <h2>Rule priority</h2>
+        <p>
+            This order matters. A normal <code>ALLOW</code> does not override a matching
+            <code>DROP</code>. Use <code>EXCEPT</code> when you need a whitelist carve-out.
+        </p>
+<pre class="code">1. Section EXCEPT rules
+2. Mapping EXCEPT rules for the selected CBFTP mapping
+3. Section DROP rules
+4. Mapping DROP rules for the selected CBFTP mapping
+5. Mapping ALLOW rules for the selected CBFTP mapping
+6. Section ALLOW rules
+7. Default: ALLOW</pre>
+        <p>
+            Section rules apply to every mapping under that IRC section. Mapping rules apply
+            only to one CBFTP mapping.
+        </p>
+    </section>
+
+    <section class="doc-section">
+        <h2>Section rules vs mapping rules</h2>
+        <div class="doc-grid compact">
+            <article class="doc-card">
+                <h3>Section Rules</h3>
+                <p>
+                    Use these for broad filters that should affect every CBFTP mapping under
+                    the selected IRC section.
+                </p>
+<pre class="code">[release] contains INTERNAL DROP
+[release] matches \b(FRENCH|GERMAN|DUTCH)\b DROP
+[group] isin BadGroup1,BadGroup2 DROP</pre>
+            </article>
+            <article class="doc-card">
+                <h3>CBFTP Mapping Rules</h3>
+                <p>
+                    Use these when only one mapping needs a special rule, for example a
+                    2160p mapping, a strict group list, or a site-specific quality route.
+                </p>
+<pre class="code">[quality] == 2160p ALLOW
+[codec] contains HEVC ALLOW
+[release] contains 720p DROP</pre>
+            </article>
+        </div>
+        <p>
+            If a section has two mappings, the mapping rules on the first mapping do not
+            affect the second mapping. Section rules affect both.
+        </p>
+    </section>
+
+    <section class="doc-section">
+        <h2>Common rule recipes</h2>
+        <div class="doc-grid compact">
+            <article class="doc-card">
+                <h3>Language drops</h3>
+<pre class="code">[release] matches \bGERMAN\b DROP
+[release] matches \bFRENCH\b DROP
+[release] matches \bPOLISH\b DROP</pre>
+                <p>
+                    Word boundaries avoid matching unrelated words. Regex is already
+                    case-insensitive.
+                </p>
+            </article>
+            <article class="doc-card">
+                <h3>Wildcard drops</h3>
+<pre class="code">[release] iswm *.SUBFRENCH.* DROP
+[release] iswm *CAM* DROP
+[release] iswm *S??E??* ALLOW</pre>
+                <p>
+                    <code>iswm</code> matches the whole string, so include <code>*</code> on both
+                    sides when you mean "contains".
+                </p>
+            </article>
+            <article class="doc-card">
+                <h3>Group whitelist</h3>
+<pre class="code">[group] isin APPROVED1,APPROVED2 EXCEPT
+[release] matches .* DROP</pre>
+                <p>
+                    Use <code>EXCEPT</code> for the allowed groups. A plain <code>ALLOW</code>
+                    would not beat the broad <code>DROP</code>.
+                </p>
+            </article>
+            <article class="doc-card">
+                <h3>Quality routing</h3>
+<pre class="code">Mapping to TV-2160P trigger: 2160p|UHD|HEVC
+Mapping to TV-1080P trigger: 1080p|H264|x264
+Fallback mapping trigger: empty</pre>
+                <p>
+                    Put the specific mapping triggers first and the empty fallback last.
+                </p>
+            </article>
+        </div>
+    </section>
+
+    <section class="doc-section">
+        <h2>Real mapping example</h2>
+        <p>
+            Two sites can announce different IRC sections but still race into the same
+            shared CBFTP section.
+        </p>
+<pre class="code">Site Alpha:
+  IRC section: X264-HD-1080P
+  CBFTP mapping: MOVIES-HD
+  Section Rules:
+    [release] contains 720p DROP
+    [release] contains CAM DROP
+
+Site Beta:
+  IRC section: X264-HD
+  CBFTP mapping: MOVIES-HD
+  Section Rules:
+    [release] contains CAM DROP</pre>
+        <p>
+            Result: both sites send accepted releases to CBFTP section <code>MOVIES-HD</code>,
+            but Site Alpha drops 720p while Site Beta does not. CBFTP still handles the
+            real per-site paths inside its own site/section config.
         </p>
     </section>
 
