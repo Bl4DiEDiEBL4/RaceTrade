@@ -45,6 +45,7 @@ public class ChatIrcClient
     // User tracking
     private readonly Dictionary<string, HashSet<string>> channelUsers = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HashSet<string>> pendingNamesLists = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> connectedStatusChannels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private bool enableUserTracking = false;
     private readonly object userTrackingLock = new object();
 
@@ -644,6 +645,10 @@ public class ChatIrcClient
         // channel keys so a reconnect on the same instance can still decrypt (PM key
         // exchanges necessarily have to be renegotiated by the peer).
         LoadChannelKeys(siteConfig);
+        lock (userTrackingLock)
+        {
+            connectedStatusChannels.Clear();
+        }
 
         TcpClient tcpClient = null;
         SslStream sslStream = null;
@@ -1209,9 +1214,12 @@ public class ChatIrcClient
                 string channel = endOfNamesMatch.Groups[2].Value;
 
                 List<string> allUsersRaw = null;
+                var showConnectedStatus = false;
 
                 lock (userTrackingLock)
                 {
+                    showConnectedStatus = connectedStatusChannels.Add(channel);
+
                     if (pendingNamesLists.ContainsKey(channel))
                     {
                         allUsersRaw = pendingNamesLists[channel].ToList();
@@ -1256,6 +1264,11 @@ public class ChatIrcClient
                 {
                     // still send the raw list (with prefixes) to the UI for the user list
                     SafeTabbedLogAction(t => t.UpdateUserList(siteName, channel, allUsersRaw));
+                }
+
+                if (showConnectedStatus)
+                {
+                    SafeTabbedLogAction(t => t.AppendChannelMessage(siteName, channel, $"*** Connected to {channel}", Color.Green));
                 }
 
                 return;
