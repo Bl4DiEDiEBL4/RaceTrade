@@ -720,6 +720,10 @@ public class ChatIrcClient
             }
 
             listeningTask = ListenForMessagesAsync(sslStream);
+
+            if (isRegistered)
+                _ = RefreshUserListAfterConnectAsync();
+
             await listeningTask;
         }
         catch (OperationCanceledException)
@@ -858,6 +862,23 @@ public class ChatIrcClient
                 || lower.Contains("no such network"));
     }
 
+    private async Task RefreshUserListAfterConnectAsync()
+    {
+        try
+        {
+            await Task.Delay(1500, localCancellationTokenSource.Token);
+            await RequestUserList();
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal when chat disconnects during startup.
+        }
+        catch (Exception ex)
+        {
+            AppendOutput($"[WARN] Failed to refresh chat user list for {siteName}: {ex.Message}", Color.Orange);
+        }
+    }
+
     private async Task ListenForMessagesAsync(SslStream sslStream)
     {
         try
@@ -940,6 +961,22 @@ public class ChatIrcClient
         }
 
         SafeTabbedLogAction(t => t.UpdateUserList(siteName, channel, raw));
+    }
+
+    private void TrackObservedChannelUser(string channel, string username)
+    {
+        var shouldAdd = false;
+
+        lock (userTrackingLock)
+        {
+            if (!channelUsers.ContainsKey(channel))
+                channelUsers[channel] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            shouldAdd = channelUsers[channel].Add(username);
+        }
+
+        if (shouldAdd)
+            SafeTabbedLogAction(t => t.AddUser(siteName, channel, username));
     }
 
     private string NormalizeNick(string raw)
@@ -1385,6 +1422,8 @@ public class ChatIrcClient
                 {
                     Color msgColor = Color.White;
                     string decryptedMessage = message;
+
+                    TrackObservedChannelUser(target, username);
 
                     FishDecryptor decryptor = null;
                     lock (fishLock)
