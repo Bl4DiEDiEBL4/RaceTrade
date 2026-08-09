@@ -3,19 +3,9 @@
 
 <PageTitle>FXP Client - RaceTrade</PageTitle>
 
-<div class="page-head">
+<div class="page-head fxp-head">
     <h1><Icon Name="fxp" Size="18" />FXP Client</h1>
-    <button class="btn" @onclick="LoadSites" disabled="@Busy"><Icon Name="refresh" Size="13" /><span>Load sites</span></button>
 </div>
-
-@if (_error is not null)
-{
-    <p class="hint err">@_error</p>
-}
-@if (_status is not null)
-{
-    <p class="hint">@_status</p>
-}
 
 <div class="panel fxp-shell">
     <div class="toolbar fxp-toolbar">
@@ -26,10 +16,15 @@
                 <option value="@server.Id">@DisplayServer(server)</option>
             }
         </select>
+        <button class="btn" @onclick="ReloadServersAndSites" disabled="@Busy">
+            <Icon Name="refresh" Size="13" />
+            <span>Load sites</span>
+        </button>
         <button class="btn" @onclick="LoadSites" disabled="@(!_servers.Any() || Busy)">
             <Icon Name="refresh" Size="13" />
             <span>Refresh sites</span>
         </button>
+        <span class="@FxpStatusClass">@FxpStatusText</span>
         <span class="spacer"></span>
         <button class="btn primary" @onclick="() => Transfer(true)" disabled="@(!CanTransferLeftToRight || Busy)">
             <Icon Name="send" Size="13" />
@@ -131,6 +126,9 @@
     private bool _leftSortDesc;
     private bool _rightSortDesc;
     private bool Busy { get; set; }
+    private string FxpStatusText =>
+        _error ?? _status ?? "Load sites, then choose a left and right site to browse.";
+    private string FxpStatusClass => _error is null ? "fxp-status" : "fxp-status err";
 
     private bool CanTransferLeftToRight =>
         SelectedLeftItems.Any() && !string.IsNullOrWhiteSpace(_leftSite) && !string.IsNullOrWhiteSpace(_rightSite);
@@ -213,7 +211,7 @@
 
                     @if (sortedItems.Count == 0)
                     {
-                        <tr><td colspan="4" class="dim">No listing loaded.</td></tr>
+                        <tr><td colspan="4" class="dim empty-listing">No listing loaded.</td></tr>
                     }
                     else
                     {
@@ -258,24 +256,37 @@
         {
             _status = $"Loading sites from {DisplayServer(server)}...";
             _sites = (await Fxp.FetchSitesAsync(server)).ToList();
-            _leftSite = KeepOrFirst(_leftSite);
-            _rightSite = KeepOrSecond(_rightSite);
-            _leftPath = "/";
-            _rightPath = "/";
-            _leftItems = Array.Empty<FxpFileItem>();
-            _rightItems = Array.Empty<FxpFileItem>();
-            _selectedLeft.Clear();
-            _selectedRight.Clear();
-            _status = _sites.Count == 0 ? "No sites returned by CBFTP." : $"Loaded {_sites.Count} site(s).";
-        });
+            _leftSite = KeepOrEmpty(_leftSite);
+            _rightSite = KeepOrEmpty(_rightSite);
 
-        if (!Busy && _sites.Count > 0)
+            if (string.IsNullOrWhiteSpace(_leftSite))
+                ClearPane(left: true);
+            if (string.IsNullOrWhiteSpace(_rightSite))
+                ClearPane(left: false);
+
+            _status = _sites.Count == 0
+                ? "No sites returned by CBFTP."
+                : $"Loaded {_sites.Count} site(s). Pick a site in a pane to browse it.";
+        });
+    }
+
+    private async Task ReloadServersAndSites()
+    {
+        _servers = Fxp.LoadServers().ToList();
+        if (!_servers.Any())
         {
-            if (!string.IsNullOrWhiteSpace(_leftSite))
-                await BrowseLeft();
-            if (!string.IsNullOrWhiteSpace(_rightSite))
-                await BrowseRight();
+            _serverId = "";
+            _sites.Clear();
+            ClearPane(left: true);
+            ClearPane(left: false);
+            _error = "Add a CBFTP server first.";
+            return;
         }
+
+        if (!_servers.Any(s => string.Equals(s.Id, _serverId, StringComparison.OrdinalIgnoreCase)))
+            _serverId = _servers.First().Id;
+
+        await LoadSites();
     }
 
     private async Task SelectServer(ChangeEventArgs e)
@@ -653,13 +664,26 @@
     private static string DisplayServer(CbftpServer server) =>
         $"{server.Name ?? server.Id} - {server.Host}:{server.Port}";
 
-    private string KeepOrFirst(string current) =>
-        _sites.Contains(current, StringComparer.OrdinalIgnoreCase) ? current : _sites.FirstOrDefault() ?? "";
+    private string KeepOrEmpty(string current) =>
+        _sites.Contains(current, StringComparer.OrdinalIgnoreCase) ? current : "";
 
-    private string KeepOrSecond(string current) =>
-        _sites.Contains(current, StringComparer.OrdinalIgnoreCase)
-            ? current
-            : _sites.Skip(1).FirstOrDefault() ?? _sites.FirstOrDefault() ?? "";
+    private void ClearPane(bool left)
+    {
+        if (left)
+        {
+            _leftSite = "";
+            _leftPath = "/";
+            _leftItems = Array.Empty<FxpFileItem>();
+            _selectedLeft.Clear();
+        }
+        else
+        {
+            _rightSite = "";
+            _rightPath = "/";
+            _rightItems = Array.Empty<FxpFileItem>();
+            _selectedRight.Clear();
+        }
+    }
 
     private static void Toggle(HashSet<string> set, string key, object? value)
     {

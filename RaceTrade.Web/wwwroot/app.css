@@ -1796,20 +1796,49 @@ pre.code {
     margin: -16px -18px 16px;
 }
 
-.fxp-shell { overflow: hidden; }
+.fxp-head { margin-bottom: 10px; }
+
+.fxp-shell {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 188px);
+    min-height: 560px;
+}
+.fxp-toolbar { row-gap: 7px; }
 .fxp-toolbar select { min-width: 260px; }
+
+.fxp-status {
+    flex: 1 1 260px;
+    min-width: 160px;
+    color: var(--muted);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fxp-status.err {
+    color: var(--err);
+    font-weight: 600;
+}
 
 .fxp-panes {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1px;
     background: var(--line);
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .fxp-pane {
     background: #151a23;
     min-width: 0;
+    min-height: 0;
     padding: 12px;
+    display: flex;
+    flex-direction: column;
 }
 
 .fxp-pane-head,
@@ -1826,11 +1855,21 @@ pre.code {
 .path-row input { width: 100%; }
 
 .fxp-table-wrap {
-    min-height: 330px;
-    max-height: 48vh;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
     overflow: auto;
     border: 1px solid var(--line);
     background: var(--content);
+}
+
+.fxp-table .empty-listing {
+    padding: 12px 14px;
+}
+
+.fxp-pane > .form-actions {
+    margin-top: 8px;
+    padding-top: 0;
 }
 
 .fxp-table td:first-child,
@@ -1907,13 +1946,13 @@ pre.code {
 }
 
 .fxp-log {
-    padding: 12px;
+    padding: 10px 12px;
     border-top: 1px solid var(--line);
 }
 
 .log-box {
-    min-height: 110px;
-    max-height: 210px;
+    min-height: 58px;
+    max-height: 110px;
     overflow: auto;
     background: var(--content);
     border: 1px solid var(--line);
