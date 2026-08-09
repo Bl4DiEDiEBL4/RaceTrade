@@ -21,6 +21,7 @@ public static class RaceHelper
     private static readonly ConcurrentDictionary<string, bool> InProgressReleases = new();
     private static readonly List<JObject> allSiteConfigs = new List<JObject>();
     private static readonly object configLock = new();
+    private static readonly string[] ReservedSiteConfigNames = { "new_site", "template", "example" };
 
     /// <summary>
     /// Guard against catastrophic backtracking in user/config supplied patterns.
@@ -223,8 +224,9 @@ public static class RaceHelper
             {
                 var fileName = Path.GetFileName(filePath);
 
-                // Skip default site
-                if (fileName.Equals("new_site.json", StringComparison.OrdinalIgnoreCase))
+                // Skip old placeholder/template files if a user still has them in sites\.
+                var siteConfigName = Path.GetFileNameWithoutExtension(filePath);
+                if (ReservedSiteConfigNames.Contains(siteConfigName, StringComparer.OrdinalIgnoreCase))
                 {
                     if (EngineSettings.DebugEnabled)
                     {

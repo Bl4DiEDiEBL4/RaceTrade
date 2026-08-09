@@ -10,7 +10,7 @@ public sealed class PreBotStore
 {
     private const string Dir = "pre_bots";
 
-    private static readonly string[] Templates = { "new_prebot", "template", "example" };
+    private static readonly string[] ReservedConfigNames = { "new_prebot", "template", "example" };
 
     public IReadOnlyList<string> ListNames()
     {
@@ -18,13 +18,16 @@ public sealed class PreBotStore
 
         return Directory.GetFiles(Dir, "*.json")
             .Select(Path.GetFileNameWithoutExtension)
-            .Where(n => !string.IsNullOrEmpty(n) && !Templates.Contains(n, StringComparer.OrdinalIgnoreCase))
+            .Where(n => !string.IsNullOrEmpty(n) && !IsReservedConfigName(n))
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList()!;
     }
 
     public PreBotConfig Load(string name)
     {
+        if (IsReservedConfigName(name))
+            throw new InvalidOperationException($"'{name}' is a reserved placeholder name and cannot be loaded.");
+
         var path = PathFor(name);
         if (!File.Exists(path)) return New(name);
 
@@ -51,6 +54,8 @@ public sealed class PreBotStore
         var name = siteSettings.Sitename?.Trim();
         if (string.IsNullOrWhiteSpace(name))
             throw new InvalidOperationException("PreBot name is required.");
+        if (IsReservedConfigName(name))
+            throw new InvalidOperationException($"'{name}' is a reserved placeholder name and cannot be saved.");
 
         Directory.CreateDirectory(Dir);
 
@@ -75,6 +80,10 @@ public sealed class PreBotStore
         if (File.Exists(path)) File.Delete(path);
         LogManager.Info($"Deleted prebot '{name}'.");
     }
+
+    private static bool IsReservedConfigName(string? name) =>
+        !string.IsNullOrWhiteSpace(name) &&
+        ReservedConfigNames.Contains(name.Trim(), StringComparer.OrdinalIgnoreCase);
 
     private static string PathFor(string name) => Path.Combine(Dir, $"{name}.json");
 }
