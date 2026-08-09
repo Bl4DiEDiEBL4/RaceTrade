@@ -2196,6 +2196,13 @@ pre.code {
     box-shadow: 0 0 8px rgba(47, 194, 121, .55);
 }
 
+.chat-site-picker {
+    min-width: 170px;
+    height: 31px;
+    background: #101722;
+    border-color: #334052;
+}
+
 /* ---------- site editor sections ---------- */
 
 .sections-topbar {

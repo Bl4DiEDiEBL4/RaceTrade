@@ -10,6 +10,21 @@
 <div class="page-head">
     <h1><Icon Name="chat" Size="18" />Chat</h1>
     <div class="head-actions">
+        <select class="chat-site-picker" @bind="_connectSite" disabled="@_busy">
+            <option value="">-- pick site --</option>
+            @foreach (var site in _siteOptions)
+            {
+                <option value="@site">@site</option>
+            }
+        </select>
+
+        <button class="btn primary"
+                @onclick="Start"
+                disabled="@(_busy || string.IsNullOrWhiteSpace(_connectSite) || SelectedConnectSiteConnected)">
+            <Icon Name="play" Size="13" />
+            <span>@(SelectedConnectSiteConnected ? "Connected" : "Connect chat")</span>
+        </button>
+
         @if (ChatSvc.IsRunning)
         {
             <span class="chat-state on"><span class="state-dot"></span>@ChatSvc.ConnectedSites.Count site(s) connected</span>
@@ -18,7 +33,6 @@
         else
         {
             <span class="chat-state off"><span class="state-dot"></span>Offline</span>
-            <button class="btn primary" @onclick="Start" disabled="@_busy"><Icon Name="play" Size="13" /><span>Connect chat</span></button>
         }
     </div>
 </div>
@@ -35,7 +49,7 @@
             {
                 <text>
                     Not connected. Press <strong>Connect chat</strong> above - this only opens
-                    the IRC connections, it does not start the trader.
+                    the selected site's IRC connection, it does not start the trader.
                 </text>
             }
         </div>
@@ -232,6 +246,8 @@ else
     private IReadOnlyList<string> _users = Array.Empty<string>();
     private string _selected = "";
     private string _site = "";
+    private IReadOnlyList<string> _siteOptions = Array.Empty<string>();
+    private string _connectSite = "";
     private string _draft = "";
     private bool _busy;
 
@@ -250,6 +266,9 @@ else
     private bool CurrentIsPm => IsPrivateMessage(CurrentChannel);
     private string CurrentTargetLabel => CurrentIsPm ? $"PM {PrivateNick(CurrentChannel)}" : CurrentChannel;
     private string KeyDialogTarget => CurrentIsPm ? $"{CurrentSite} - PM {PrivateNick(CurrentChannel)}" : $"{CurrentSite} - {CurrentChannel}";
+    private bool SelectedConnectSiteConnected =>
+        !string.IsNullOrWhiteSpace(_connectSite) &&
+        ChatSvc.ConnectedSites.Contains(_connectSite, StringComparer.OrdinalIgnoreCase);
 
     private IEnumerable<string> Sites =>
         _channels.Select(c => c.Site).Distinct(StringComparer.OrdinalIgnoreCase);
@@ -275,9 +294,16 @@ else
 
     private async Task Start()
     {
+        if (string.IsNullOrWhiteSpace(_connectSite))
+            return;
+
         _busy = true;
-        try { await ChatSvc.StartAsync(); }
-        finally { _busy = false; }
+        try { await ChatSvc.StartAsync(_connectSite); }
+        finally
+        {
+            _busy = false;
+            RefreshSiteOptions();
+        }
     }
 
     private async Task Stop()
@@ -463,6 +489,7 @@ else
 
     private void Refresh()
     {
+        RefreshSiteOptions();
         _channels = Irc.Channels;
 
         if (_channels.Count == 0)
@@ -492,6 +519,25 @@ else
 
         _lines = Irc.Lines(parts[0], parts[1]);
         _users = Irc.Users(parts[0], parts[1]);
+    }
+
+    private void RefreshSiteOptions()
+    {
+        _siteOptions = ChatSvc.AvailableSites();
+
+        if (_siteOptions.Count == 0)
+        {
+            _connectSite = "";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_connectSite) ||
+            !_siteOptions.Contains(_connectSite, StringComparer.OrdinalIgnoreCase))
+        {
+            _connectSite = _siteOptions
+                .FirstOrDefault(site => !ChatSvc.ConnectedSites.Contains(site, StringComparer.OrdinalIgnoreCase))
+                ?? _siteOptions[0];
+        }
     }
 
     public void Dispose()

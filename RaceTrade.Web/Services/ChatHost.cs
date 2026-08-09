@@ -37,110 +37,117 @@ public sealed class ChatHost : IAsyncDisposable
 
     public IReadOnlyCollection<string> ConnectedSites => _clients.Keys.ToList();
 
-    public async Task StartAsync()
+    public IReadOnlyList<string> AvailableSites() => EnumerateSiteNames().ToList();
+
+    public async Task StartAsync(string siteName)
     {
+        siteName = siteName?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(siteName))
+        {
+            LogManager.Warning("Chat: select a site before connecting.");
+            return;
+        }
+
         await _gate.WaitAsync();
         try
         {
-            if (IsRunning) return;
+            if (_clients.ContainsKey(siteName))
+            {
+                LogManager.Info($"Chat: site '{siteName}' is already connected.");
+                return;
+            }
 
-            _cts = new CancellationTokenSource();
-            _siteTasks.Clear();
-            _clients.Clear();
-            SiteConfigManager.Invalidate();
+            _siteTasks.RemoveAll(t => t.IsCompleted);
 
+            SiteConfigManager.Invalidate(siteName);
+
+            if (!SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) || cfg is null)
+            {
+                LogManager.Warning($"Chat: could not load site config for '{siteName}'.");
+                return;
+            }
+
+            if (cfg.SiteSettings?.DisableSite == true)
+            {
+                LogManager.Warning($"Chat: site '{siteName}' is disabled.");
+                return;
+            }
+
+            // Chat needs less than the racer does - no bot name check, no announce
+            // channels - but the connection itself still needs these three.
+            if (string.IsNullOrWhiteSpace(cfg.Server?.Host) ||
+                string.IsNullOrWhiteSpace(cfg.Server?.Username) ||
+                string.IsNullOrWhiteSpace(cfg.Server?.Password))
+            {
+                LogManager.Warning($"Chat: site '{siteName}' is missing IRC host, username or password.");
+                return;
+            }
+
+            _cts ??= new CancellationTokenSource();
             var token = _cts.Token;
-            var started = 0;
 
-            foreach (var siteName in EnumerateSiteNames())
+            var name = siteName;
+            var config = cfg;
+
+            _siteTasks.Add(Task.Run(async () =>
             {
-                if (!SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) || cfg is null)
-                    continue;
-
-                if (cfg.SiteSettings?.DisableSite == true)
-                    continue;
-
-                // Chat needs less than the racer does - no bot name check, no announce
-                // channels - but the connection itself still needs these three.
-                if (string.IsNullOrWhiteSpace(cfg.Server?.Host)) continue;
-                if (string.IsNullOrWhiteSpace(cfg.Server?.Username)) continue;
-                if (string.IsNullOrWhiteSpace(cfg.Server?.Password)) continue;
-
-                var name = siteName;
-                var config = cfg;
-
-                _siteTasks.Add(Task.Run(async () =>
+                ChatIrcClient client;
+                try
                 {
-                    ChatIrcClient client;
-                    try
-                    {
-                        client = new ChatIrcClient(
-                            config,
-                            name,
-                            (category, release) => { },   // announce callback unused in chat
-                            _output,
-                            token);
-                    }
-                    catch (Exception ex)
-                    {
-                        // The constructor throws on a half-filled config; report which
-                        // site instead of failing the whole chat start.
-                        LogManager.Warning($"Chat: skipping site '{name}': {ex.Message}");
-                        return;
-                    }
+                    client = new ChatIrcClient(
+                        config,
+                        name,
+                        (category, release) => { },   // announce callback unused in chat
+                        _output,
+                        token);
+                }
+                catch (Exception ex)
+                {
+                    // The constructor throws on a half-filled config; report which
+                    // site instead of failing the whole chat start.
+                    LogManager.Warning($"Chat: skipping site '{name}': {ex.Message}");
+                    return;
+                }
 
-                    client.SetChatOnlyMode(true);        // joins Chan1..Chan20 + chat_keys
-                    client.SetTabbedLogOutput(_output);
-                    client.SetUserTrackingEnabled(true);
+                client.SetChatOnlyMode(true);        // joins Chan1..Chan20 + chat_keys
+                client.SetTabbedLogOutput(_output);
+                client.SetUserTrackingEnabled(true);
 
-                    _clients[name] = client;
+                _clients[name] = client;
 
-                    // Create the tabs up front so the channel picker is populated while
-                    // the connection is still being established.
+                // Create the tabs up front so the channel picker is populated while
+                // the connection is still being established.
+                foreach (var chan in ChannelsOf(config))
+                {
+                    _output.EnsureChannel(name, chan);
+                    _output.AppendChannelMessage(name, chan, $"*** Connecting to {chan}...",
+                        Color.Gray);
+                }
+
+                try
+                {
+                    await client.ConnectToZNCAsync();
+                    LogManager.Success($"Chat disconnected from '{name}'.");
+                }
+                catch (OperationCanceledException)
+                {
+                    // Normal on Stop.
+                }
+                catch (Exception ex)
+                {
+                    LogManager.Error($"Chat error for site '{name}': {ex.Message}");
                     foreach (var chan in ChannelsOf(config))
-                    {
-                        _output.EnsureChannel(name, chan);
-                        _output.AppendChannelMessage(name, chan, $"*** Connecting to {chan}...",
-                            Color.Gray);
-                    }
+                        _output.AppendChannelMessage(name, chan, $"*** Connection failed: {ex.Message}",
+                            Color.Red);
+                }
+                finally
+                {
+                    _clients.TryRemove(name, out _);
+                }
+            }, token));
 
-                    try
-                    {
-                        await client.ConnectToZNCAsync();
-                        LogManager.Success($"Chat disconnected from '{name}'.");
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // Normal on Stop.
-                    }
-                    catch (Exception ex)
-                    {
-                        LogManager.Error($"Chat error for site '{name}': {ex.Message}");
-                        foreach (var chan in ChannelsOf(config))
-                            _output.AppendChannelMessage(name, chan, $"*** Connection failed: {ex.Message}",
-                                Color.Red);
-                    }
-                    finally
-                    {
-                        _clients.TryRemove(name, out _);
-                    }
-                }, token));
-
-                started++;
-            }
-
-            if (started == 0)
-            {
-                _cts.Dispose();
-                _cts = null;
-                IsRunning = false;
-                LogManager.Warning("Chat started, but no site has IRC credentials. Check the Sites page.");
-            }
-            else
-            {
-                IsRunning = true;
-                LogManager.Success($"Chat started: connecting {started} site(s).");
-            }
+            IsRunning = true;
+            LogManager.Success($"Chat started: connecting site '{siteName}'.");
         }
         finally
         {
