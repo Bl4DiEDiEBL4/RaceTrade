@@ -1,0 +1,44 @@
+@inject ThemeService Theme
+@inject IJSRuntime Js
+
+<button type="button"
+        class="theme-toggle"
+        title="@Title"
+        aria-label="@Title"
+        @onclick="Toggle">
+    <Icon Name="@IconName" Size="14" />
+    <span>@Label</span>
+</button>
+
+@code {
+    private string _theme = "dark";
+
+    private bool IsLight => string.Equals(_theme, "light", StringComparison.OrdinalIgnoreCase);
+    private string Label => IsLight ? "Dark" : "Light";
+    private string Title => IsLight ? "Switch to dark mode" : "Switch to light mode";
+    private string IconName => IsLight ? "moon" : "sun";
+
+    protected override void OnInitialized()
+    {
+        _theme = Theme.CurrentTheme;
+    }
+
+    private async Task Toggle()
+    {
+        _theme = Theme.SetTheme(IsLight ? "dark" : "light");
+
+        try
+        {
+            await Js.InvokeVoidAsync("raceTradeTheme.set", _theme);
+        }
+        catch (InvalidOperationException)
+        {
+            // The first prerender pass has no browser yet. The html attribute is already
+            // rendered from ThemeService, so the next interactive pass catches up.
+        }
+        catch (JSDisconnectedException)
+        {
+            // Browser is leaving; the setting is already saved.
+        }
+    }
+}

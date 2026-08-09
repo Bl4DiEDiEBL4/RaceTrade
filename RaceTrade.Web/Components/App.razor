@@ -1,5 +1,7 @@
+@inject ThemeService Theme
+
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en" data-bs-theme="@Theme.CurrentTheme" data-theme="@Theme.CurrentTheme">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -17,6 +19,15 @@
        button whose @@onclick is never wired up (a layout, for instance, never gets a
        render mode of its own) and which then silently does nothing. *@
     <Routes @rendermode="InteractiveServer" />
+    <script>
+        window.raceTradeTheme = {
+            set: function (theme) {
+                const next = theme === 'light' ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', next);
+                document.documentElement.setAttribute('data-bs-theme', next);
+            }
+        };
+    </script>
     <script src="_framework/blazor.web.js"></script>
 </body>
 </html>

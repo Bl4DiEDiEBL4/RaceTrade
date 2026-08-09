@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="178" height="38" viewBox="0 0 178 38" role="img" aria-labelledby="title desc">
+  <title id="title">RaceTrade</title>
+  <desc id="desc">Transparent RaceTrade logo for light mode with a cyan route mark and dark futuristic wordmark.</desc>
+  <defs>
+    <linearGradient id="mark" x1="1" y1="1" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00f1ff"/>
+      <stop offset=".55" stop-color="#00bfc9"/>
+      <stop offset="1" stop-color="#1778e8"/>
+    </linearGradient>
+    <linearGradient id="dark-word" x1="43" y1="6" x2="105" y2="29" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#122238"/>
+      <stop offset="1" stop-color="#263b56"/>
+    </linearGradient>
+    <linearGradient id="cyan-word" x1="101" y1="5" x2="177" y2="31" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00b7c8"/>
+      <stop offset=".58" stop-color="#009a91"/>
+      <stop offset="1" stop-color="#176fd6"/>
+    </linearGradient>
+    <filter id="soft-shadow" x="-18%" y="-25%" width="136%" height="150%">
+      <feDropShadow dx="0" dy="1.4" stdDeviation="1" flood-color="#8aa4bf" flood-opacity=".35"/>
+    </filter>
+    <style>
+      .wordmark {
+        font-family: "Bahnschrift SemiCondensed", "Bahnschrift", "Agency FB", "Arial Narrow", Arial, sans-serif;
+        font-size: 21.5px;
+        font-weight: 800;
+        letter-spacing: 1.15px;
+      }
+    </style>
+  </defs>
+  <g filter="url(#soft-shadow)">
+    <path d="M18.8 1.8 35.1 18.1 18.8 34.4 2.5 18.1 18.8 1.8Z" fill="url(#mark)"/>
+    <path d="M18.8 7 29.9 18.1 18.8 29.2 7.7 18.1 18.8 7Z" fill="#f7fbff"/>
+    <path d="M18.8 11.4 25.5 18.1 18.8 24.8 12.1 18.1 18.8 11.4Z" fill="url(#mark)"/>
+    <path d="M11.8 18.1h14" stroke="#074e64" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M18.8 11.1v14" stroke="#074e64" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+  <g transform="skewX(-7)" filter="url(#soft-shadow)">
+    <text class="wordmark" x="43.3" y="26">
+      <tspan fill="url(#dark-word)">RACE</tspan><tspan fill="url(#cyan-word)" dx=".25">TRADE</tspan>
+    </text>
+  </g>
+</svg>

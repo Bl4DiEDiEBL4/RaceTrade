@@ -12,6 +12,10 @@
         <span class="status-text">
             @(Racer.IsBusy ? "Working..." : Racer.IsRunning ? "Running" : "Stopped")
         </span>
+        @if (Racer.IsRunning)
+        {
+            <span class="run-spinner" aria-label="Trader running"></span>
+        }
     </div>
 
     @if (Racer.IsRunning && Racer.ConnectedSites.Count > 0)

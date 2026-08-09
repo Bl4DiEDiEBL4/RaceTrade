@@ -135,6 +135,7 @@ builder.Services.AddSingleton<PreSpreadService>();
 builder.Services.AddSingleton<CbftpSiteService>();
 builder.Services.AddSingleton<HttpClient>();
 builder.Services.AddSingleton<UpdateService>();
+builder.Services.AddSingleton<ThemeService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(o =>
@@ -171,6 +172,7 @@ var favicon = ReadEmbeddedBytes("RaceTrade.Web.wwwroot.favicon.ico");
 var icon192 = ReadEmbeddedBytes("RaceTrade.Web.wwwroot.icon-192.png");
 var icon512 = ReadEmbeddedBytes("RaceTrade.Web.wwwroot.icon-512.png");
 var logoSvg = ReadEmbeddedText("RaceTrade.Web.wwwroot.racetrade-logo.svg");
+var logoLightSvg = ReadEmbeddedText("RaceTrade.Web.wwwroot.racetrade-logo-light.svg");
 
 // Route every engine log line into the UI sink.
 LogManager.Configure(app.Services.GetRequiredService<ILogSink>());
@@ -223,6 +225,8 @@ app.MapGet("/icon-512.png", () => Results.File(icon512, "image/png"))
 // because publish strips the physical wwwroot folder so only the single exe ships — a new
 // file dropped in wwwroot is a 404 until it is listed here AND in the csproj.
 app.MapGet("/racetrade-logo.svg", () => Results.Content(logoSvg, "image/svg+xml"))
+    .AllowAnonymous();
+app.MapGet("/racetrade-logo-light.svg", () => Results.Content(logoLightSvg, "image/svg+xml"))
     .AllowAnonymous();
 
 // --- login / logout -------------------------------------------------------------------

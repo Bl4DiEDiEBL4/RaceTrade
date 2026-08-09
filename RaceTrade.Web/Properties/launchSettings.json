@@ -1,9 +1,9 @@
 {
-  "//": "The port here must match Web:Port in appsettings.json. Program.cs configures Kestrel explicitly (so the same binding rules apply however the app is launched), which overrides applicationUrl - if these disagree, VS opens a browser on a port nothing is listening on.",
+  "//": "Program.cs opens the browser after Kestrel is listening. Keep launchBrowser false in Visual Studio to avoid opening two tabs.",
   "profiles": {
     "RaceTrade.Web": {
       "commandName": "Project",
-      "launchBrowser": true,
+      "launchBrowser": false,
       "applicationUrl": "http://127.0.0.1:8420",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"

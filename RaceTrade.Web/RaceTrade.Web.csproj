@@ -4,10 +4,10 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>RaceTrade.Web</RootNamespace>
     <AssemblyName>RaceTrade</AssemblyName>
-    <Version>2.0.6</Version>
-    <AssemblyVersion>2.0.6.0</AssemblyVersion>
-    <FileVersion>2.0.6.0</FileVersion>
-    <InformationalVersion>2.0.6 WebUI</InformationalVersion>
+    <Version>2.0.7</Version>
+    <AssemblyVersion>2.0.7.0</AssemblyVersion>
+    <FileVersion>2.0.7.0</FileVersion>
+    <InformationalVersion>2.0.7 WebUI</InformationalVersion>
     <!-- Enabled because the host code uses nullable annotations (string?, event Action?).
          The engine library stays on 'disable' - it is ported .NET Framework code that
          was never annotated, and turning it on there would produce thousands of warnings
@@ -58,6 +58,7 @@
     <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="wwwroot\app.css" LogicalName="RaceTrade.Web.wwwroot.app.css" />
     <EmbeddedResource Include="wwwroot\racetrade-logo.svg" LogicalName="RaceTrade.Web.wwwroot.racetrade-logo.svg" />
+    <EmbeddedResource Include="wwwroot\racetrade-logo-light.svg" LogicalName="RaceTrade.Web.wwwroot.racetrade-logo-light.svg" />
     <EmbeddedResource Include="wwwroot\favicon.ico" LogicalName="RaceTrade.Web.wwwroot.favicon.ico" />
     <EmbeddedResource Include="wwwroot\icon-192.png" LogicalName="RaceTrade.Web.wwwroot.icon-192.png" />
     <EmbeddedResource Include="wwwroot\icon-512.png" LogicalName="RaceTrade.Web.wwwroot.icon-512.png" />

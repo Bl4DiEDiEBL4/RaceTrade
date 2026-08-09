@@ -5,8 +5,12 @@
 <div class="app">
     <nav class="sidebar">
         <div class="brand">
-            <img class="brand-logo" src="racetrade-logo.svg" alt="RaceTrade" />
-            <span class="brand-ver">v2.0.6</span>
+            <img class="brand-logo brand-logo-dark" src="racetrade-logo.svg" alt="RaceTrade" />
+            <img class="brand-logo brand-logo-light" src="racetrade-logo-light.svg" alt="RaceTrade" />
+            <span class="brand-meta">
+                <span class="brand-ver">v2.0.7</span>
+                <span class="brand-community">linknet/#racetrade</span>
+            </span>
         </div>
 
         <TraderStatus />
@@ -46,6 +50,7 @@
         <header class="app-header">
             <UpdateNotice />
             <div class="header-actions">
+                <ThemeToggle />
                 <form class="logout" action="/auth/logout" method="post">
                     <button type="submit"><Icon Name="signout" Size="14" /><span>Sign out</span></button>
                 </form>
@@ -56,7 +61,5 @@
         <main>
             @Body
         </main>
-
-        <span class="community-corner">linknet / #racetrade</span>
     </section>
 </div>

@@ -22,11 +22,20 @@
     }
     else
     {
-        <table class="grid">
+        <table class="grid sites-table">
+            <colgroup>
+                <col class="c-site" />
+                <col class="c-host" />
+                <col class="c-network" />
+                <col class="c-small" />
+                <col class="c-small" />
+                <col class="c-status" />
+                <col class="c-actions" />
+            </colgroup>
             <thead>
                 <tr>
                     <th>SITE</th><th>ZNC HOST</th><th>NETWORK</th>
-                    <th>CHANNELS</th><th>SECTIONS</th><th>STATUS</th><th></th>
+                    <th>CHANNELS</th><th>SECTIONS</th><th class="site-status">STATUS</th><th class="site-actions-head">ACTIONS</th>
                 </tr>
             </thead>
             <tbody>
@@ -38,21 +47,36 @@
                         <td>@r.Network</td>
                         <td class="dim">@r.Channels</td>
                         <td class="dim">@r.Sections</td>
-                        <td>
+                        <td class="site-status">
                             @if (r.Disabled)
                             {
-                                <span class="pill off">disabled</span>
+                                <button type="button"
+                                        class="pill status-toggle off"
+                                        title="Enable this site"
+                                        @onclick="() => ToggleDisabled(r.Name)">
+                                    disabled
+                                </button>
                             }
                             else if (r.DlOnly)
                             {
-                                <span class="pill dl">dl-only</span>
+                                <button type="button"
+                                        class="pill status-toggle dl"
+                                        title="Disable this site"
+                                        @onclick="() => ToggleDisabled(r.Name)">
+                                    dl-only
+                                </button>
                             }
                             else
                             {
-                                <span class="pill on">enabled</span>
+                                <button type="button"
+                                        class="pill status-toggle on"
+                                        title="Disable this site"
+                                        @onclick="() => ToggleDisabled(r.Name)">
+                                    enabled
+                                </button>
                             }
                         </td>
-                        <td class="right">
+                        <td class="site-actions">
                             <a class="btn" href="@($"sites/edit/{r.Name}")"><Icon Name="edit" Size="13" /><span>Edit</span></a>
                             <a class="btn" href="@($"cbftp-site/{r.Name}")"><Icon Name="servers" Size="13" /><span>Edit CBFTP Site</span></a>
                             <button class="btn danger" @onclick="() => Delete(r.Name)"><Icon Name="trash" Size="13" /><span>Delete</span></button>
@@ -104,5 +128,20 @@
     {
         try { Store.Delete(name); Reload(); }
         catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void ToggleDisabled(string name)
+    {
+        try
+        {
+            var cfg = Store.Load(name);
+            cfg.SiteSettings.DisableSite = !cfg.SiteSettings.DisableSite;
+            Store.Save(cfg, name);
+            Reload();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
     }
 }
