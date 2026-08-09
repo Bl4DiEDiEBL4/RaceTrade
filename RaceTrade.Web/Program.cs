@@ -133,6 +133,8 @@ builder.Services.AddSingleton<PreBotStore>();
 builder.Services.AddSingleton<FxpClientService>();
 builder.Services.AddSingleton<PreSpreadService>();
 builder.Services.AddSingleton<CbftpSiteService>();
+builder.Services.AddSingleton<HttpClient>();
+builder.Services.AddSingleton<UpdateService>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(o =>

@@ -5,6 +5,7 @@
 @inject ChatHost ChatSvc
 @inject RaceHistoryStore History
 @inject UiLogSink Sink
+@inject UpdateService Updates
 
 <PageTitle>Settings - RaceTrade</PageTitle>
 
@@ -60,7 +61,7 @@
         }
     </div>
 
-    <div class="card">
+    <div class="card settings-action-card">
         <div class="card-title">ENGINE</div>
 
         @* Stacked rows, not the two-column form grid: inside a narrow card that grid
@@ -92,6 +93,37 @@
         </div>
     </div>
 
+    <div class="card settings-action-card">
+        <div class="card-title">UPDATES</div>
+
+        <label class="opt">
+            <input type="checkbox" @bind="_checkForUpdates" />
+            <span>
+                <span class="opt-name">Check for updates</span>
+                <span class="fh">
+                    Shows a small header link when GitHub has a newer RaceTrade release.
+                    No popup, no automatic install.
+                </span>
+            </span>
+        </label>
+
+        <table class="grid tight">
+            <tbody>
+                <tr><td>Current version</td><td class="right">v@(Updates.CurrentVersion)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="card-actions">
+            <button class="btn primary" @onclick="SaveUpdates">
+                <Icon Name="save" Size="13" /><span>Save</span>
+            </button>
+            @if (!string.IsNullOrWhiteSpace(_updatesMessage))
+            {
+                <span class="@($"fh inline {(_updatesMessageIsError ? "err-text" : "")}")">@_updatesMessage</span>
+            }
+        </div>
+    </div>
+
     <div class="card">
         <div class="card-title">DATA FOLDER</div>
         <p class="path">@DataRoot</p>
@@ -113,7 +145,7 @@
         </table>
     </div>
 
-    <div class="card">
+    <div class="card settings-action-card">
         <div class="card-title">HISTORY / RESET</div>
         <table class="grid tight">
             <tbody>
@@ -331,6 +363,9 @@ sudo systemctl enable --now racetrade</pre>
     private bool _insecureSsl = EngineSettings.AllowInsecureSsl;
     private string _engineMessage = "";
     private bool _engineMessageIsError;
+    private bool _checkForUpdates = true;
+    private string _updatesMessage = "";
+    private bool _updatesMessageIsError;
 
     private string _movieProvider = "tiffara";
     private string _tmdbKey = "";
@@ -361,6 +396,7 @@ sudo systemctl enable --now racetrade</pre>
     protected override void OnInitialized()
     {
         LoadEngine();
+        LoadUpdates();
         LoadWebAccess();
         LoadLookup();
         CountData();
@@ -445,6 +481,50 @@ sudo systemctl enable --now racetrade</pre>
             _engineMessage = $"Failed to save: {ex.Message}";
             _engineMessageIsError = true;
             LogManager.Error($"Failed to save engine settings: {ex.Message}");
+        }
+    }
+
+    private void LoadUpdates()
+    {
+        try
+        {
+            if (!File.Exists(SettingsFile)) return;
+
+            var o = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(SettingsFile));
+            _checkForUpdates = ReadBool(o, "check_for_updates", "CheckForUpdates") ?? true;
+        }
+        catch
+        {
+            _checkForUpdates = true;
+        }
+    }
+
+    private void SaveUpdates()
+    {
+        _updatesMessage = "";
+        _updatesMessageIsError = false;
+
+        try
+        {
+            Directory.CreateDirectory("settings");
+
+            var o = File.Exists(SettingsFile)
+                ? Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(SettingsFile))
+                : new Newtonsoft.Json.Linq.JObject();
+
+            o["check_for_updates"] = _checkForUpdates;
+
+            AtomicFile.WriteAllText(SettingsFile, o.ToString(Newtonsoft.Json.Formatting.Indented));
+
+            Updates.SettingsChanged();
+            _updatesMessage = "Saved.";
+            LogManager.Success("Saved update settings.");
+        }
+        catch (Exception ex)
+        {
+            _updatesMessage = $"Failed to save: {ex.Message}";
+            _updatesMessageIsError = true;
+            LogManager.Error($"Failed to save update settings: {ex.Message}");
         }
     }
 

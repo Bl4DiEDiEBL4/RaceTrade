@@ -1,0 +1,39 @@
+@inject UpdateService Updates
+@implements IDisposable
+
+@if (_result?.IsAvailable == true)
+{
+    <a class="update-notice"
+       href="@_result.ReleaseUrl"
+       target="_blank"
+       rel="noopener noreferrer"
+       title="Open the latest RaceTrade release">
+        <Icon Name="download" Size="13" />
+        <span>Update v@_result.LatestVersion</span>
+    </a>
+}
+
+@code {
+    private UpdateCheckResult? _result;
+
+    protected override void OnInitialized()
+    {
+        Updates.Changed += OnChanged;
+        _ = Refresh();
+    }
+
+    private void OnChanged() => _ = Refresh(force: true);
+
+    private async Task Refresh(bool force = false)
+    {
+        var result = await Updates.CheckAsync(force);
+
+        await InvokeAsync(() =>
+        {
+            _result = result;
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Updates.Changed -= OnChanged;
+}

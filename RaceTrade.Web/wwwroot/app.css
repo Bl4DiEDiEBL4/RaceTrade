@@ -78,6 +78,26 @@ a { color: var(--accent); }
     flex: 0 0 auto;
 }
 
+.update-notice {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 31px;
+    padding: 0 11px;
+    border: 1px solid rgba(245, 172, 70, .32);
+    border-radius: 4px;
+    background: rgba(245, 172, 70, .10);
+    color: #f5c05a;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.update-notice:hover {
+    background: rgba(245, 172, 70, .16);
+    color: #ffd181;
+}
+
 .sidebar {
     width: 210px;
     flex: 0 0 210px;
@@ -301,6 +321,16 @@ h2 { font-size: 12px; letter-spacing: 1.2px; color: var(--muted); margin: 24px 0
 }
 
 .card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.settings-action-card {
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-action-card .card-actions {
+    margin-top: auto;
+    padding-top: 14px;
+}
 
 .card-actions button, .btn {
     background: #2b3242;
