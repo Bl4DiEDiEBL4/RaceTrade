@@ -41,15 +41,33 @@
     }
     else
     {
-        <table class="grid logs">
+        <table class="grid logs log-table">
+            <thead>
+                <tr>
+                    <th class="ts">Time</th>
+                    <th class="ch">Type</th>
+                    <th class="site">Site</th>
+                    <th class="ircchan">Channel</th>
+                    <th class="race-status">Status</th>
+                    <th class="section">Section</th>
+                    <th class="rel">Release</th>
+                    <th class="targets">Sites</th>
+                    <th class="msg">Message</th>
+                </tr>
+            </thead>
             <tbody>
                 @foreach (var e in _entries)
                 {
                     <tr class="lvl-@e.Level.ToString().ToLowerInvariant()">
                         <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
                         <td class="ch">@e.Channel</td>
-                        <td class="site">@e.Site</td>
-                        <td class="msg">@e.Message</td>
+                        <td class="site">@((MarkupString)FormatSite(e.Site))</td>
+                        <td class="ircchan">@e.Source</td>
+                        <td class="race-status @StatusClass(e.Status)">@e.Status</td>
+                        <td class="section">@((MarkupString)FormatSection(e.Section))</td>
+                        <td class="rel">@((MarkupString)FormatRelease(e.Release))</td>
+                        <td class="targets">@((MarkupString)FormatSites(e.TargetSite, e.Reason))</td>
+                        <td class="msg">@((MarkupString)FormatMessage(e))</td>
                     </tr>
                 }
             </tbody>
@@ -84,6 +102,37 @@
         LogLevel? lvl = string.IsNullOrEmpty(_minLevel) ? null : Enum.Parse<LogLevel>(_minLevel);
         _entries = Sink.Snapshot(300, ch, lvl);
     }
+
+    private static string FormatSite(string? site) =>
+        IrcMarkup.ToHtml(LogColors.Magenta(site ?? ""));
+
+    private static string FormatSection(string? section) =>
+        IrcMarkup.ToHtml(LogColors.Green(section ?? ""));
+
+    private static string FormatRelease(string? release) =>
+        IrcMarkup.ToHtml(LogColors.Orange(release ?? ""));
+
+    private static string FormatSites(string? sites, string? reason)
+    {
+        var text = IrcMarkup.ToHtml(LogColors.Magenta(sites ?? ""));
+        if (!string.IsNullOrWhiteSpace(reason))
+            text += $" <span class=\"log-reason\">({IrcMarkup.ToHtml(LogColors.Red(reason))})</span>";
+
+        return text;
+    }
+
+    private static string FormatMessage(LogEvent e)
+    {
+        if (e.Channel == LogChannel.Race)
+            return "";
+
+        return IrcMarkup.ToHtml(e.Message);
+    }
+
+    private static string StatusClass(string? status) =>
+        string.IsNullOrWhiteSpace(status)
+            ? ""
+            : "race-" + status.ToLowerInvariant();
 
     public void Dispose() => Sink.Changed -= OnSinkChanged;
 }

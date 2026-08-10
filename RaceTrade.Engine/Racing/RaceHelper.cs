@@ -199,6 +199,15 @@ public static class RaceHelper
         return patternIndex == pattern.Length;
     }
 
+    private static bool IsConfiguredGlobalPreBotMode(string mode)
+    {
+        if (string.IsNullOrWhiteSpace(mode))
+            return false;
+
+        var match = Regex.Match(mode, @"^Global\s+PreBot\s*\(([^)]+)\)\s*$", RegexOptions.IgnoreCase);
+        return match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value);
+    }
+
     /// <summary>
     /// Loads all site configurations from disk.
     /// Now properly clears caches before reloading.
@@ -463,7 +472,7 @@ public static class RaceHelper
                             siteCache.TryGetValue(cbftpSection, out string mappedIrcSection))
                         {
                             ircSectionToCheck = mappedIrcSection;
-                            LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}]: SiteBot mode - CBFTP [{cbftpSection}] maps to IRC [{LogColors.Green(ircSectionToCheck)}] for release: [{LogColors.Orange(releaseName)}]");
+                            LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}]: SiteBot mode - CBFTP [{LogColors.Green(cbftpSection)}] maps to IRC [{LogColors.Green(ircSectionToCheck)}] for release: [{LogColors.Orange(releaseName)}]");
                         }
                         else
                         {
@@ -780,7 +789,7 @@ public static class RaceHelper
 
             // For Global PreBots, check merged config for simple mappings
             string prebotName = siteConfig["site_settings"]?["pre_announce"]?.ToString();
-            if (!string.IsNullOrEmpty(prebotName) && prebotName.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase))
+            if (IsConfiguredGlobalPreBotMode(prebotName))
             {
                 if (EngineSettings.DebugEnabled)
                 {

@@ -18,6 +18,8 @@ public class FishDecryptor
         if (string.IsNullOrWhiteSpace(blowfishKey))
             throw new ArgumentException("Blowfish key cannot be null or empty.", nameof(blowfishKey));
 
+        blowfishKey = NormalizeKey(blowfishKey);
+
         // FiSH uses key bytes as-is (ANSI/UTF-8), NOT Base64-decoded.
         // DH1080 key is the 43-char Base64 string itself.
         keyBytes = Encoding.ASCII.GetBytes(blowfishKey);
@@ -274,5 +276,20 @@ public class FishDecryptor
         byte[] trimmed = new byte[56];
         Array.Copy(key, trimmed, 56);
         return trimmed;
+    }
+
+    private static string NormalizeKey(string key)
+    {
+        var normalized = key.Trim();
+
+        // Some FiSH UIs display/persist the mode as part of the field, e.g.
+        // "cbc:secret". The cipher key is only "secret"; mode is detected from
+        // the message prefix (+OK * for CBC).
+        if (normalized.StartsWith("cbc:", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized.Substring(4).Trim();
+        else if (normalized.StartsWith("ecb:", StringComparison.OrdinalIgnoreCase))
+            normalized = normalized.Substring(4).Trim();
+
+        return normalized;
     }
 }

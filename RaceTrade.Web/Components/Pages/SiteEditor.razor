@@ -54,10 +54,6 @@
             <select @bind="S.PreOrSite">
                 <option value="Site">Site - own sitebot announces</option>
                 <option value="PreBot">PreBot</option>
-                @if (S.PreOrSite == "Global PreBot")
-                {
-                    <option value="Global PreBot">Global PreBot - select a prebot</option>
-                }
                 @foreach (var prebot in _preBotNames)
                 {
                     <option value="@GlobalPreBotMode(prebot)">Global PreBot (@prebot)</option>
@@ -88,11 +84,6 @@
             <div class="fh">Skip releases older than this many seconds since pre. <code>0</code> = no limit. Can be overridden per section.</div>
         </div>
 
-        <label>Ignore words</label>
-        <div>
-            <input type="text" @bind="S.IgnoreWords" placeholder="COMPLETE, NUKED, REQUEST" @bind:event="oninput" />
-            <div class="fh">Comma separated. Announce lines containing any of these are ignored.</div>
-        </div>
     </div>
 }
 
@@ -197,24 +188,62 @@
                 <code>[TV-HD]</code> but your sections are called <code>TV-HD</code>.
             </div>
 
+            <h2>ANNOUNCE FILTER</h2>
+            <div class="form-grid wide">
+                <label>Ignore words</label>
+                <div>
+                    <input type="text" @bind="S.IgnoreWords" placeholder="COMPLETE, NUKED, REQUEST" @bind:event="oninput" />
+                    <div class="fh">Comma separated. Announce lines containing any of these are ignored before racing.</div>
+                </div>
+            </div>
+
             <h2>NORMAL ANNOUNCE</h2>
+
+            @* A worked example beats three abstract descriptions. The trap these patterns
+               fall into is matching more than the announce line itself - a bot posts
+               NEW LEADER, RACE, HALFWAY and COMPLETE lines that all carry the same
+               release name, and a loose pattern turns each of them into a detection. *@
+            <div class="callout">
+                <strong>A typical sitebot posts several lines per release:</strong>
+                <pre class="code">NEW: [TV-FR] Some.Release.S01E02.FRENCH.1080p.WEB-GRP by uploader1
+NEW LEADER: [TV-FR] Some.Release.S01E02.FRENCH.1080p.WEB-GRP - racer2 takes the lead
+RACE: [TV-FR] Some.Release.S01E02.FRENCH.1080p.WEB-GRP - 4 files left
+COMPLETE: [TV-FR] Some.Release.S01E02.FRENCH.1080p.WEB-GRP by 6 racers</pre>
+                Only the first one is an announce. Anchor the patterns to <code>^NEW:</code>
+                so the rest cannot slip through — <code>\bNEW\b</code> also matches
+                <code>NEW LEADER</code>, which makes every race look like a duplicate.
+                <table class="grid tight regex-example">
+                    <tbody>
+                        <tr><td>New regex</td><td><code>^NEW:</code></td></tr>
+                        <tr><td>Section regex</td><td><code>^NEW:\s*\[([^\]]+)\]</code></td></tr>
+                        <tr><td>Release regex</td><td><code>^NEW:\s*\[[^\]]+\]\s+(\S+)</code></td></tr>
+                    </tbody>
+                </table>
+            </div>
+
             <div class="form-grid wide">
                 <label>New regex</label>
                 <div>
-                    <input type="text" @bind="S.NewRegexPattern" placeholder="NEW|RACE" @bind:event="oninput" />
-                    <div class="fh">Line must match this to be treated as a new release. Leave empty to accept every line from the bot.</div>
+                    <input type="text" @bind="S.NewRegexPattern" placeholder="^NEW:" @bind:event="oninput" />
+                    <div class="fh">
+                        Line must match this to be treated as a new release. Leave empty to
+                        accept every line from the bot.
+                    </div>
                 </div>
 
                 <label>Section regex</label>
                 <div>
-                    <input type="text" @bind="S.SectionRegexPattern" placeholder="\[([^\]]+)\]" @bind:event="oninput" />
-                    <div class="fh">Captures the section. Example matches <code>[TV-HD]</code> and yields <code>TV-HD</code>.</div>
+                    <input type="text" @bind="S.SectionRegexPattern" placeholder="^NEW:\s*\[([^\]]+)\]" @bind:event="oninput" />
+                    <div class="fh">Captures the section. The example yields <code>TV-FR</code>.</div>
                 </div>
 
                 <label>Release regex</label>
                 <div>
-                    <input type="text" @bind="S.ReleaseRegexPattern" placeholder="(\S+-\w+)$" @bind:event="oninput" />
-                    <div class="fh">Captures the release name, normally the last word ending in <code>-GROUP</code>.</div>
+                    <input type="text" @bind="S.ReleaseRegexPattern" placeholder="^NEW:\s*\[[^\]]+\]\s+(\S+)" @bind:event="oninput" />
+                    <div class="fh">
+                        Captures the release name. Anchoring it to the NEW line too means the
+                        New regex is not your only line of defence.
+                    </div>
                 </div>
 
                 <label>Section prefix</label>
@@ -328,7 +357,7 @@
                 </div>
             </div>
             <p class="fh">
-                Ignore words from the General tab still apply. If the test says an ignore word matched,
+                Ignore words from this Announce tab still apply. If the test says an ignore word matched,
                 the announce will be skipped before racing.
             </p>
         </aside>
@@ -1075,6 +1104,7 @@
         _cfg.Affils ??= new List<string>();
         _cfg.GlobalBlacklist ??= new List<string>();
         _cfg.RaceSectionsEnabled ??= new List<string>();
+        NormalizeLegacyPreBotMode();
         foreach (var section in _cfg.Sections)
         {
             section.Tags ??= new List<Tag>();
@@ -1101,6 +1131,15 @@
     }
 
     private static string GlobalPreBotMode(string name) => $"Global PreBot ({name})";
+
+    private void NormalizeLegacyPreBotMode()
+    {
+        if (!string.Equals(S.PreOrSite, "Global PreBot", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        S.PreOrSite = "Site";
+        _status = "Legacy Global PreBot mode without a selected PreBot was reset to Site.";
+    }
 
     private void TestNormalAnnounceRegex()
     {

@@ -85,6 +85,71 @@ public static class SQLiteHelper
     }
 
     // ========================================
+    // MAINTENANCE
+    // ========================================
+
+    /// <summary>Number of rows in the processed-releases (duplicate) table.</summary>
+    public static int CountProcessedReleases() => CountRows(RacelogConnectionString, "ProcessedReleases");
+
+    /// <summary>Number of stored pretimes.</summary>
+    public static int CountPretimes() => CountRows(PredbConnectionString, "pretime");
+
+    /// <summary>
+    /// Empties the duplicate list. Everything announced afterwards is treated as new
+    /// again, so a release already sitting on the target sites will be raced a second
+    /// time and come back as a dupe there.
+    /// </summary>
+    public static int ClearProcessedReleases() => DeleteAll(RacelogConnectionString, "ProcessedReleases");
+
+    /// <summary>Empties the pretime cache. It refills from the prebot announces.</summary>
+    public static int ClearPretimes() => DeleteAll(PredbConnectionString, "pretime");
+
+    private static int CountRows(string connectionString, string table)
+    {
+        try
+        {
+            using var connection = new SqliteConnection(connectionString);
+            connection.Open();
+
+            var command = connection.CreateCommand();
+            // Table name is a compile-time constant from this file only, never user input.
+            command.CommandText = $"SELECT COUNT(1) FROM {table}";
+            return Convert.ToInt32(command.ExecuteScalar());
+        }
+        catch
+        {
+            // A missing database simply has nothing in it.
+            return 0;
+        }
+    }
+
+    private static int DeleteAll(string connectionString, string table)
+    {
+        using var connection = new SqliteConnection(connectionString);
+        connection.Open();
+
+        var command = connection.CreateCommand();
+        command.CommandText = $"DELETE FROM {table}";
+        var removed = command.ExecuteNonQuery();
+
+        // Reclaiming space is best-effort and must not be able to fail the operation.
+        // The pretime table is written from the announce path, so a VACUUM can hit
+        // SQLITE_BUSY - and the DELETE above has already committed by then, so throwing
+        // would report a failure for something that actually worked.
+        try
+        {
+            using var vacuum = connection.CreateCommand();
+            vacuum.CommandText = "VACUUM";
+            vacuum.ExecuteNonQuery();
+        }
+        catch
+        {
+        }
+
+        return removed;
+    }
+
+    // ========================================
     // RACELOG DATABASE METHODS
     // ========================================
 

@@ -32,10 +32,30 @@ public static class EngineSettings
 /// </summary>
 public static class LogColors
 {
-    public static string Green(string text) => text;
-    public static string Magenta(string text) => text;
-    public static string Orange(string text) => text;
-    public static string Yellow(string text) => text;
-    public static string Red(string text) => text;
-    public static string Cyan(string text) => text;
+    // mIRC colour codes. The UI already has an IRC markup renderer for the chat window,
+    // so emitting the same encoding here means one converter serves both surfaces and
+    // nothing new has to be invented. A consumer that does not render them (a plain
+    // console) just sees a stray control byte, never garbled words.
+    private const char Colour = '\x03';
+    private const char Reset = '\x0F';
+
+    private static string Wrap(string text, int code) =>
+        string.IsNullOrEmpty(text) ? text : $"{Colour}{code:00}{text}{Reset}";
+
+    /// <summary>IRC sections and other "this is the thing that matched" values.</summary>
+    public static string Green(string text) => Wrap(text, 3);
+
+    /// <summary>Site names.</summary>
+    public static string Magenta(string text) => Wrap(text, 6);
+
+    /// <summary>Release names.</summary>
+    public static string Orange(string text) => Wrap(text, 7);
+
+    /// <summary>Patterns, rules, mappings.</summary>
+    public static string Yellow(string text) => Wrap(text, 8);
+
+    public static string Red(string text) => Wrap(text, 4);
+
+    /// <summary>Bot names, channels, cbftp sections.</summary>
+    public static string Cyan(string text) => Wrap(text, 11);
 }

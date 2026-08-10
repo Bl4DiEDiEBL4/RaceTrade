@@ -48,6 +48,13 @@ namespace RaceTrade
         // "user/network" style Username for backward compatibility.
         [JsonProperty("network", NullValueHandling = NullValueHandling.Ignore)]
         public string Network { get; set; }
+
+        // Defaults match the old WinForms app and keep existing site JSON working.
+        [JsonProperty("use_tls")]
+        public bool UseTls { get; set; } = true;
+
+        [JsonProperty("use_blowfish")]
+        public bool UseBlowfish { get; set; } = true;
     }
 
     public class SiteSettings

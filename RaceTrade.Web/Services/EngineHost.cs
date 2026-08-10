@@ -71,6 +71,11 @@ public sealed class EngineHost : IAsyncDisposable
                 var token = _cts.Token;
                 var name = siteName;
                 var config = cfg;
+                var monitoredChannels = string.Join(", ", ConfiguredChannels(config.SiteSettings));
+
+                LogManager.Info(
+                    $"Racer monitoring site [{LogColors.Magenta(name)}]: bot [{LogColors.Cyan(config.SiteSettings?.BotName)}], " +
+                    $"channels [{LogColors.Green(monitoredChannels)}].");
 
                 _siteTasks.Add(Task.Run(async () =>
                 {
@@ -420,21 +425,25 @@ public sealed class EngineHost : IAsyncDisposable
     private static bool RequiresPassword(SiteConfig cfg)
     {
         var mode = cfg.SiteSettings?.PreOrSite;
-        var isGlobalPrebot = mode?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true;
+        var isGlobalPrebot = IsGlobalPreBotMode(mode);
         var isPrebot = string.Equals(mode, "PreBot", StringComparison.OrdinalIgnoreCase);
         return !isGlobalPrebot && !isPrebot;
     }
 
     private static bool IsGlobalPreBotMode(string? mode) =>
-        mode?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true;
+        !string.IsNullOrWhiteSpace(ExtractGlobalPreBotName(mode));
 
     private static string? ExtractGlobalPreBotName(string? mode)
     {
-        if (!IsGlobalPreBotMode(mode))
+        if (string.IsNullOrWhiteSpace(mode))
             return null;
 
-        var match = Regex.Match(mode ?? "", @"\((.*?)\)");
-        return match.Success ? match.Groups[1].Value.Trim() : null;
+        var match = Regex.Match(mode, @"^Global\s+PreBot\s*\(([^)]+)\)\s*$", RegexOptions.IgnoreCase);
+        if (!match.Success)
+            return null;
+
+        var name = match.Groups[1].Value.Trim();
+        return string.IsNullOrWhiteSpace(name) ? null : name;
     }
 
     private static List<string> ConfiguredChannels(SiteSettings? settings)

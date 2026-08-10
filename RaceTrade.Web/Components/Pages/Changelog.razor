@@ -10,7 +10,7 @@
     <section class="doc-hero">
         <div>
             <span class="doc-kicker">Current branch</span>
-            <h2>v2.0.8 WebUI</h2>
+            <h2>v2.0.9 WebUI</h2>
             <p>
                 This page tracks user-facing RaceTrade changes for the new web build.
             </p>
@@ -19,6 +19,25 @@
 
     <section class="timeline">
         <article class="timeline-item current">
+            <div class="timeline-version">v2.0.9 WebUI</div>
+            <div class="timeline-date">August 2026</div>
+            <ul>
+                <li>Restored race and CBFTP log output for live announces by making announce-bot matching less brittle while keeping the old matching behaviour.</li>
+                <li>Added source channel and release columns to the Logs page so Race and CBFTP entries are easier to trace.</li>
+                <li>Rendered IRC colour markup in Dashboard activity and Logs so sections, releases and rule matches are readable again.</li>
+                <li>Restored completed and failed race status logging.</li>
+                <li>Improved repeat/duplicate announce diagnostics with the source channel and original announce line.</li>
+                <li>Fixed FiSH/Blowfish handling by stripping cbc:/ecb: key prefixes, respecting use_blowfish and logging key/decrypt errors clearly.</li>
+                <li>Moved Ignore words to the Announce tab and added clearer announce regex examples.</li>
+                <li>Added Settings reset tools for release history, live logs, skips, duplicate releases and pretime cache.</li>
+                <li>Restored use_tls and use_blowfish config compatibility for migrated site files.</li>
+                <li>Reworked Logs into clean columns for site, channel, status, section, release, target sites and message.</li>
+                <li>Cleaned up Race and CBFTP log rows so release, section and site data are not duplicated in the message text.</li>
+                <li>Added log colours for statuses, sections, releases, sites and failure reasons.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
             <div class="timeline-version">v2.0.8 WebUI</div>
             <div class="timeline-date">August 2026</div>
             <ul>

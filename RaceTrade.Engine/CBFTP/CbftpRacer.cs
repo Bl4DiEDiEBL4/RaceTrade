@@ -503,7 +503,12 @@ public class CbftpRacer
         string announceSite,
         string section,
         List<string> targetSites,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        // Threaded through purely so the Completed/Failed lines carry the same IRC
+        // channel as the Detected/Racing lines they belong to. Without it those two
+        // rows sit in the log with an empty channel column and cannot be tied back
+        // to the announce.
+        string ircChannel = null)
     {
         try
         {
@@ -547,13 +552,16 @@ public class CbftpRacer
                         targetSite: allSites
                     );
 
-                    //LogManager.LogRace(
-                    //    RaceStatus.Completed,
-                    //    releaseName,
-                    //    announceSite,   // origin/winner
-                    //    targetSite: allSites,
-                    //    quality: section
-                    //);
+                    // The race log is where you look to see whether a race finished, so
+                    // this belongs there and not only in the CBFTP log.
+                    LogManager.LogRace(
+                        RaceStatus.Completed,
+                        releaseName,
+                        announceSite,   // origin/winner
+                        targetSite: allSites,
+                        quality: section,
+                        ircChannel: ircChannel
+                    );
                     break;
                 }
                 else if (status == "FAILED" || status == "TIMEOUT" || status == "ABORTED")
@@ -573,14 +581,15 @@ public class CbftpRacer
 
                     var allSites = string.Join(",", targetSites);
 
-                    //LogManager.LogRace(
-                    //    RaceStatus.Failed,
-                    //    releaseName,
-                    //    announceSite,
-                    //    targetSite: allSites,
-                    //    quality: section,
-                    //    filterReason: reason
-                    //);
+                    LogManager.LogRace(
+                        RaceStatus.Failed,
+                        releaseName,
+                        announceSite,
+                        targetSite: allSites,
+                        quality: section,
+                        filterReason: reason,
+                        ircChannel: ircChannel
+                    );
                     break;
                 }
 
@@ -890,7 +899,7 @@ public class CbftpRacer
     /// <summary>
     /// Handles a transfer job with proper error handling.
     /// </summary>
-    public static async Task HandleTransferJob(string section, string release, FilterResult filterResult, string announceSite)
+    public static async Task HandleTransferJob(string section, string release, FilterResult filterResult, string announceSite, string ircChannel = null)
     {
         if (EngineSettings.DebugEnabled)
         {
@@ -1026,7 +1035,8 @@ public class CbftpRacer
                             announceSite,
                             section,
                             allowedSites,
-                            cts.Token
+                            cts.Token,
+                            ircChannel
                         ));
                     }
 

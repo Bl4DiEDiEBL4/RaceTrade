@@ -22,6 +22,7 @@ public class ChatIrcClient
     private readonly string expectedNetwork; // ZNC network this site must attach to ("" if unknown)
     private readonly string ircNick;
     private readonly string zncPassword;
+    private readonly bool useBlowfish;
     private readonly string botName;
     private readonly string siteName;
     private List<string> channels;
@@ -83,6 +84,7 @@ public class ChatIrcClient
             throw new ArgumentException("Host cannot be null or empty.");
 
         this.host = config.Server.Host;
+        this.useBlowfish = config.Server.UseBlowfish;
         this.port = config.Server.Port > 0 ? config.Server.Port : 6667;
 
         if (string.IsNullOrEmpty(config.Server.Username))
@@ -319,6 +321,18 @@ public class ChatIrcClient
 
     private void LoadChannelKeys(SiteConfig config)
     {
+        if (!useBlowfish)
+        {
+            lock (fishLock)
+            {
+                fishDecryptors.Clear();
+                pmFishKeys.Clear();
+                pendingKeyExchanges.Clear();
+            }
+            AppendOutput("[INFO] Blowfish/FiSH disabled; chat messages use plaintext.", Color.Cyan);
+            return;
+        }
+
         if (config?.SiteSettings == null)
         {
             AppendOutput("[WARN] Site configuration or settings are null, cannot load channel keys.", Color.Orange);
@@ -424,6 +438,9 @@ public class ChatIrcClient
 
     public void SetChannelKey(string channel, string utf8Key, bool persist)
     {
+        if (!useBlowfish)
+            return;
+
         if (string.IsNullOrWhiteSpace(channel) || string.IsNullOrWhiteSpace(utf8Key))
             return;
 
@@ -544,6 +561,9 @@ public class ChatIrcClient
 
     public void SetChannelBlowfishKey(string channel, string utf8Key)
     {
+        if (!useBlowfish)
+            return;
+
         if (string.IsNullOrWhiteSpace(channel) || string.IsNullOrWhiteSpace(utf8Key))
             return;
 
@@ -1314,6 +1334,9 @@ public class ChatIrcClient
             // DH1080_INIT
             if (line.Contains("DH1080_INIT") && (line.Contains("PRIVMSG") || line.Contains("NOTICE")))
             {
+                if (!useBlowfish)
+                    return;
+
                 var dhMatch = Regex.Match(line, @":(\S+)!\S+@\S+ (PRIVMSG|NOTICE) (\S+) :DH1080_INIT (.+)");
                 if (dhMatch.Success)
                 {
@@ -1358,6 +1381,9 @@ public class ChatIrcClient
             // DH1080_FINISH
             if (line.Contains("DH1080_FINISH") && (line.Contains("PRIVMSG") || line.Contains("NOTICE")))
             {
+                if (!useBlowfish)
+                    return;
+
                 var dhMatch = Regex.Match(line, @":(\S+)!\S+@\S+ (PRIVMSG|NOTICE) (\S+) :DH1080_FINISH (.+)");
                 if (dhMatch.Success)
                 {
@@ -1542,9 +1568,12 @@ public class ChatIrcClient
 
             // ⚠️ ADD LOCK HERE
             FishDecryptor decryptor = null;
-            lock (fishLock)
+            if (useBlowfish)
             {
-                fishDecryptors.TryGetValue(keyName, out decryptor);
+                lock (fishLock)
+                {
+                    fishDecryptors.TryGetValue(keyName, out decryptor);
+                }
             }
 
             if (IsDisconnecting)
@@ -1580,6 +1609,13 @@ public class ChatIrcClient
     /// </summary>
     public async Task InitiateFishKeyExchange(string targetUser)
     {
+        if (!useBlowfish)
+        {
+            tabbedLogOutput?.AppendChannelMessage(siteName, $"PM:{targetUser}",
+                "[FiSH] Blowfish is disabled for this site.", Color.Yellow);
+            return;
+        }
+
         if (currentSslStream == null)
         {
             tabbedLogOutput?.AppendChannelMessage(siteName, $"PM:{targetUser}",

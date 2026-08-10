@@ -5,6 +5,7 @@
 @inject ChatHost ChatSvc
 @inject RaceHistoryStore History
 @inject UiLogSink Sink
+@inject SkipStore Skips
 @inject UpdateService Updates
 
 <PageTitle>Settings - RaceTrade</PageTitle>
@@ -145,40 +146,6 @@
         </table>
     </div>
 
-    <div class="card settings-action-card">
-        <div class="card-title">HISTORY / RESET</div>
-        <table class="grid tight">
-            <tbody>
-                <tr><td>Releases seen</td><td class="right">@_historyStats.Detected</td></tr>
-                <tr><td>Unique releases</td><td class="right">@_historyStats.UniqueReleases</td></tr>
-                <tr><td>Race events</td><td class="right">@_historyStats.Events</td></tr>
-            </tbody>
-        </table>
-
-        <div class="card-actions">
-            @if (!_confirmClearHistory)
-            {
-                <button class="btn danger" @onclick="() => _confirmClearHistory = true">
-                    <Icon Name="trash" Size="13" /><span>Clear release history</span>
-                </button>
-            }
-            else
-            {
-                <span class="fh inline">Really clear history?</span>
-                <button class="btn danger" @onclick="ClearRaceHistory">Yes</button>
-                <button class="btn" @onclick="() => _confirmClearHistory = false">Cancel</button>
-            }
-
-            <button class="btn" @onclick="ClearLiveLogs">
-                <Icon Name="trash" Size="13" /><span>Clear live logs</span>
-            </button>
-        </div>
-
-        @if (!string.IsNullOrWhiteSpace(_historyMessage))
-        {
-            <p class="fh">@_historyMessage</p>
-        }
-    </div>
 </div>
 
 <h2><Icon Name="settings" Size="14" />WEBUI ACCESS</h2>
@@ -254,6 +221,53 @@ RaceTrade.exe --bind 0.0.0.0 --port 8420</pre>
         Tailscale/WireGuard, SSH tunnel, or a reverse proxy with HTTPS instead of opening
         the RaceTrade port directly.
     </div>
+</div>
+
+@* Each button clears exactly one store and says how many entries it holds, so nothing
+   is wiped blind. Two clicks each - these are not undoable. *@
+<h2><Icon Name="trash" Size="14" />RESET DATA</h2>
+<div class="panel form">
+    <div class="callout">
+        Clearing is immediate and cannot be undone. None of this touches your sites,
+        cbftp servers, prebots or sections — only collected data.
+    </div>
+
+    <div class="reset-list">
+        @foreach (var item in ResetItems)
+        {
+            @* Counted once per row: two of these open a SQLite connection and the other
+               two copy a whole buffer, so calling it twice per render is not free. *@
+            var count = item.Count();
+
+            <div class="reset-row">
+                <div class="reset-info">
+                    <strong>@item.Title</strong>
+                    <span class="fh">@item.Description</span>
+                </div>
+
+                <span class="reset-count">@count</span>
+
+                @if (_confirming == item.Key)
+                {
+                    <span class="reset-actions">
+                        <button class="btn danger sm" @onclick="() => DoReset(item)">Yes, clear</button>
+                        <button class="btn sm" @onclick="() => _confirming = null">Cancel</button>
+                    </span>
+                }
+                else
+                {
+                    <button class="btn danger sm" @onclick="() => _confirming = item.Key" disabled="@(count == 0)">
+                        <Icon Name="trash" Size="12" /><span>Clear</span>
+                    </button>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_resetMessage is not null)
+    {
+        <p class="hint ok-text">@_resetMessage</p>
+    }
 </div>
 
 <h2><Icon Name="power" Size="14" />HOW THIS RUNS</h2>
@@ -359,6 +373,63 @@ sudo systemctl enable --now racetrade</pre>
 @code {
     private const string SettingsFile = "settings/settings.json";
 
+    // ---- reset / maintenance ---------------------------------------------------------
+
+    private string? _confirming;
+    private string? _resetMessage;
+
+    private sealed record ResetItem(string Key, string Title, string Description, Func<int> Count, Action Clear);
+
+    /// <summary>
+    /// Built fresh on every render so the counts are current — these change while the
+    /// racer runs, and a cached number on a destructive button is a bad idea.
+    /// </summary>
+    private IEnumerable<ResetItem> ResetItems => new[]
+    {
+        new ResetItem("history", "Release history",
+            "Everything on the Release History page.",
+            () => History.GetStats().UniqueReleases,
+            History.Clear),
+
+        new ResetItem("logs", "Logs",
+            "The in-memory log buffer behind the Logs page and the dashboard activity list.",
+            () => Sink.Snapshot(int.MaxValue).Count,
+            Sink.Clear),
+
+        new ResetItem("skips", "Skips",
+            "The skip feed. Only affects what is shown, not the rules that produced it.",
+            () => Skips.Recent(limit: int.MaxValue).Count,
+            Skips.Clear),
+
+        new ResetItem("dupes", "Processed releases (duplicate list)",
+            "What makes a re-announce say \"already processed\". Clearing means everything can be raced again.",
+            SQLiteHelper.CountProcessedReleases,
+            () => SQLiteHelper.ClearProcessedReleases()),
+
+        new ResetItem("pretimes", "Pretime cache",
+            "Stored pretimes from the prebots. Refills by itself from new announces.",
+            SQLiteHelper.CountPretimes,
+            () => SQLiteHelper.ClearPretimes()),
+    };
+
+    private void DoReset(ResetItem item)
+    {
+        _confirming = null;
+
+        try
+        {
+            var before = item.Count();
+            item.Clear();
+
+            _resetMessage = $"{item.Title}: cleared {before} entr{(before == 1 ? "y" : "ies")}.";
+            LogManager.Info($"Cleared {item.Title.ToLowerInvariant()} ({before} entries) from Settings.");
+        }
+        catch (Exception ex)
+        {
+            _resetMessage = $"{item.Title}: {ex.Message}";
+        }
+    }
+
     private bool _debug = EngineSettings.DebugEnabled;
     private bool _insecureSsl = EngineSettings.AllowInsecureSsl;
     private string _engineMessage = "";
@@ -371,9 +442,6 @@ sudo systemctl enable --now racetrade</pre>
     private string _tmdbKey = "";
     private string _tmdbBearer = "";
     private bool _hasTmdbKey, _hasTmdbBearer, _saved;
-    private RaceHistoryStore.RaceHistoryStats _historyStats = new(0, 0, 0);
-    private bool _confirmClearHistory;
-    private string _historyMessage = "";
     private string _bindAddress = "";
     private int _webPort;
     private string _dataRootSetting = "";
@@ -400,7 +468,6 @@ sudo systemctl enable --now racetrade</pre>
         LoadWebAccess();
         LoadLookup();
         CountData();
-        RefreshHistoryStats();
     }
 
     private void CountData()
@@ -408,22 +475,6 @@ sudo systemctl enable --now racetrade</pre>
         _dataCounts = new[] { "sites", "cbftp", "pre_bots", "sections", "settings", "db", "history" }
             .Select(d => (d, Directory.Exists(d) ? Directory.GetFiles(d).Length : 0))
             .ToList();
-    }
-
-    private void RefreshHistoryStats() => _historyStats = History.GetStats();
-
-    private void ClearRaceHistory()
-    {
-        History.Clear();
-        _confirmClearHistory = false;
-        _historyMessage = "Release history cleared.";
-        RefreshHistoryStats();
-    }
-
-    private void ClearLiveLogs()
-    {
-        Sink.Clear();
-        _historyMessage = "Live log buffer cleared. Persistent release history was not changed.";
     }
 
     private void ApplyEngine()

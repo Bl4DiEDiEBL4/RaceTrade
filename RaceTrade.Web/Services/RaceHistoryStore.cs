@@ -197,21 +197,30 @@ public sealed class RaceHistoryStore : IDisposable
         public static RaceHistoryEntry FromLogEvent(LogEvent entry)
         {
             var message = entry.Message ?? "";
-            var status = KnownStatuses.FirstOrDefault(s => message.StartsWith(s, StringComparison.OrdinalIgnoreCase)) ?? "Race";
-            var section = SectionRegex.Match(message).Groups["section"].Value;
-            var reason = ReasonRegex.Match(message).Groups["reason"].Value;
-            var targetSite = "";
+            var status = !string.IsNullOrWhiteSpace(entry.Status)
+                ? entry.Status
+                : KnownStatuses.FirstOrDefault(s => message.StartsWith(s, StringComparison.OrdinalIgnoreCase)) ?? "Race";
+            var section = !string.IsNullOrWhiteSpace(entry.Section)
+                ? entry.Section
+                : SectionRegex.Match(message).Groups["section"].Value;
+            var reason = !string.IsNullOrWhiteSpace(entry.Reason)
+                ? entry.Reason
+                : ReasonRegex.Match(message).Groups["reason"].Value;
+            var targetSite = entry.TargetSite ?? "";
 
-            var arrow = message.IndexOf("->", StringComparison.Ordinal);
-            if (arrow >= 0)
+            if (string.IsNullOrWhiteSpace(targetSite))
             {
-                targetSite = message[(arrow + 2)..].Trim();
+                var arrow = message.IndexOf("->", StringComparison.Ordinal);
+                if (arrow >= 0)
+                {
+                    targetSite = message[(arrow + 2)..].Trim();
 
-                var reasonStart = targetSite.IndexOf("(", StringComparison.Ordinal);
-                if (reasonStart >= 0) targetSite = targetSite[..reasonStart].Trim();
+                    var reasonStart = targetSite.IndexOf("(", StringComparison.Ordinal);
+                    if (reasonStart >= 0) targetSite = targetSite[..reasonStart].Trim();
 
-                var jobStart = targetSite.IndexOf("job#", StringComparison.OrdinalIgnoreCase);
-                if (jobStart >= 0) targetSite = targetSite[..jobStart].Trim();
+                    var jobStart = targetSite.IndexOf("job#", StringComparison.OrdinalIgnoreCase);
+                    if (jobStart >= 0) targetSite = targetSite[..jobStart].Trim();
+                }
             }
 
             return new RaceHistoryEntry(

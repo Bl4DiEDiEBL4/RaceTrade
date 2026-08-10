@@ -41,7 +41,9 @@ public static class LogManager
     public static bool DisableApplicationLog { get; set; }
 
     private static void Emit(LogLevel level, LogChannel channel, string message,
-        string site = null, string release = null)
+        string site = null, string release = null, string source = null,
+        string status = null, string section = null, string targetSite = null,
+        string reason = null)
     {
         // Never let a broken sink take down the race path.
         try
@@ -51,8 +53,13 @@ public static class LogManager
                 Level = level,
                 Channel = channel,
                 Message = message,
+                Status = status,
                 Site = site,
-                Release = release
+                Release = release,
+                Section = section,
+                TargetSite = targetSite,
+                Reason = reason,
+                Source = source
             });
         }
         catch
@@ -108,14 +115,16 @@ public static class LogManager
 
     public static void LogRace(RaceStatus status, string releaseName, string site,
         string targetSite = null, long size = 0, string quality = null,
-        string filterReason = null, int? spreadJobId = null)
+        string filterReason = null, int? spreadJobId = null, string ircChannel = null)
     {
         if (DisableRaceLog) return;
 
-        var detail = status.ToString();
-        if (!string.IsNullOrEmpty(quality)) detail += $" [{quality}]";
-        if (!string.IsNullOrEmpty(targetSite)) detail += $" -> {targetSite}";
-        if (!string.IsNullOrEmpty(filterReason)) detail += $" ({filterReason})";
+        var statusText = status.ToString();
+        var detail = LogColors.Yellow(statusText);
+        if (!string.IsNullOrEmpty(quality)) detail += $" [{LogColors.Green(quality)}]";
+        if (!string.IsNullOrEmpty(releaseName)) detail += $" {LogColors.Orange(releaseName)}";
+        if (!string.IsNullOrEmpty(targetSite)) detail += $" -> {LogColors.Magenta(targetSite)}";
+        if (!string.IsNullOrEmpty(filterReason)) detail += $" ({LogColors.Red(filterReason)})";
         if (spreadJobId.HasValue) detail += $" job#{spreadJobId}";
 
         var level = status switch
@@ -126,7 +135,11 @@ public static class LogManager
             _ => LogLevel.Info
         };
 
-        Emit(level, LogChannel.Race, detail, site, releaseName);
+        Emit(level, LogChannel.Race, detail, site, releaseName, ircChannel,
+            status: statusText,
+            section: quality,
+            targetSite: targetSite,
+            reason: filterReason);
     }
 
     public static void LogIRC(IRCEventType eventType, string message, string channel = null,
@@ -134,10 +147,9 @@ public static class LogManager
     {
         var level = eventType == IRCEventType.Error ? LogLevel.Error : LogLevel.Info;
         var detail = message;
-        if (!string.IsNullOrEmpty(channel)) detail = $"[{channel}] {detail}";
         if (ruleMatched && !string.IsNullOrEmpty(matchedRule)) detail += $" (rule: {matchedRule})";
 
-        Emit(level, LogChannel.Irc, detail, server);
+        Emit(level, LogChannel.Irc, detail, server, source: channel, status: eventType.ToString());
     }
 
     public static void LogCBFTP(CBFTPEventType eventType, string message, int? spreadJobId = null,
@@ -157,7 +169,9 @@ public static class LogManager
         if (spreadJobId.HasValue) detail += $" (job#{spreadJobId})";
         if (progressPercent.HasValue) detail += $" {progressPercent}%";
 
-        Emit(level, LogChannel.Cbftp, detail, targetSite, releaseName);
+        Emit(level, LogChannel.Cbftp, detail, targetSite, releaseName,
+            status: eventType.ToString(),
+            targetSite: targetSite);
     }
 }
 

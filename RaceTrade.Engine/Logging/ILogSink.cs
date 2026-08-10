@@ -39,11 +39,30 @@ namespace RaceTrade.Engine.Logging
         public LogLevel Level { get; set; }
         public LogChannel Channel { get; set; }
 
+        /// <summary>Structured status for race/log rows, when applicable.</summary>
+        public string Status { get; set; }
+
         /// <summary>Site the message relates to, when applicable.</summary>
         public string Site { get; set; }
 
         /// <summary>Release the message relates to, when applicable.</summary>
         public string Release { get; set; }
+
+        /// <summary>IRC/race section the message relates to, when applicable.</summary>
+        public string Section { get; set; }
+
+        /// <summary>Target site or sites the message relates to, when applicable.</summary>
+        public string TargetSite { get; set; }
+
+        /// <summary>Filter/failure reason the message relates to, when applicable.</summary>
+        public string Reason { get; set; }
+
+        /// <summary>
+        /// IRC channel the announce came in on, when applicable. Two channels of the
+        /// same site can carry different sections, so without this a race line cannot be
+        /// traced back to where it was announced.
+        /// </summary>
+        public string Source { get; set; }
 
         public string Message { get; set; }
 

@@ -557,6 +557,12 @@ table.grid tbody tr:hover td { background: #262d3b; }
 .logs .ch { color: var(--muted); white-space: nowrap; width: 1%; font-size: 11px; }
 .logs .site { color: var(--accent); white-space: nowrap; width: 1%; }
 .logs .msg { white-space: pre-wrap; word-break: break-word; }
+.logs .section,
+.logs .targets,
+.logs .race-status {
+    white-space: nowrap;
+    width: 1%;
+}
 .history .ts { white-space: nowrap; color: var(--dim); font-family: Consolas, "Cascadia Mono", monospace; font-size: 11.5px; }
 .history .site { color: var(--accent); white-space: nowrap; }
 .history .release-name {
@@ -580,11 +586,22 @@ tr.lvl-debug td { color: var(--dim); }
 
 .pill.on { background: rgba(42,199,122,.16); color: var(--ok); }
 .pill.off { background: rgba(150,160,178,.14); color: var(--muted); }
-.pill.race-detected { background: rgba(17, 215, 202, .14); color: var(--accent); }
-.pill.race-racing { background: rgba(42,199,122,.16); color: var(--ok); }
-.pill.race-completed { background: rgba(42,199,122,.16); color: var(--ok); }
-.pill.race-filtered { background: rgba(245,172,70,.14); color: var(--warn); }
-.pill.race-failed { background: rgba(255,76,92,.16); color: var(--err); }
+/* One hue per state, read as a lifecycle: seen -> in flight -> done, with skipped
+   sitting apart as neutral and failed as the only red. Racing and Completed used to
+   share the exact same green, which made the two states indistinguishable. */
+.pill.race-detected  { background: rgba(120, 183, 255, .15); color: #78b7ff; }  /* blue - seen */
+.pill.race-racing    { background: rgba(245, 192, 90, .16); color: #f5c05a; }   /* amber - in flight */
+.pill.race-completed { background: rgba(42, 199, 122, .18); color: var(--ok); } /* green - done */
+.pill.race-filtered  { background: rgba(150, 160, 178, .16); color: var(--muted); } /* grey - skipped on purpose */
+.pill.race-failed    { background: rgba(255, 76, 92, .16); color: var(--err); }
+
+/* Only the active state moves: a running race is the one row worth catching the eye. */
+.pill.race-racing { animation: race-pulse 1.8s ease-in-out infinite; }
+
+@keyframes race-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .62; }
+}
 
 /* chat: message list + user list side by side, like the old tabbed chat window */
 .chat-panel {
@@ -3917,6 +3934,27 @@ html[data-theme="light"] .check-chip.checked {
 }
 
 html[data-theme="light"] .chat-lines .msg,
+/* De twee eigen logkolommen hebben ook een lichte variant nodig; de irc-fg-*
+   klassen hebben die al. */
+/* Statuspillen: de lichte variant heeft donkerder tekst nodig voor contrast op wit. */
+html[data-theme="light"] .pill.race-detected  { background: #dbeafe; color: #1d4ed8; }
+html[data-theme="light"] .pill.race-racing    { background: #fef3c7; color: #a16207; }
+html[data-theme="light"] .pill.race-completed { background: #d1fae5; color: #047857; }
+html[data-theme="light"] .pill.race-filtered  { background: #e5e7eb; color: #4b5563; }
+html[data-theme="light"] .pill.race-failed    { background: #fee2e2; color: #b91c1c; }
+
+html[data-theme="light"] .log-table .ircchan { color: #0e7490; }
+html[data-theme="light"] .log-table .rel     { color: #b45309; }
+html[data-theme="light"] .log-table .section { color: #047857; }
+html[data-theme="light"] .log-table .targets { color: #7c3aed; }
+html[data-theme="light"] .log-table .race-status { color: #92400e; }
+html[data-theme="light"] .log-table .race-status.race-detected { color: #1d4ed8; }
+html[data-theme="light"] .log-table .race-status.race-racing { color: #a16207; }
+html[data-theme="light"] .log-table .race-status.race-completed { color: #047857; }
+html[data-theme="light"] .log-table .race-status.race-filtered { color: #b45309; }
+html[data-theme="light"] .log-table .race-status.race-failed { color: #b91c1c; }
+html[data-theme="light"] .log-table .log-reason { color: #b91c1c; }
+
 html[data-theme="light"] .irc-fg-1,
 html[data-theme="light"] .irc-fg-15 {
     color: #172033;
@@ -4664,5 +4702,132 @@ html[data-theme="light"] .mobile-menu-toggle:checked + .mobile-menu-button {
 
     .sites-table td.site-actions .btn span {
         display: none;
+    }
+}
+
+/* Log table: fixed narrow columns for the identifiers, message takes the rest. */
+.log-table .ircchan {
+    width: 1%;
+    white-space: nowrap;
+    color: #8ffaff;
+    font-size: 11px;
+}
+
+.log-table .race-status {
+    color: #f5df5a;
+    font-size: 11.5px;
+}
+
+.log-table .race-status.race-detected { color: #78b7ff; }
+.log-table .race-status.race-racing { color: #f5df5a; }
+.log-table .race-status.race-completed { color: #24d27a; }
+.log-table .race-status.race-filtered { color: #f0a54a; }
+.log-table .race-status.race-failed { color: #ff5d68; }
+
+/* Shrink-to-fit on the release name, no cap: a truncated release name is useless,
+   and the message column can give up the space instead. */
+.log-table .rel {
+    width: 1%;
+    white-space: nowrap;
+    color: #f0a54a;
+    font-size: 11.5px;
+}
+
+.log-table .section {
+    color: #24d27a;
+    font-size: 11.5px;
+}
+
+.log-table .targets {
+    color: #bd86ff;
+    font-size: 11.5px;
+}
+
+.log-table .log-reason {
+    color: #ff5d68;
+}
+
+/* The worked example next to the announce regex fields. */
+.regex-example { margin-top: 10px; }
+.regex-example td { padding: 2px 0; }
+.regex-example td:first-child { width: 1%; white-space: nowrap; padding-right: 14px; color: var(--muted); }
+.callout pre.code { margin: 8px 0 10px; font-size: 11px; }
+
+/* ---------- reset / maintenance rows ---------- */
+.reset-list { display: flex; flex-direction: column; gap: 2px; }
+
+.reset-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.reset-row:last-child { border-bottom: 0; }
+
+.reset-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.reset-info strong { color: var(--fg); font-size: 12.5px; }
+
+.reset-count {
+    flex: 0 0 auto;
+    min-width: 56px;
+    text-align: right;
+    color: var(--muted);
+    font-family: Consolas, monospace;
+    font-size: 12px;
+}
+
+.reset-actions { display: inline-flex; gap: 5px; flex: 0 0 auto; }
+
+@media (max-width: 720px) {
+    .reset-row { flex-wrap: wrap; }
+    .reset-count { min-width: 0; }
+}
+
+/* Chat is a live terminal-style surface. On desktop the page itself must not grow
+   when new IRC lines arrive; only the message pane scrolls and the send row stays put. */
+@media (min-width: 761px) {
+    .shell-content main:has(.chat-page) {
+        height: calc(100dvh - 54px);
+        max-height: calc(100dvh - 54px);
+        overflow: hidden;
+    }
+
+    .chat-page {
+        flex: 1 1 auto;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .chat-page > .page-head {
+        flex: 0 0 auto;
+    }
+
+    .chat-panel,
+    .chat-empty-panel {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .chat-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        height: auto;
+        overflow: hidden;
+    }
+
+    .chat-scroll,
+    .userlist {
+        min-height: 0;
+        overflow-y: auto;
+    }
+
+    .chat-lines {
+        flex: 0 0 auto;
     }
 }

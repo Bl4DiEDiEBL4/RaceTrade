@@ -24,6 +24,7 @@ public class IRCClient
     private readonly string expectedNetwork; // ZNC network to attach to ("" = legacy/plain IRC)
     private readonly string zncLoginUser;    // NICK/USER value (bare account when a network is set)
     private readonly string zncPass;         // PASS payload (account/network:password when a network is set)
+    private readonly bool useBlowfish;
     private readonly string botName;
     private readonly string siteName;
     private List<string> channels;
@@ -54,6 +55,7 @@ public class IRCClient
     private readonly Dictionary<string, string> mappings = new Dictionary<string, string>();
     private readonly SiteConfig siteConfig;
     private readonly JObject siteConfigJson;
+
 
     private SslStream currentSslStream;
 
@@ -91,6 +93,7 @@ public class IRCClient
             throw new ArgumentException("Host cannot be null or empty.");
         }
         this.host = config.Server.Host;
+        this.useBlowfish = config.Server.UseBlowfish;
 
         if (config.Server.Port > 0)
         {
@@ -108,7 +111,7 @@ public class IRCClient
         this.username = config.Server.Username;
 
         // 🔹 Allow empty password for PreBot / Global PreBot
-        bool isGlobalPrebot = PreOrSite?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true;
+        bool isGlobalPrebot = IsConfiguredGlobalPreBotMode(PreOrSite);
         bool isPrebot = string.Equals(PreOrSite, "PreBot", StringComparison.OrdinalIgnoreCase);
 
         if (!isGlobalPrebot && !isPrebot && string.IsNullOrEmpty(config.Server.Password))
@@ -339,6 +342,16 @@ public class IRCClient
 
     private void LoadChannelKeys(SiteConfig config)
     {
+        if (!useBlowfish)
+        {
+            lock (fishLock)
+            {
+                fishDecryptors.Clear();
+            }
+            AppendOutput("[INFO] Blowfish/FiSH disabled; channel messages use plaintext.", Color.Cyan);
+            return;
+        }
+
         if (config?.SiteSettings == null)
         {
             AppendOutput("[WARN] Site configuration or settings are null, cannot load channel keys.", Color.Orange);
@@ -442,6 +455,9 @@ public class IRCClient
 
     public void SetChannelKey(string channel, string utf8Key, bool persist)
     {
+        if (!useBlowfish)
+            return;
+
         if (string.IsNullOrWhiteSpace(channel) || string.IsNullOrWhiteSpace(utf8Key))
             return;
 
@@ -497,6 +513,9 @@ public class IRCClient
 
     public void SetChannelBlowfishKey(string channel, string utf8Key)
     {
+        if (!useBlowfish)
+            return;
+
         if (string.IsNullOrWhiteSpace(channel) || string.IsNullOrWhiteSpace(utf8Key))
             return;
 
@@ -771,7 +790,7 @@ public class IRCClient
                         continue;
                     }
 
-                    if (!string.IsNullOrEmpty(botName) && line.Contains($":{botName}!"))
+                    if (IsAnnounceFromBot(line))
                     {
                         // Dispatch WITHOUT awaiting: release/IMDB/TVMaze/pretime lookups and
                         // the cbftp spreadjob can take seconds, and awaiting them here would
@@ -814,6 +833,39 @@ public class IRCClient
                 AppendOutput($"[ERROR] Listening error for {siteName}: {ex.Message}", Color.Red);
             }
         }
+    }
+
+    /// <summary>
+    /// Is this line an announce from the site's configured bot?
+    ///
+    /// This single test is what the whole racer hangs on: say no and nothing is parsed,
+    /// no race starts, and neither the Race nor the CBFTP log ever sees the release.
+    /// It therefore has to stay a SUPERSET of the original substring check - never
+    /// stricter. The old behaviour is tried first and is on its own enough; the extra
+    /// case below only ADDS lines that the substring test cannot see.
+    /// </summary>
+    private bool IsAnnounceFromBot(string line)
+    {
+        if (string.IsNullOrEmpty(botName))
+            return false;
+
+        // Original behaviour, unchanged. Anything that worked before still works.
+        if (line.Contains($":{botName}!"))
+            return true;
+
+        // Only extra: a bouncer that omits the user@host part of the prefix
+        // (":bot PRIVMSG #chan :...") or prefixes IRCv3 message tags
+        // ("@time=... :bot!u@h PRIVMSG ..."), which ZNC does once server-time is on.
+        var probe = line;
+        if (probe.Length > 0 && probe[0] == '@')
+        {
+            var tagEnd = probe.IndexOf(' ');
+            if (tagEnd < 0) return false;
+            probe = probe.Substring(tagEnd + 1);
+        }
+
+        return probe.StartsWith($":{botName} ", StringComparison.OrdinalIgnoreCase) ||
+               probe.StartsWith($":{botName}!", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ProcessBotMessageAsync(string line, SslStream sslStream)
@@ -879,7 +931,18 @@ public class IRCClient
                 if (IsDisconnecting)
                     return;
 
-                decryptedMessage = fishDecryptor.DecryptMessage(encryptedMessage);
+                try
+                {
+                    decryptedMessage = fishDecryptor.DecryptMessage(encryptedMessage);
+                }
+                catch (Exception ex)
+                {
+                    var message = $"Failed to decrypt FiSH message for site '{siteName}' on {channelName}: {ex.Message}. Check the channel key; paste it without the cbc: prefix.";
+                    AppendOutput($"[ERROR] {message}", Color.Red);
+                    LogManager.LogIRC(IRCEventType.Error, message);
+                    return;
+                }
+
                 if (string.IsNullOrEmpty(decryptedMessage))
                 {
                     if (EngineSettings.DebugEnabled)
@@ -959,8 +1022,9 @@ public class IRCClient
             }
 
             // Global PreBot → resolve linked site
+            var isGlobalPreBotMode = IsConfiguredGlobalPreBotMode(PreOrSite);
             SiteConfig linkedSiteConfig = siteConfig;
-            if (PreOrSite?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true)
+            if (isGlobalPreBotMode)
             {
                 var linkedSiteName = siteConfig.SiteSettings.Sitename;
                 if (EngineSettings.DebugEnabled)
@@ -1062,7 +1126,7 @@ public class IRCClient
             // A Global PreBot feeds multiple linked sites; a plain PreBot feeds one
             // site. Both announce "pre" data and must populate the pretime database.
             var isPreBotAnnounceMode =
-                PreOrSite?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) == true ||
+                isGlobalPreBotMode ||
                 string.Equals(PreOrSite, "PreBot", StringComparison.OrdinalIgnoreCase);
 
             if (isPreBotAnnounceMode)
@@ -1100,26 +1164,39 @@ public class IRCClient
                 });
             }
 
-            LogManager.LogRace(RaceStatus.Detected, releaseName, siteName, quality: section);
+            LogManager.LogRace(RaceStatus.Detected, releaseName, siteName, quality: section, ircChannel: channelName);
 
             // Check: Already processed?
             if (await SQLiteHelper.IsReleaseProcessedAsync(releaseName))
             {
-                LogManager.LogRace(RaceStatus.Filtered, releaseName, siteName, filterReason: "Already processed");
+                // Name the channel and quote the line. "Already processed" on its own is
+                // unactionable: it says a repeat arrived but not where from, so a second
+                // announce, a second monitored channel carrying the same feed and an
+                // actual bug all look identical.
+                LogManager.LogRace(RaceStatus.Filtered, releaseName, siteName,
+                    filterReason: "Already processed", ircChannel: channelName);
+
+                // Quoting the line is what matters: it is how a mis-tuned announce regex
+                // (a "NEW LEADER:" race-progress line slipping through a \bNEW\b filter,
+                // say) is told apart from a genuine repeat.
+                LogManager.LogIRC(IRCEventType.Announce,
+                    $"Repeat announce for '{releaseName}': {cleanMessage}",
+                    channel: channelName, server: siteName);
+
                 RaceDiagnostics.Report(releaseName, SkipReason.Duplicate,
-                    "already in the processed database", null, section, siteName);
+                    $"repeat announce on {channelName}: {cleanMessage}", null, section, siteName);
                 return;
             }
                       
             // Check: Section allowed? (Skip for Global PreBots)
-            if (PreOrSite?.StartsWith("Global PreBot", StringComparison.OrdinalIgnoreCase) != true)
+            if (!isGlobalPreBotMode)
             {
                 // Not a Global PreBot here, so linkedSiteConfig == siteConfig and the
                 // JObject built once in the constructor applies. Re-serializing the
                 // whole config graph per announce was pure hot-path overhead.
                 if (!RaceHelper.IsAllowedSection(section, siteConfigJson))
                 {
-                    LogManager.LogRace(RaceStatus.Filtered, releaseName, siteName, filterReason: $"Section '{section}' disabled");
+                    LogManager.LogRace(RaceStatus.Filtered, releaseName, siteName, filterReason: $"Section '{section}' disabled", ircChannel: channelName);
                     RaceDiagnostics.Report(releaseName, SkipReason.SectionDisabled,
                         $"section '{section}' is not enabled on the announcing site", siteName, section, siteName);
                     return;
@@ -1152,7 +1229,8 @@ public class IRCClient
                 return;
             }
 
-            LogManager.LogCBFTP(CBFTPEventType.Info, $"[{siteName}] Mapped [{section}] → CBFTP: [{cbftpSection}] for release: [{releaseName}]");
+            LogManager.LogCBFTP(CBFTPEventType.Info,
+                $"[{LogColors.Magenta(siteName)}] Mapped [{LogColors.Green(section)}] → CBFTP: [{LogColors.Green(cbftpSection)}] for release: [{LogColors.Orange(releaseName)}]");
 
             // Filter allowed sites (THIS IS WHERE PRETIME/IMDB/TVMAZE CHECKS HAPPEN NOW)
             var raceSectionsDictionary = linkedSiteConfig.RaceSectionsEnabled
@@ -1168,18 +1246,18 @@ public class IRCClient
                 mapSectionPrefix,
                 mapSectionSuffix,
                 linkedSiteConfig.SiteSettings.Sitename,
-                section);
+                isGlobalPreBotMode ? section : null);
 
             switch (filterResult.Status)
             {
                 case FilterStatus.Duplicate:
                 case FilterStatus.NoSites:
                 case FilterStatus.InsufficientSites:
-                    LogManager.LogRace(RaceStatus.Filtered, releaseName, siteName, filterReason: filterResult.Message);
+                    LogManager.LogRace(RaceStatus.Filtered, releaseName, siteName, filterReason: filterResult.Message, ircChannel: channelName);
                     return;
 
                 case FilterStatus.Error:
-                    LogManager.LogRace(RaceStatus.Failed, releaseName, siteName, filterReason: filterResult.Message);
+                    LogManager.LogRace(RaceStatus.Failed, releaseName, siteName, filterReason: filterResult.Message, ircChannel: channelName);
                     return;
 
                 case FilterStatus.Success:
@@ -1192,8 +1270,8 @@ public class IRCClient
 
             // Start transfer
             var targetSites = string.Join(",", filterResult.AllowedSites);
-            LogManager.LogRace(RaceStatus.Racing, releaseName, siteName, targetSite: targetSites, quality: section);
-            await CbftpRacer.HandleTransferJob(cbftpSection, releaseName, filterResult, siteName);
+            LogManager.LogRace(RaceStatus.Racing, releaseName, siteName, targetSite: targetSites, quality: section, ircChannel: channelName);
+            await CbftpRacer.HandleTransferJob(cbftpSection, releaseName, filterResult, siteName, channelName);
         }
         catch (Exception ex)
         {
@@ -1301,6 +1379,15 @@ public class IRCClient
         {
             _sendGate.Release();
         }
+    }
+
+    private static bool IsConfiguredGlobalPreBotMode(string mode)
+    {
+        if (string.IsNullOrWhiteSpace(mode))
+            return false;
+
+        var match = Regex.Match(mode, @"^Global\s+PreBot\s*\(([^)]+)\)\s*$", RegexOptions.IgnoreCase);
+        return match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value);
     }
 
     private string StripIrcColors(string text)

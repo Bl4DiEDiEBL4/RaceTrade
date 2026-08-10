@@ -89,7 +89,10 @@
                             <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
                             <td class="ch">@e.Channel</td>
                             <td class="site">@e.Site</td>
-                            <td class="msg">@e.Message</td>
+                            @* Same LogEvent stream as the Logs page, so it needs the same
+                           markup rendering - otherwise the colour codes show up as
+                           stray digits in front of every site name. *@
+                        <td class="msg">@((MarkupString)IrcMarkup.ToHtml(e.Message))</td>
                         </tr>
                     }
                 </tbody>
