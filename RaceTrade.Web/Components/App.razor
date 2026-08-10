@@ -35,6 +35,68 @@
             const toggle = document.getElementById('mobile-menu-toggle');
             if (toggle) toggle.checked = false;
         });
+
+        // ---- drag-to-reorder support -------------------------------------------------
+        // Blazor exposes DragEventArgs.DataTransfer as READ-ONLY, so C# cannot call
+        // setData(). A dragstart that sets no data is not a valid drag: Firefox refuses
+        // to start it at all and Chrome starts one that every drop target rejects. That
+        // is why the C# handlers fired for the arrows but never for a drag.
+        //
+        // These three delegated listeners do the one thing C# cannot. They deliberately
+        // do NOT move anything - the reordering stays in Blazor's ondrop handler.
+        // (No at-sign anywhere in this block: Razor parses those even inside script.)
+        document.addEventListener('dragstart', function (event) {
+            const grip = event.target.closest && event.target.closest('.drag-grip');
+            if (!grip || !event.dataTransfer) return;
+
+            // The payload is irrelevant; its existence is what makes the drag valid.
+            event.dataTransfer.setData('text/plain', 'racetrade-rule');
+            event.dataTransfer.effectAllowed = 'move';
+
+            const row = grip.closest('.rule-row');
+            if (row) {
+                row.classList.add('dragging');
+                // Drag the whole row, not just the little grip.
+                if (event.dataTransfer.setDragImage) {
+                    event.dataTransfer.setDragImage(row, 20, row.offsetHeight / 2);
+                }
+            }
+        });
+
+        // dragenter and dragover BOTH have to be cancelled or the browser never issues a
+        // drop event at all. This must happen here rather than through Blazor's
+        // ondragover:preventDefault, which only takes effect when a C# handler is also
+        // registered for that event - and registering one is not an option, because
+        // dragover fires ~60x a second and every one of those would be a SignalR round
+        // trip plus a re-render that cancels the drag.
+        document.addEventListener('dragenter', function (event) {
+            if (event.target.closest && event.target.closest('.rule-row')) {
+                event.preventDefault();
+            }
+        });
+
+        document.addEventListener('dragover', function (event) {
+            const row = event.target.closest && event.target.closest('.rule-row');
+            if (!row) return;
+
+            event.preventDefault();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+
+            document.querySelectorAll('.rule-row.drag-over')
+                .forEach(function (el) { if (el !== row) el.classList.remove('drag-over'); });
+
+            row.classList.add('drag-over');
+        });
+
+        document.addEventListener('dragend', function () {
+            document.querySelectorAll('.rule-row.dragging, .rule-row.drag-over')
+                .forEach(function (el) { el.classList.remove('dragging', 'drag-over'); });
+        });
+
+        document.addEventListener('drop', function () {
+            document.querySelectorAll('.rule-row.dragging, .rule-row.drag-over')
+                .forEach(function (el) { el.classList.remove('dragging', 'drag-over'); });
+        });
     </script>
     <script src="_framework/blazor.web.js"></script>
 </body>

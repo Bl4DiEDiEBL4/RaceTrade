@@ -485,18 +485,37 @@
                                                             @for (var r = 0; r < (tag.Rules?.Count ?? 0); r++)
                                                             {
                                                                 var ruleIndex = r;
+                                                                @* dragenter AND dragover must both preventDefault or the browser
+                                                                   refuses the drop; dragover alone is not enough once the pointer
+                                                                   is over the <input>, which is a drop target of its own. *@
                                                                 <div class="rule-row"
+                                                                     @ondragenter:preventDefault="true"
                                                                      @ondragover:preventDefault="true"
+                                                                     @ondrop:preventDefault="true"
                                                                      @ondrop="() => DropTagRule(tag, ruleIndex)">
+                                                                    @* pointerdown, not dragstart: the source index is recorded
+                                                                       before the browser even begins the drag. And no dragend
+                                                                       handler - dragend races the drop over the SignalR circuit
+                                                                       and cleared the state before the drop could use it. *@
                                                                     <span class="drag-grip"
                                                                           title="Drag to reorder"
                                                                           draggable="true"
-                                                                          @ondragstart="() => BeginTagRuleDrag(tag, ruleIndex)"
-                                                                          @ondragend="ClearRuleDrag">::</span>
+                                                                          @onpointerdown="() => BeginTagRuleDrag(tag, ruleIndex)">::</span>
+                                                                    @* draggable=false: without it the input starts its own text
+                                                                       drag and swallows the one that matters. *@
                                                                     <input type="text"
+                                                                           draggable="false"
                                                                            value="@tag.Rules![ruleIndex]"
                                                                            @oninput="e => SetTagRule(tag, ruleIndex, e.Value?.ToString())"
                                                                            placeholder="[release] contains 720p DROP" />
+                                                                    <span class="rule-move">
+                                                                        <button class="btn sm" title="Move up"
+                                                                                disabled="@(ruleIndex == 0)"
+                                                                                @onclick="() => MoveRule(tag.Rules, ruleIndex, ruleIndex - 1)">&#9650;</button>
+                                                                        <button class="btn sm" title="Move down"
+                                                                                disabled="@(ruleIndex == tag.Rules!.Count - 1)"
+                                                                                @onclick="() => MoveRule(tag.Rules, ruleIndex, ruleIndex + 1)">&#9660;</button>
+                                                                    </span>
                                                                     <button class="btn danger sm" title="Remove rule" @onclick="() => RemoveTagRule(tag, ruleIndex)">&times;</button>
                                                                 </div>
                                                             }
@@ -534,17 +553,27 @@
                                     {
                                         var ruleIndex = r;
                                         <div class="rule-row"
+                                             @ondragenter:preventDefault="true"
                                              @ondragover:preventDefault="true"
+                                             @ondrop:preventDefault="true"
                                              @ondrop="() => DropSectionRule(selected, ruleIndex)">
                                             <span class="drag-grip"
                                                   title="Drag to reorder"
                                                   draggable="true"
-                                                  @ondragstart="() => BeginSectionRuleDrag(selected, ruleIndex)"
-                                                  @ondragend="ClearRuleDrag">::</span>
+                                                  @onpointerdown="() => BeginSectionRuleDrag(selected, ruleIndex)">::</span>
                                             <input type="text"
+                                                   draggable="false"
                                                    value="@selected.Rules![ruleIndex]"
                                                    @oninput="e => SetSectionRule(selected, ruleIndex, e.Value?.ToString())"
                                                    placeholder="[release] matches (?i)\bFRENCH\b DROP" />
+                                            <span class="rule-move">
+                                                <button class="btn sm" title="Move up"
+                                                        disabled="@(ruleIndex == 0)"
+                                                        @onclick="() => MoveRule(selected.Rules, ruleIndex, ruleIndex - 1)">&#9650;</button>
+                                                <button class="btn sm" title="Move down"
+                                                        disabled="@(ruleIndex == selected.Rules!.Count - 1)"
+                                                        @onclick="() => MoveRule(selected.Rules, ruleIndex, ruleIndex + 1)">&#9660;</button>
+                                            </span>
                                             <button class="btn danger sm" title="Remove rule" @onclick="() => RemoveSectionRule(selected, ruleIndex)">&times;</button>
                                         </div>
                                     }

@@ -3191,9 +3191,36 @@ pre.code {
 
 .rule-row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    /* grip | input | up-down | remove */
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     gap: 8px;
     align-items: center;
+}
+
+/* Drag feedback. The classes are applied by the delegated listeners in App.razor, not by
+   Blazor: re-rendering the rows mid-drag would cancel the drag in Chrome. */
+.rule-row.dragging { opacity: .45; }
+
+.rule-row.drag-over {
+    box-shadow: 0 -2px 0 0 var(--accent);
+}
+
+/* Buttons as well as drag: HTML5 drag-and-drop over a SignalR round trip is fiddly and
+   fails outright on touch, so reordering must not depend on it. */
+.rule-move {
+    display: inline-flex;
+    gap: 3px;
+}
+
+.rule-move .btn {
+    padding: 2px 6px;
+    line-height: 1;
+    font-size: 10px;
+}
+
+.rule-move .btn:disabled {
+    opacity: .35;
+    cursor: default;
 }
 
 .drag-grip {
