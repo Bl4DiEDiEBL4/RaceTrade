@@ -3,26 +3,41 @@
 RaceTrade is an IRC race manager with CBFTP integration and a local browser UI.
 
 ## Screenshots
-
 Dashboard
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/383ca392-4b87-447e-897a-0892be1ac6d5" />
 
-<img width="1912" height="914" alt="RaceTrade dashboard" src="https://github.com/user-attachments/assets/a3b0a5b9-0620-4cec-96a6-2f2e5fc03b38" />
+Sites
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/58c2359c-a200-4e45-ba7a-6ac3f9e868de" />
 
-Site editor
+Site Editor
+<img width="1700" height="882" alt="image" src="https://github.com/user-attachments/assets/51e23355-2676-463a-b5e6-69081a4832d3" />
 
-<img width="1912" height="914" alt="RaceTrade site editor" src="https://github.com/user-attachments/assets/d5f79c5c-bbd6-450d-b467-227d2c308348" />
+CBFTP servers
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/25c885c2-2a46-4d04-9b80-e4209dab05b1" />
 
-CBFTP servers and site import
+Pre
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/d4d638fd-2949-4e97-961a-3450f765ec46" />
 
-<img width="1912" height="914" alt="RaceTrade CBFTP servers and site import" src="https://github.com/user-attachments/assets/36b1b3ce-aa64-46ac-896d-10493c1b1a74" />
+Test Release
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/28d349ba-918c-4855-aed3-a0ec85df0ea1" />
 
 FXP Client
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/0b7cdfb6-82b1-4720-9834-ff47f0170c3f" />
 
-<img width="1912" height="914" alt="RaceTrade FXP client" src="https://github.com/user-attachments/assets/4b93fd16-a2b8-4c3f-85f6-0410fd1bd0c8" />
+Chat
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/3c56dbca-92f0-4df1-b969-25b2c8fb772e" />
 
 Help
+<img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/ff8a245b-5536-4828-9675-d6e91517708b" />
 
-<img width="1912" height="914" alt="RaceTrade help page" src="https://github.com/user-attachments/assets/04e126f3-30df-4aff-98e3-a6d162922112" />
+
+
+
+
+
+
+
+
 
 The app runs as one executable. Start `RaceTrade.exe`, your browser opens, and the
 racing engine runs in the same process.
