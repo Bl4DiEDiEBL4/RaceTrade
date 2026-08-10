@@ -485,7 +485,14 @@
                                                             @for (var r = 0; r < (tag.Rules?.Count ?? 0); r++)
                                                             {
                                                                 var ruleIndex = r;
-                                                                <div class="rule-row">
+                                                                <div class="rule-row"
+                                                                     @ondragover:preventDefault="true"
+                                                                     @ondrop="() => DropTagRule(tag, ruleIndex)">
+                                                                    <span class="drag-grip"
+                                                                          title="Drag to reorder"
+                                                                          draggable="true"
+                                                                          @ondragstart="() => BeginTagRuleDrag(tag, ruleIndex)"
+                                                                          @ondragend="ClearRuleDrag">::</span>
                                                                     <input type="text"
                                                                            value="@tag.Rules![ruleIndex]"
                                                                            @oninput="e => SetTagRule(tag, ruleIndex, e.Value?.ToString())"
@@ -526,7 +533,14 @@
                                     @for (var r = 0; r < (selected.Rules?.Count ?? 0); r++)
                                     {
                                         var ruleIndex = r;
-                                        <div class="rule-row">
+                                        <div class="rule-row"
+                                             @ondragover:preventDefault="true"
+                                             @ondrop="() => DropSectionRule(selected, ruleIndex)">
+                                            <span class="drag-grip"
+                                                  title="Drag to reorder"
+                                                  draggable="true"
+                                                  @ondragstart="() => BeginSectionRuleDrag(selected, ruleIndex)"
+                                                  @ondragend="ClearRuleDrag">::</span>
                                             <input type="text"
                                                    value="@selected.Rules![ruleIndex]"
                                                    @oninput="e => SetSectionRule(selected, ruleIndex, e.Value?.ToString())"
@@ -1001,6 +1015,9 @@
     private string _newAffil = "";
     private string _newBlacklist = "";
     private int _selectedSectionIndex = -1;
+    private Section? _dragSectionRuleOwner;
+    private Tag? _dragTagRuleOwner;
+    private int _dragRuleIndex = -1;
     private string _announceTestInput = "";
     private string _preAnnounceTestInput = "";
     private RegexTestResult? _announceTestResult;
@@ -1351,6 +1368,20 @@
         sec.Rules.RemoveAt(index);
     }
 
+    private void BeginSectionRuleDrag(Section sec, int index)
+    {
+        _dragSectionRuleOwner = sec;
+        _dragTagRuleOwner = null;
+        _dragRuleIndex = index;
+    }
+
+    private void DropSectionRule(Section sec, int targetIndex)
+    {
+        if (!ReferenceEquals(_dragSectionRuleOwner, sec)) return;
+        MoveRule(sec.Rules, _dragRuleIndex, targetIndex);
+        ClearRuleDrag();
+    }
+
     private static void AddTagRule(Tag tag)
     {
         tag.Rules ??= new List<string>();
@@ -1367,6 +1398,44 @@
     {
         if (tag.Rules is null || index < 0 || index >= tag.Rules.Count) return;
         tag.Rules.RemoveAt(index);
+    }
+
+    private void BeginTagRuleDrag(Tag tag, int index)
+    {
+        _dragTagRuleOwner = tag;
+        _dragSectionRuleOwner = null;
+        _dragRuleIndex = index;
+    }
+
+    private void DropTagRule(Tag tag, int targetIndex)
+    {
+        if (!ReferenceEquals(_dragTagRuleOwner, tag)) return;
+        MoveRule(tag.Rules, _dragRuleIndex, targetIndex);
+        ClearRuleDrag();
+    }
+
+    private void ClearRuleDrag()
+    {
+        _dragSectionRuleOwner = null;
+        _dragTagRuleOwner = null;
+        _dragRuleIndex = -1;
+    }
+
+    private static void MoveRule(List<string>? rules, int fromIndex, int targetIndex)
+    {
+        if (rules is null ||
+            fromIndex < 0 ||
+            targetIndex < 0 ||
+            fromIndex >= rules.Count ||
+            targetIndex >= rules.Count ||
+            fromIndex == targetIndex)
+        {
+            return;
+        }
+
+        var value = rules[fromIndex];
+        rules.RemoveAt(fromIndex);
+        rules.Insert(targetIndex, value);
     }
 
     private void AddAffil()

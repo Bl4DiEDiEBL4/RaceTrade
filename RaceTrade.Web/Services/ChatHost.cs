@@ -20,6 +20,8 @@ namespace RaceTrade.Web.Services;
 /// </summary>
 public sealed class ChatHost : IAsyncDisposable
 {
+    public sealed record StartResult(bool Accepted, string Message);
+
     private readonly WebIrcOutput _output;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -39,13 +41,14 @@ public sealed class ChatHost : IAsyncDisposable
 
     public IReadOnlyList<string> AvailableSites() => EnumerateSiteNames().ToList();
 
-    public async Task StartAsync(string siteName)
+    public async Task<StartResult> StartAsync(string siteName)
     {
         siteName = siteName?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(siteName))
         {
-            LogManager.Warning("Chat: select a site before connecting.");
-            return;
+            const string message = "Chat: select a site before connecting.";
+            LogManager.Warning(message);
+            return new StartResult(false, message);
         }
 
         await _gate.WaitAsync();
@@ -53,8 +56,9 @@ public sealed class ChatHost : IAsyncDisposable
         {
             if (_clients.ContainsKey(siteName))
             {
-                LogManager.Info($"Chat: site '{siteName}' is already connected.");
-                return;
+                var message = $"Chat: site '{siteName}' is already connected.";
+                LogManager.Info(message);
+                return new StartResult(true, message);
             }
 
             _siteTasks.RemoveAll(t => t.IsCompleted);
@@ -63,14 +67,16 @@ public sealed class ChatHost : IAsyncDisposable
 
             if (!SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) || cfg is null)
             {
-                LogManager.Warning($"Chat: could not load site config for '{siteName}'.");
-                return;
+                var message = $"Chat: could not load site config for '{siteName}'.";
+                LogManager.Warning(message);
+                return new StartResult(false, message);
             }
 
             if (cfg.SiteSettings?.DisableSite == true)
             {
-                LogManager.Warning($"Chat: site '{siteName}' is disabled.");
-                return;
+                var message = $"Chat: site '{siteName}' is disabled.";
+                LogManager.Warning(message);
+                return new StartResult(false, message);
             }
 
             // Chat needs less than the racer does - no bot name check, no announce
@@ -79,8 +85,17 @@ public sealed class ChatHost : IAsyncDisposable
                 string.IsNullOrWhiteSpace(cfg.Server?.Username) ||
                 string.IsNullOrWhiteSpace(cfg.Server?.Password))
             {
-                LogManager.Warning($"Chat: site '{siteName}' is missing IRC host, username or password.");
-                return;
+                var message = $"Chat: site '{siteName}' is missing IRC host, username or password.";
+                LogManager.Warning(message);
+                return new StartResult(false, message);
+            }
+
+            var channels = ChannelsOf(cfg).ToList();
+            if (channels.Count == 0)
+            {
+                var message = $"Chat: site '{siteName}' has no chat channels configured.";
+                LogManager.Warning(message);
+                return new StartResult(false, message);
             }
 
             _cts ??= new CancellationTokenSource();
@@ -117,7 +132,7 @@ public sealed class ChatHost : IAsyncDisposable
 
                 // Create the tabs up front so the channel picker is populated while
                 // the connection is still being established.
-                foreach (var chan in ChannelsOf(config))
+                foreach (var chan in channels)
                 {
                     _output.EnsureChannel(name, chan);
                     _output.AppendChannelMessage(name, chan, $"*** Connecting to {chan}...",
@@ -136,18 +151,23 @@ public sealed class ChatHost : IAsyncDisposable
                 catch (Exception ex)
                 {
                     LogManager.Error($"Chat error for site '{name}': {ex.Message}");
-                    foreach (var chan in ChannelsOf(config))
+                    foreach (var chan in channels)
                         _output.AppendChannelMessage(name, chan, $"*** Connection failed: {ex.Message}",
                             Color.Red);
                 }
                 finally
                 {
                     _clients.TryRemove(name, out _);
+                    if (_clients.IsEmpty)
+                        IsRunning = false;
+                    Changed?.Invoke();
                 }
             }, token));
 
             IsRunning = true;
-            LogManager.Success($"Chat started: connecting site '{siteName}'.");
+            var acceptedMessage = $"Chat started: connecting site '{siteName}'.";
+            LogManager.Success(acceptedMessage);
+            return new StartResult(true, acceptedMessage);
         }
         finally
         {
@@ -186,6 +206,7 @@ public sealed class ChatHost : IAsyncDisposable
             _cts?.Dispose();
             _cts = null;
             IsRunning = false;
+            _output.Clear();
 
             LogManager.Success("Chat stopped.");
         }

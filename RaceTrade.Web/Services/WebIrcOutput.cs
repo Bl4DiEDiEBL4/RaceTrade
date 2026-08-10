@@ -80,6 +80,14 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
         ScheduleChanged();
     }
 
+    /// <summary>Clears all visible chat tabs and user lists after chat disconnects.</summary>
+    public void Clear()
+    {
+        _lines.Clear();
+        _users.Clear();
+        ScheduleChanged();
+    }
+
     public void AppendChannelMessage(string siteName, string channelName, string message, Color color)
     {
         var q = _lines.GetOrAdd(Key(siteName, channelName), _ => new ConcurrentQueue<ChatLine>());

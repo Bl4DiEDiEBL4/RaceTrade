@@ -5,165 +5,171 @@
 
 <PageTitle>Chat - RaceTrade</PageTitle>
 
-@* Chat runs on its own IRC connections (ChatHost), not the trader's. Starting chat here
-   does not start racing, and stopping the racer does not drop chat. *@
-<div class="page-head">
-    <h1><Icon Name="chat" Size="18" />Chat</h1>
-    <div class="head-actions">
-        <select class="chat-site-picker" @bind="_connectSite" disabled="@_busy">
-            <option value="">-- pick site --</option>
-            @foreach (var site in _siteOptions)
-            {
-                <option value="@site">@site</option>
-            }
-        </select>
+<div class="chat-page">
+    @* Chat runs on its own IRC connections (ChatHost), not the trader's. Starting chat here
+       does not start racing, and stopping the racer does not drop chat. *@
+    <div class="page-head">
+        <h1><Icon Name="chat" Size="18" />Chat</h1>
+        <div class="head-actions">
+            <select class="chat-site-picker" @bind="_connectSite" disabled="@_busy">
+                <option value="">-- pick site --</option>
+                @foreach (var site in _siteOptions)
+                {
+                    <option value="@site">@site</option>
+                }
+            </select>
 
-        <button class="btn primary"
-                @onclick="Start"
-                disabled="@(_busy || string.IsNullOrWhiteSpace(_connectSite) || SelectedConnectSiteConnected)">
-            <Icon Name="play" Size="13" />
-            <span>@(SelectedConnectSiteConnected ? "Connected" : "Connect chat")</span>
-        </button>
+            <button class="btn primary"
+                    @onclick="Start"
+                    disabled="@(_busy || string.IsNullOrWhiteSpace(_connectSite) || SelectedConnectSiteConnected)">
+                <Icon Name="play" Size="13" />
+                <span>@(SelectedConnectSiteConnected ? "Connected" : "Connect chat")</span>
+            </button>
 
-        @if (ChatSvc.IsRunning)
-        {
-            <span class="chat-state on"><span class="state-dot"></span>@ChatSvc.ConnectedSites.Count site(s) connected</span>
-            <button class="btn danger" @onclick="Stop" disabled="@_busy"><Icon Name="stop" Size="13" /><span>Disconnect chat</span></button>
-        }
-        else
-        {
-            <span class="chat-state off"><span class="state-dot"></span>Offline</span>
-        }
-    </div>
-</div>
-
-@if (_channels.Count == 0)
-{
-    <div class="panel">
-        <div class="empty">
             @if (ChatSvc.IsRunning)
             {
-                <text>Connecting... channels appear as the IRC clients join them.</text>
+                <span class="chat-state on"><span class="state-dot"></span>@ChatSvc.ConnectedSites.Count site(s) connected</span>
+                <button class="btn danger" @onclick="Stop" disabled="@_busy"><Icon Name="stop" Size="13" /><span>Disconnect chat</span></button>
             }
             else
             {
-                <text>
-                    Not connected. Press <strong>Connect chat</strong> above - this only opens
-                    the selected site's IRC connection, it does not start the trader.
-                </text>
+                <span class="chat-state off"><span class="state-dot"></span>Offline</span>
             }
         </div>
     </div>
-}
-else
-{
-    <div class="panel chat-panel">
-        @* Two rows: sites on top, then the channels belonging to the selected site.
-           One flat list mixed both together and became unreadable past a few sites. *@
-        <div class="site-tabs">
-            @foreach (var site in Sites)
-            {
-                <button type="button"
-                        class="site-tab @(SameSite(site, _site) ? "active" : "")"
-                        @onclick="() => SelectSite(site)">
-                    <Icon Name="sites" Size="13" />
-                    <span>@site</span>
-                </button>
-            }
-        </div>
 
-        <div class="toolbar chat-toolbar">
-            <div class="channel-tabs">
-                @foreach (var (site, chan) in SiteChannels)
+    @if (_channels.Count == 0)
+    {
+        <div class="panel chat-empty-panel">
+            <div class="empty">
+                @if (!string.IsNullOrWhiteSpace(_notice))
                 {
-                    var value = $"{site}|{chan}";
-                    @* Not a <button> wrapping a <button>: nested buttons are invalid HTML
-                       and the inner click never fires reliably. A div with a role does. *@
-                    <div class="@ChannelTabClass(value, chan)"
-                         role="button"
-                         tabindex="0"
-                         @onclick="() => SelectChannel(site, chan)">
-                        @if (IsPrivateMessage(chan))
-                        {
-                            <span class="channel-pm">PM</span>
-                            <span class="channel-name">@PrivateNick(chan)</span>
-                        }
-                        else
-                        {
-                            <span class="channel-name">@chan</span>
-                        }
-                        <span class="tab-close"
-                              title="Close this tab"
-                              @onclick="() => CloseTab(site, chan)"
-                              @onclick:stopPropagation="true">&times;</span>
-                    </div>
+                    <div class="@($"chat-notice {(_noticeIsError ? "err" : "")}")">@_notice</div>
                 }
-            </div>
-            <span class="spacer"></span>
-            <button class="btn" @onclick="OpenKeyDialog" disabled="@(!ChatSvc.IsRunning || string.IsNullOrEmpty(_selected))">
-                <Icon Name="lock" Size="13" /><span>@(CurrentIsPm ? "PM key" : "Channel key")</span>
-            </button>
-            @if (CurrentIsPm)
-            {
-                <span class="hint">private message</span>
-            }
-        </div>
-
-        <div class="chat-body">
-            @* column-reverse keeps the newest line pinned to the bottom without any JS,
-               and makes a nearly-empty channel hug the bottom instead of stretching its
-               first few rows across the whole panel. Row order stays normal: the table
-               is a single flex item. *@
-            <div class="chat-scroll">
-                <table class="grid logs chat-lines">
-                    <tbody>
-                        @foreach (var l in _lines)
-                        {
-                            <tr class="lvl-@l.Level.ToString().ToLowerInvariant()">
-                                <td class="ts">@l.At.ToString("HH:mm:ss")</td>
-                                <td class="msg irc-line">@((MarkupString)l.Html)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-
-            <aside class="@($"userlist {(CurrentIsPm ? "pm-side" : "")}")">
-                @if (CurrentIsPm)
+                else if (ChatSvc.IsRunning)
                 {
-                    <div class="pm-meta">
-                        <span class="pm-kicker">Private message</span>
-                        <strong>@PrivateNick(CurrentChannel)</strong>
-                        <span>
-                            A FiSH key is negotiated automatically (DH1080) when the tab
-                            opens. Set one by hand only if the other side does not answer.
-                        </span>
-                    </div>
+                    <text>Connecting... channels appear as the IRC clients join them.</text>
                 }
                 else
                 {
-                    <div class="userlist-head">@_users.Count users</div>
-                    @foreach (var u in _users)
-                    {
-                        var nick = PlainNick(u);
-                        <div class="@UserClass(u)"
-                             title="Double-click to open a private message, right-click for more"
-                             @ondblclick="() => OpenPm(nick)"
-                             @oncontextmenu="e => OpenUserMenu(nick, e)"
-                             @oncontextmenu:preventDefault="true">@u</div>
-                    }
+                    <text>
+                        Not connected. Press <strong>Connect chat</strong> above - this only opens
+                        the selected site's IRC connection, it does not start the trader.
+                    </text>
                 }
-            </aside>
+            </div>
         </div>
+    }
+    else
+    {
+        <div class="panel chat-panel">
+            @* Two rows: sites on top, then the channels belonging to the selected site.
+               One flat list mixed both together and became unreadable past a few sites. *@
+            <div class="site-tabs">
+                @foreach (var site in Sites)
+                {
+                    <button type="button"
+                            class="site-tab @(SameSite(site, _site) ? "active" : "")"
+                            @onclick="() => SelectSite(site)">
+                        <Icon Name="sites" Size="13" />
+                        <span>@site</span>
+                    </button>
+                }
+            </div>
 
-        <div class="chat-send">
-            <input @bind="_draft" @bind:event="oninput" @onkeydown="OnKeyDown"
-                   placeholder="Message @CurrentTargetLabel - Enter to send"
-                   disabled="@(!ChatSvc.IsRunning)" />
-            <button class="btn primary" @onclick="Send" disabled="@(!ChatSvc.IsRunning)"><Icon Name="send" Size="13" /><span>Send</span></button>
+            <div class="toolbar chat-toolbar">
+                <div class="channel-tabs">
+                    @foreach (var (site, chan) in SiteChannels)
+                    {
+                        var value = $"{site}|{chan}";
+                        @* Not a <button> wrapping a <button>: nested buttons are invalid HTML
+                           and the inner click never fires reliably. A div with a role does. *@
+                        <div class="@ChannelTabClass(value, chan)"
+                             role="button"
+                             tabindex="0"
+                             @onclick="() => SelectChannel(site, chan)">
+                            @if (IsPrivateMessage(chan))
+                            {
+                                <span class="channel-pm">PM</span>
+                                <span class="channel-name">@PrivateNick(chan)</span>
+                            }
+                            else
+                            {
+                                <span class="channel-name">@chan</span>
+                            }
+                            <span class="tab-close"
+                                  title="Close this tab"
+                                  @onclick="() => CloseTab(site, chan)"
+                                  @onclick:stopPropagation="true">&times;</span>
+                        </div>
+                    }
+                </div>
+                <span class="spacer"></span>
+                <button class="btn" @onclick="OpenKeyDialog" disabled="@(!ChatSvc.IsRunning || string.IsNullOrEmpty(_selected))">
+                    <Icon Name="lock" Size="13" /><span>@(CurrentIsPm ? "PM key" : "Channel key")</span>
+                </button>
+                @if (CurrentIsPm)
+                {
+                    <span class="hint">private message</span>
+                }
+            </div>
+
+            <div class="chat-body">
+                @* column-reverse keeps the newest line pinned to the bottom without any JS,
+                   and makes a nearly-empty channel hug the bottom instead of stretching its
+                   first few rows across the whole panel. Row order stays normal: the table
+                   is a single flex item. *@
+                <div class="chat-scroll">
+                    <table class="grid logs chat-lines">
+                        <tbody>
+                            @foreach (var l in _lines)
+                            {
+                                <tr class="lvl-@l.Level.ToString().ToLowerInvariant()">
+                                    <td class="ts">@l.At.ToString("HH:mm:ss")</td>
+                                    <td class="msg irc-line">@((MarkupString)l.Html)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <aside class="@($"userlist {(CurrentIsPm ? "pm-side" : "")}")">
+                    @if (CurrentIsPm)
+                    {
+                        <div class="pm-meta">
+                            <span class="pm-kicker">Private message</span>
+                            <strong>@PrivateNick(CurrentChannel)</strong>
+                            <span>
+                                A FiSH key is negotiated automatically (DH1080) when the tab
+                                opens. Set one by hand only if the other side does not answer.
+                            </span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="userlist-head">@_users.Count users</div>
+                        @foreach (var u in _users)
+                        {
+                            var nick = PlainNick(u);
+                            <div class="@UserClass(u)"
+                                 title="Double-click to open a private message, right-click for more"
+                                 @ondblclick="() => OpenPm(nick)"
+                                 @oncontextmenu="e => OpenUserMenu(nick, e)"
+                                 @oncontextmenu:preventDefault="true">@u</div>
+                        }
+                    }
+                </aside>
+            </div>
+
+            <div class="chat-send">
+                <input @bind="_draft" @bind:event="oninput" @onkeydown="OnKeyDown"
+                       placeholder="Message @CurrentTargetLabel - Enter to send"
+                       disabled="@(!ChatSvc.IsRunning)" />
+                <button class="btn primary" @onclick="Send" disabled="@(!ChatSvc.IsRunning)"><Icon Name="send" Size="13" /><span>Send</span></button>
+            </div>
         </div>
-    </div>
-}
+    }
+</div>
 
 @if (_menuNick is not null)
 {
@@ -249,6 +255,8 @@ else
     private IReadOnlyList<string> _siteOptions = Array.Empty<string>();
     private string _connectSite = "";
     private string _draft = "";
+    private string _notice = "";
+    private bool _noticeIsError;
     private bool _busy;
 
     // user context menu
@@ -298,19 +306,34 @@ else
             return;
 
         _busy = true;
-        try { await ChatSvc.StartAsync(_connectSite); }
+        try
+        {
+            var result = await ChatSvc.StartAsync(_connectSite);
+            _notice = result.Message;
+            _noticeIsError = !result.Accepted;
+        }
         finally
         {
             _busy = false;
             RefreshSiteOptions();
+            Refresh();
         }
     }
 
     private async Task Stop()
     {
         _busy = true;
-        try { await ChatSvc.StopAsync(); }
-        finally { _busy = false; }
+        try
+        {
+            await ChatSvc.StopAsync();
+            _notice = "Chat disconnected.";
+            _noticeIsError = false;
+        }
+        finally
+        {
+            _busy = false;
+            Refresh();
+        }
     }
 
     private async Task OnKeyDown(KeyboardEventArgs e)

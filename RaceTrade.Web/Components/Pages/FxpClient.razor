@@ -3,86 +3,87 @@
 
 <PageTitle>FXP Client - RaceTrade</PageTitle>
 
-<div class="page-head fxp-head">
-    <h1><Icon Name="fxp" Size="18" />FXP Client</h1>
-</div>
-
-<div class="panel fxp-shell">
-    <div class="toolbar fxp-toolbar">
-        <label>CBFTP</label>
-        <select value="@_serverId" @onchange="SelectServer" disabled="@Busy">
-            @foreach (var server in _servers)
-            {
-                <option value="@server.Id">@DisplayServer(server)</option>
-            }
-        </select>
-        <button class="btn" @onclick="ReloadServersAndSites" disabled="@Busy">
-            <Icon Name="refresh" Size="13" />
-            <span>Load sites</span>
-        </button>
-        <button class="btn" @onclick="LoadSites" disabled="@(!_servers.Any() || Busy)">
-            <Icon Name="refresh" Size="13" />
-            <span>Refresh sites</span>
-        </button>
-        <span class="@FxpStatusClass">@FxpStatusText</span>
-        <span class="spacer"></span>
-        <button class="btn primary" @onclick="() => Transfer(true)" disabled="@(!CanTransferLeftToRight || Busy)">
-            <Icon Name="send" Size="13" />
-            <span>Left to right</span>
-        </button>
-        <button class="btn primary" @onclick="() => Transfer(false)" disabled="@(!CanTransferRightToLeft || Busy)">
-            <Icon Name="send" Size="13" />
-            <span>Right to left</span>
-        </button>
+<div class="fxp-page">
+    <div class="page-head fxp-head">
+        <h1><Icon Name="fxp" Size="18" />FXP Client</h1>
     </div>
 
-    <div class="fxp-panes">
-        @Pane("left", "Left Site", _leftSite, SelectLeftSite, _leftPath, v => _leftPath = v, _leftItems, _selectedLeft, BrowseLeft, UpLeft, DeleteLeft)
-        @Pane("right", "Right Site", _rightSite, SelectRightSite, _rightPath, v => _rightPath = v, _rightItems, _selectedRight, BrowseRight, UpRight, DeleteRight)
-    </div>
-
-    @* Live job list. cbftp accepting the POST only means the job was created; whether it
-       actually moves bytes is a separate question, and this is where it gets answered. *@
-    @if (_jobs.Count > 0)
-    {
-        <div class="fxp-log">
-            <div class="card-title">ACTIVE TRANSFERS</div>
-            <div class="fxp-jobs">
-                @foreach (var j in _jobs)
+    <div class="panel fxp-shell">
+        <div class="toolbar fxp-toolbar">
+            <label>CBFTP</label>
+            <select value="@_serverId" @onchange="SelectServer" disabled="@Busy">
+                @foreach (var server in _servers)
                 {
-                    <div class="job @JobClass(j)">
-                        <div class="job-head">
-                            <span class="job-badge">@JobLabel(j)</span>
-                            <span class="job-name">@j.Name</span>
-                            <span class="spacer"></span>
-                            <span class="job-meta">@JobDetail(j)</span>
-                        </div>
+                    <option value="@server.Id">@DisplayServer(server)</option>
+                }
+            </select>
+            <button class="btn" @onclick="ReloadServersAndSites" disabled="@Busy">
+                <Icon Name="refresh" Size="13" />
+                <span>Load sites</span>
+            </button>
+            <button class="btn" @onclick="LoadSites" disabled="@(!_servers.Any() || Busy)">
+                <Icon Name="refresh" Size="13" />
+                <span>Refresh sites</span>
+            </button>
+            <span class="spacer"></span>
+            <button class="btn primary" @onclick="() => Transfer(true)" disabled="@(!CanTransferLeftToRight || Busy)">
+                <Icon Name="send" Size="13" />
+                <span>Left to right</span>
+            </button>
+            <button class="btn primary" @onclick="() => Transfer(false)" disabled="@(!CanTransferRightToLeft || Busy)">
+                <Icon Name="send" Size="13" />
+                <span>Right to left</span>
+            </button>
+        </div>
 
-                        @* Indeterminate when cbftp reports no file counts: a bar parked at
-                           0% reads as "stuck", which is exactly the wrong impression. *@
-                        <div class="job-bar @(j.Percent is null && !j.IsFinished ? "indet" : "")">
-                            <div class="job-fill" style="width:@(j.Percent ?? 100)%"></div>
+        <div class="fxp-panes">
+            @Pane("left", "Left Site", _leftSite, SelectLeftSite, _leftPath, v => _leftPath = v, _leftItems, _selectedLeft, BrowseLeft, UpLeft, DeleteLeft)
+            @Pane("right", "Right Site", _rightSite, SelectRightSite, _rightPath, v => _rightPath = v, _rightItems, _selectedRight, BrowseRight, UpRight, DeleteRight)
+        </div>
+
+        @* Live job list. cbftp accepting the POST only means the job was created; whether it
+           actually moves bytes is a separate question, and this is where it gets answered. *@
+        @if (_jobs.Count > 0)
+        {
+            <div class="fxp-log fxp-active-log">
+                <div class="card-title">ACTIVE TRANSFERS</div>
+                <div class="fxp-jobs">
+                    @foreach (var j in _jobs)
+                    {
+                        <div class="job @JobClass(j)">
+                            <div class="job-head">
+                                <span class="job-badge">@JobLabel(j)</span>
+                                <span class="job-name">@j.Name</span>
+                                <span class="spacer"></span>
+                                <span class="job-meta">@JobDetail(j)</span>
+                            </div>
+
+                            @* Indeterminate when cbftp reports no file counts: a bar parked at
+                               0% reads as "stuck", which is exactly the wrong impression. *@
+                            <div class="job-bar @(j.Percent is null && !j.IsFinished ? "indet" : "")">
+                                <div class="job-fill" style="width:@(j.Percent ?? 100)%"></div>
+                            </div>
                         </div>
-                    </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="fxp-log fxp-transfer-log">
+            <div class="card-title">FXP LOG</div>
+            <div class="log-box">
+                @if (_log.Count == 0)
+                {
+                    <div class="dim">No FXP activity yet.</div>
+                }
+                else
+                {
+                    @foreach (var line in _log)
+                    {
+                        <div>@line</div>
+                    }
                 }
             </div>
-        </div>
-    }
-
-    <div class="fxp-log">
-        <div class="card-title">TRANSFER LOG</div>
-        <div class="log-box">
-            @if (_log.Count == 0)
-            {
-                <div class="dim">No FXP activity yet.</div>
-            }
-            else
-            {
-                @foreach (var line in _log)
-                {
-                    <div>@line</div>
-                }
-            }
         </div>
     </div>
 </div>
@@ -118,18 +119,12 @@
 
     // Jobs we queued this session, newest first, updated by MonitorJobsAsync.
     private readonly List<FxpJobProgress> _jobs = new();
-    private string? _error;
-    private string? _status;
     private FxpContextMenu? _contextMenu;
     private string _leftSort = "name";
     private string _rightSort = "name";
     private bool _leftSortDesc;
     private bool _rightSortDesc;
     private bool Busy { get; set; }
-    private string FxpStatusText =>
-        _error ?? _status ?? "Load sites, then choose a left and right site to browse.";
-    private string FxpStatusClass => _error is null ? "fxp-status" : "fxp-status err";
-
     private bool CanTransferLeftToRight =>
         SelectedLeftItems.Any() && !string.IsNullOrWhiteSpace(_leftSite) && !string.IsNullOrWhiteSpace(_rightSite);
 
@@ -248,13 +243,13 @@
         var server = SelectedServer();
         if (server is null)
         {
-            _error = "Add a CBFTP server first.";
+            AddLine("Add a CBFTP server first.", isError: true);
             return;
         }
 
         await RunAsync(async () =>
         {
-            _status = $"Loading sites from {DisplayServer(server)}...";
+            AddLine($"Loading sites from {DisplayServer(server)}...");
             _sites = (await Fxp.FetchSitesAsync(server)).ToList();
             _leftSite = KeepOrEmpty(_leftSite);
             _rightSite = KeepOrEmpty(_rightSite);
@@ -264,9 +259,9 @@
             if (string.IsNullOrWhiteSpace(_rightSite))
                 ClearPane(left: false);
 
-            _status = _sites.Count == 0
+            AddLine(_sites.Count == 0
                 ? "No sites returned by CBFTP."
-                : $"Loaded {_sites.Count} site(s). Pick a site in a pane to browse it.";
+                : $"Loaded {_sites.Count} site(s). Pick a site in a pane to browse it.");
         });
     }
 
@@ -279,7 +274,7 @@
             _sites.Clear();
             ClearPane(left: true);
             ClearPane(left: false);
-            _error = "Add a CBFTP server first.";
+            AddLine("Add a CBFTP server first.", isError: true);
             return;
         }
 
@@ -341,7 +336,7 @@
         var path = left ? _leftPath : _rightPath;
         if (server is null || string.IsNullOrWhiteSpace(site))
         {
-            _error = "Select a CBFTP server and site first.";
+            AddLine("Select a CBFTP server and site first.", isError: true);
             return;
         }
 
@@ -361,7 +356,7 @@
                 _rightPath = FxpClientService.NormalizePath(_rightPath);
             }
 
-            _status = $"Listed {items.Count} item(s) from {site}:{FxpClientService.NormalizePath(path)}.";
+            AddLine($"Listed {items.Count} item(s) from {site}:{FxpClientService.NormalizePath(path)}.");
         });
     }
 
@@ -413,7 +408,6 @@
                 : await Fxp.QueueTransferAsync(server, _rightSite, _rightPath, _leftSite, _leftPath, SelectedRightItems);
 
             AddLog(result);
-            _status = result.Message;
             queued = result.Queued ?? Array.Empty<string>();
         });
 
@@ -614,7 +608,6 @@
                 : await Fxp.DeleteAsync(server, _rightSite, _rightPath, SelectedRightItems);
 
             AddLog(result);
-            _status = result.Message;
             await Browse(left);
         });
     }
@@ -624,12 +617,11 @@
         try
         {
             Busy = true;
-            _error = null;
             await action();
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            AddLine(ex.Message, isError: true);
         }
         finally
         {
@@ -639,16 +631,18 @@
 
     private void AddLog(FxpOperationResult result)
     {
-        _log.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {result.Message}");
+        AddLine(result.Message, isError: !result.Success);
         foreach (var line in result.Logs.Reverse())
             _log.Insert(1, "  " + line);
 
         Trim();
     }
 
-    private void AddLine(string text)
+    private void AddLine(string text, bool isError = false)
     {
-        _log.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {text}");
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        _log.Insert(0, $"[{DateTime.Now:HH:mm:ss}] {(isError ? "ERROR: " : "")}{text}");
         Trim();
     }
 

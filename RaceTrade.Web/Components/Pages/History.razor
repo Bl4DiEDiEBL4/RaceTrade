@@ -9,7 +9,7 @@
     <a class="btn" href="settings"><Icon Name="settings" Size="13" /><span>Reset in Settings</span></a>
 </div>
 
-<div class="panel">
+<div class="panel fill-panel">
     <div class="toolbar">
         <input type="text" placeholder="Search release, site, section..." @bind="_query" @bind:event="oninput" @bind:after="Refresh" />
         <select @bind="_status" @bind:after="Refresh">

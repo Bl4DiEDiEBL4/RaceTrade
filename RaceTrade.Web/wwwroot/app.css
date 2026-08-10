@@ -306,7 +306,14 @@ html[data-theme="light"] .brand-logo-light { display: block; }
 
 /* ---------- content ---------- */
 
-main { flex: 1; padding: 20px 24px 28px; min-width: 0; }
+main {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    padding: 20px 24px 28px;
+    display: flex;
+    flex-direction: column;
+}
 
 .page-head {
     display: flex;
@@ -370,6 +377,125 @@ h2 { font-size: 12px; letter-spacing: 1.2px; color: var(--muted); margin: 24px 0
 .stat-value.warn { color: var(--warn); }
 .stat-value.ok { color: var(--ok); }
 .stat-label { color: var(--muted); font-size: 11.5px; }
+
+/* Dashboard is a single-screen overview. Panels with lots of rows scroll internally;
+   the page itself should not need a browser scrollbar at normal desktop sizes. */
+.shell-content main:has(.dashboard-page) {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding-bottom: 16px;
+    overflow: auto;
+}
+
+.shell-content main:has(.fill-panel) {
+    padding-bottom: 16px;
+    overflow: auto;
+}
+
+.fill-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.dashboard-page {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.dashboard-head {
+    min-height: 34px;
+    margin-bottom: 10px;
+}
+
+.dashboard-section-title {
+    margin: 14px 0 8px;
+}
+
+.dashboard-stats {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.dashboard-page .card {
+    min-height: 92px;
+    padding: 14px 16px;
+}
+
+.dashboard-shortcuts {
+    grid-template-columns: minmax(220px, .95fr) minmax(300px, 1fr) minmax(300px, 1fr) minmax(430px, 1.28fr);
+    gap: 12px;
+}
+
+.dashboard-shortcuts .card {
+    min-height: 88px;
+}
+
+.dashboard-tools-card .card-actions {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.dashboard-tools-card .btn {
+    white-space: nowrap;
+    padding-left: 9px;
+    padding-right: 9px;
+}
+
+.dashboard-activity {
+    flex: 0 0 218px;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.dashboard-history {
+    flex: 1 1 120px;
+    min-height: 112px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.dashboard-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.dashboard-activity table.grid td,
+.dashboard-history table.grid td,
+.dashboard-history table.grid th {
+    padding-top: 3px;
+    padding-bottom: 3px;
+}
+
+.dashboard-history .toolbar {
+    padding-top: 7px;
+    padding-bottom: 7px;
+}
+
+@media (max-width: 1750px) {
+    .dashboard-shortcuts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1100px) {
+    .dashboard-stats,
+    .dashboard-shortcuts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .shell-content main:has(.dashboard-page) {
+        overflow: auto;
+    }
+}
 
 /* ---------- tables / logs ---------- */
 
@@ -465,6 +591,18 @@ tr.lvl-debug td { color: var(--dim); }
     padding: 0;
     overflow: hidden;
     background: #111722;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-empty-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .chat-toolbar {
@@ -596,13 +734,15 @@ tr.lvl-debug td { color: var(--dim); }
 .chat-body {
     display: flex;
     align-items: stretch;
-    height: 58vh;
-    min-height: 300px;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
 }
 
 .chat-scroll {
     flex: 1;
     min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column-reverse;
     overflow-y: auto;
@@ -637,6 +777,7 @@ tr.lvl-debug td { color: var(--dim); }
 
 .userlist {
     flex: 0 0 175px;
+    min-height: 0;
     border-left: 1px solid var(--line);
     padding: 0 0 8px;
     overflow-y: auto;
@@ -746,6 +887,7 @@ tr.lvl-debug td { color: var(--dim); }
 /* send bar pinned under the message list */
 .chat-send {
     display: flex;
+    flex: 0 0 auto;
     gap: 7px;
     padding: 9px 12px;
     border-top: 1px solid var(--line);
@@ -961,6 +1103,78 @@ table.grid td.path { background: transparent; padding: 2px 0; margin: 0; }
 
 .sites-table td.site-actions .btn {
     margin-left: 8px;
+}
+
+@media (max-width: 760px) {
+    .dashboard-shortcuts .card-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
+        gap: 7px;
+    }
+
+    .dashboard-shortcuts .btn {
+        justify-content: center;
+        min-width: 0;
+        width: 100%;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .dashboard-shortcuts .btn span {
+        display: none;
+    }
+
+    .sites-table {
+        font-size: 11.5px;
+    }
+
+    .sites-table .c-site { width: 15%; }
+    .sites-table .c-host { width: 20%; }
+    .sites-table .c-network { display: none; }
+    .sites-table .c-small { width: 9%; }
+    .sites-table .c-status { width: 18%; }
+    .sites-table .c-actions { width: 29%; }
+
+    .sites-table th:nth-child(3),
+    .sites-table td:nth-child(3) {
+        display: none;
+    }
+
+    .sites-table th,
+    .sites-table td {
+        padding-left: 6px;
+        padding-right: 6px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sites-table td.site-actions {
+        white-space: normal;
+    }
+
+    .sites-table td.site-actions .btn {
+        display: flex;
+        width: 30px;
+        min-width: 30px;
+        height: 30px;
+        min-height: 30px;
+        padding: 0;
+        margin: 0 0 5px auto;
+        justify-content: center;
+    }
+
+    .sites-table td.site-actions .btn:last-child {
+        margin-bottom: 0;
+    }
+
+    .sites-table td.site-actions .btn span {
+        display: none;
+    }
+
+    .sites-table .pill {
+        padding-left: 6px;
+        padding-right: 6px;
+    }
 }
 
 pre.code {
@@ -1883,12 +2097,44 @@ pre.code {
 
 .fxp-head { margin-bottom: 10px; }
 
+.shell-content main:has(.fxp-page),
+.shell-content main:has(.chat-page),
+.shell-content main:has(.pre-grid) {
+    padding-bottom: 16px;
+    overflow: auto;
+}
+
+.shell-content main:has(.chat-page),
+.shell-content main:has(.pre-grid) {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.fxp-page {
+    height: calc(100vh - 98px);
+    min-height: 640px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.chat-page {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
 .fxp-shell {
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 188px);
-    min-height: 560px;
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
 }
 .fxp-toolbar { row-gap: 7px; }
 .fxp-toolbar select { min-width: 260px; }
@@ -2035,6 +2281,21 @@ pre.code {
     border-top: 1px solid var(--line);
 }
 
+.fxp-transfer-log {
+    flex: 0 0 auto;
+    padding-top: 12px;
+}
+
+.fxp-transfer-log .log-box {
+    height: 104px;
+    min-height: 104px;
+    max-height: 104px;
+}
+
+.fxp-active-log {
+    flex: 0 0 auto;
+}
+
 .log-box {
     min-height: 58px;
     max-height: 110px;
@@ -2151,26 +2412,245 @@ pre.code {
 
 /* ---------- Pre spread manager ---------- */
 
-.pre-layout {
+/* ---------- Pre page ----------
+   Three numbered panels in the order the job runs: sites -> release -> spread. The log
+   spans the full width underneath. */
+.pre-grid {
     display: grid;
-    grid-template-columns: minmax(290px, 360px) minmax(0, 1fr);
+    grid-template-columns: minmax(620px, 1.15fr) minmax(300px, .62fr) minmax(480px, .9fr);
+    grid-template-rows: minmax(0, 1fr) minmax(170px, 24vh);
     gap: 13px;
+    flex: 1 1 auto;
+    align-items: stretch;
+    min-height: 0;
 }
+
+.pre-panel { padding: 14px 15px 15px; }
 
 .pre-log-panel {
     grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
-.pre-site-list,
-.pre-release-list {
-    min-height: 260px;
-    max-height: 52vh;
+.pre-sites-panel,
+.pre-release-panel,
+.pre-spread-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+}
+
+.pre-panel-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.pre-panel-head h2 { margin: 0; }
+
+/* Step number: makes the sequence readable at a glance. */
+.step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(17, 215, 202, .14);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.src-select { max-width: 180px; }
+
+/* Step 1 keeps the Pre site list and the editor next to each other so the whole
+   workflow stays visible without a tall stacked form. */
+.pre-sites-editor {
+    display: grid;
+    grid-template-columns: minmax(250px, .9fr) minmax(270px, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+}
+
+.pre-sites-list-col,
+.pre-sites-form-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+}
+
+/* --- site rows --- */
+.pre-site-table {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
     overflow: auto;
     border: 1px solid var(--line);
     border-radius: 5px;
     background: var(--content);
-    padding: 8px;
+}
+
+.pre-site {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+        "pill name server"
+        "pill meta server";
+    align-items: center;
+    gap: 1px 10px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+}
+
+.pre-site:last-child { border-bottom: 0; }
+.pre-site:hover { background: #151b26; }
+
+.pre-site.active {
+    background: rgba(17, 215, 202, .09);
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.pre-site.broken { box-shadow: inset 2px 0 0 var(--err); }
+
+.pre-site .mini-pill {
+    grid-area: pill;
+    cursor: pointer;
+    min-width: 54px;
+    justify-content: center;
+}
+
+.pre-site .mini-pill:hover {
+    border-color: rgba(17, 215, 202, .45);
+    color: var(--fg);
+}
+
+.pre-site-name {
+    grid-area: name;
+    color: var(--fg);
+    font-weight: 600;
+    font-size: 12.5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pre-site-meta {
+    grid-area: meta;
+    color: var(--dim);
+    font-size: 11px;
+    font-family: Consolas, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pre-site-meta em { color: var(--muted); font-style: normal; }
+
+.pre-site-server {
+    grid-area: server;
+    color: var(--dim);
+    font-size: 10.5px;
+    white-space: nowrap;
+}
+
+.pre-editor {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    margin-top: 0;
+    padding: 13px 14px;
+    display: flex;
+    flex-direction: column;
+}
+
+.subcard.nested.pre-editor {
+    margin-top: 0;
+}
+
+.pre-editor .form-grid.wide {
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 8px 10px;
+}
+
+.pre-editor .form-grid.wide label { margin-top: 6px; }
+
+.pre-editor .fh {
+    font-size: 10.8px;
+    line-height: 1.35;
+}
+
+.pre-editor .form-actions {
+    margin-top: auto;
+    padding-top: 10px;
+    gap: 8px;
+}
+
+.pre-editor-empty {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* --- cbftp server strip, above the site list --- */
+.pre-servers {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
     margin-bottom: 12px;
+}
+
+.pre-server {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 8px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--content);
+    font-size: 11.5px;
+}
+
+.pre-server-name { color: var(--fg); font-weight: 600; }
+.pre-server-host {
+    color: var(--dim);
+    font-family: Consolas, monospace;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pre-server-count {
+    margin-left: auto;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+
+/* --- releases --- */
+.pre-release-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--content);
+    padding: 6px;
 }
 
 .pre-release {
@@ -2185,6 +2665,9 @@ pre.code {
     font-family: Consolas, "Cascadia Mono", monospace;
     font-size: 12px;
     cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .pre-release:hover,
@@ -2193,34 +2676,94 @@ pre.code {
     border-color: rgba(0, 229, 214, .35);
 }
 
-.pre-toolbar {
-    display: grid;
-    grid-template-columns: auto minmax(180px, 320px) auto;
-    gap: 8px;
-    align-items: center;
+/* --- destinations / actions --- */
+.pre-target {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 11px;
     margin-bottom: 12px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    background: var(--content);
 }
 
-.pre-columns {
-    display: grid;
-    grid-template-columns: minmax(0, 1.3fr) minmax(240px, .7fr);
-    gap: 12px;
+.pre-target strong {
+    color: var(--fg);
+    font-family: Consolas, monospace;
+    font-size: 12px;
+    word-break: break-all;
 }
 
-.pre-dest-list {
-    max-height: 260px;
+.pre-dest-list { max-height: 150px; overflow: auto; margin-bottom: 8px; }
+
+.check-chip.is-source { opacity: .65; }
+.check-chip em {
+    margin-left: 5px;
+    color: var(--dim);
+    font-style: normal;
+    font-size: 10px;
+    text-transform: uppercase;
 }
 
 .pre-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: auto;
+    padding-top: 10px;
     border-top: 1px solid var(--line);
-    margin-top: 12px;
 }
 
-@media (max-width: 980px) {
-    .pre-layout,
-    .pre-columns {
-        grid-template-columns: 1fr;
+.pre-actions .btn {
+    white-space: nowrap;
+    padding-left: 9px;
+    padding-right: 9px;
+}
+
+.pre-actions .spacer {
+    min-width: 6px;
+}
+
+.pre-spread-panel .callout { margin-bottom: 10px; }
+
+.pre-log-panel .log-box {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow: auto;
+}
+
+.warn-callout {
+    border-left-color: #f5c05a;
+    margin-bottom: 12px;
+}
+
+@media (max-width: 1400px) {
+    .shell-content main:has(.pre-grid) { overflow: auto; }
+    .pre-grid {
+        flex: 0 0 auto;
+        grid-template-columns: minmax(560px, 1.1fr) minmax(320px, 1fr);
+        grid-template-rows: auto;
     }
+    .pre-spread-panel { grid-column: 1 / -1; }
+    .pre-log-panel { grid-column: 1 / -1; }
+    .pre-sites-panel,
+    .pre-release-panel,
+    .pre-spread-panel {
+        min-height: auto;
+        height: auto;
+    }
+    .pre-release-list { min-height: 300px; }
+    .pre-log-panel .log-box { min-height: 140px; }
+    .pre-actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 900px) {
+    .pre-grid { grid-template-columns: 1fr; }
+    .pre-sites-editor { grid-template-columns: 1fr; }
 }
 
 /* ---------- import/action polish ---------- */
@@ -2350,6 +2893,24 @@ pre.code {
     box-shadow: 0 0 8px rgba(47, 194, 121, .55);
 }
 
+.chat-notice {
+    display: inline-flex;
+    align-items: center;
+    max-width: min(680px, 100%);
+    padding: 9px 12px;
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    background: rgba(17, 215, 202, .08);
+    color: var(--fg);
+    text-align: left;
+}
+
+.chat-notice.err {
+    border-left-color: var(--err);
+    background: rgba(225, 79, 100, .11);
+    color: #ffb2bd;
+}
+
 .chat-site-picker {
     min-width: 170px;
     height: 31px;
@@ -2469,11 +3030,15 @@ pre.code {
     align-items: center;
     min-height: 18px;
     padding: 1px 6px;
+    /* transparent, not unset: the pill is also rendered as a <button> (the Pre site
+       enable switch) and a button would otherwise get the UA's grey face. */
+    background: transparent;
     border: 1px solid rgba(255, 255, 255, .08);
     border-radius: 4px;
     color: var(--muted);
     font-size: 10.5px;
     line-height: 1;
+    font-family: inherit;
 }
 
 .mini-pill.on {
@@ -2626,9 +3191,34 @@ pre.code {
 
 .rule-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
     align-items: center;
+}
+
+.drag-grip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 30px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, .035);
+    color: var(--muted);
+    cursor: grab;
+    font-family: Consolas, monospace;
+    font-size: 12px;
+    user-select: none;
+}
+
+.drag-grip:hover {
+    border-color: rgba(17, 215, 202, .45);
+    color: var(--accent);
+}
+
+.drag-grip:active {
+    cursor: grabbing;
 }
 
 .rule-empty {
@@ -3039,7 +3629,7 @@ html[data-theme="light"] .editor-panel,
 html[data-theme="light"] .editor-section,
 html[data-theme="light"] .server-panel,
 html[data-theme="light"] .cbftp-site-editor,
-html[data-theme="light"] .pre-layout .panel {
+html[data-theme="light"] .pre-grid .panel {
     background: var(--card);
     border-color: var(--line);
     box-shadow: var(--shadow-soft);
@@ -3073,7 +3663,9 @@ html[data-theme="light"] .fxp-table-wrap,
 html[data-theme="light"] .log-box,
 html[data-theme="light"] pre.code,
 html[data-theme="light"] .path,
-html[data-theme="light"] .pre-site-list,
+html[data-theme="light"] .pre-site:hover { background: #edf6fb; }
+
+html[data-theme="light"] .pre-site-table,
 html[data-theme="light"] .pre-release-list {
     background: #f9fbfe;
     color: var(--fg);
@@ -3252,7 +3844,7 @@ html[data-theme="light"] .section-row.active {
 }
 
 html[data-theme="light"] .section-row-main span,
-html[data-theme="light"] .pre-layout .form-grid label {
+html[data-theme="light"] .pre-grid .form-grid label {
     color: #334155;
 }
 
@@ -3320,4 +3912,730 @@ html[data-theme="light"] .fxp-table .parent-row:hover td,
 html[data-theme="light"] .ctx-menu button:hover,
 html[data-theme="light"] .user:hover {
     background: #e8f2f8;
+}
+
+/* ---------- mobile / small screens ----------
+   Keep the app usable when it is opened from a phone or a narrow remote browser:
+   the shell becomes top-stacked, navigation scrolls sideways, and dense tools scroll
+   inside their own tables/panels instead of forcing the whole layout off-screen. */
+@media (max-width: 760px) {
+    html,
+    body {
+        min-width: 0;
+        overflow-x: hidden;
+    }
+
+    .app {
+        display: block;
+        min-height: 100vh;
+    }
+
+    .sidebar {
+        position: static;
+        width: 100%;
+        height: auto;
+        min-height: 0;
+        padding: 10px;
+        overflow: visible;
+        border-right: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, .08);
+        box-shadow: none;
+    }
+
+    .brand {
+        padding: 0 2px 8px;
+        min-height: 0;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .brand-logo {
+        width: 146px;
+    }
+
+    .brand-meta {
+        gap: 6px;
+        font-size: 10.5px;
+    }
+
+    .brand-community {
+        padding-left: 6px;
+    }
+
+    .status-card {
+        display: block;
+        margin: 0 0 9px;
+        padding: 10px 12px;
+    }
+
+    .status-row {
+        margin-top: 7px;
+    }
+
+    .btn-run {
+        min-height: 32px;
+        margin-top: 8px;
+    }
+
+    .sidebar-scroll {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 2px 0 4px;
+        scrollbar-width: thin;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .sidebar-scroll::-webkit-scrollbar {
+        height: 4px;
+        width: 4px;
+    }
+
+    .nav-title {
+        display: none;
+    }
+
+    .nav-item {
+        flex: 0 0 auto;
+        margin: 0;
+        padding: 8px 10px;
+        border-radius: 6px;
+        white-space: nowrap;
+        box-shadow: none;
+    }
+
+    .nav-item.active {
+        box-shadow: inset 0 -2px 0 var(--accent);
+    }
+
+    .shell-content {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .app-header {
+        position: sticky;
+        top: 0;
+        padding: 8px 10px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: stretch;
+        justify-content: flex-start;
+        gap: 8px;
+    }
+
+    .header-community,
+    .header-actions {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: stretch;
+    }
+
+    .app-header .theme-toggle,
+    .app-header .logout,
+    .app-header .logout button,
+    .app-header .quit,
+    .update-notice {
+        flex: 1 1 0;
+        min-width: 94px;
+    }
+
+    main,
+    .shell-content main:has(.dashboard-page),
+    .shell-content main:has(.chat-page),
+    .shell-content main:has(.fxp-page),
+    .shell-content main:has(.pre-grid),
+    .shell-content main:has(.fill-panel) {
+        display: block;
+        min-height: 0;
+        padding: 14px 10px 18px;
+        overflow: auto;
+    }
+
+    .page-head {
+        min-height: 0;
+        margin-bottom: 12px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .page-head h1 {
+        font-size: 22px;
+    }
+
+    .head-actions,
+    .toolbar,
+    .form-actions,
+    .row-actions,
+    .card-actions {
+        flex-wrap: wrap;
+        align-items: stretch;
+    }
+
+    .head-actions > *,
+    .toolbar > select,
+    .toolbar > input,
+    .toolbar > .btn,
+    .form-actions > .btn,
+    .row-actions > .btn {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .card-grid,
+    .dashboard-stats,
+    .dashboard-shortcuts,
+    .settings-grid,
+    .cbftp-edit-grid,
+    .editor-with-aside {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-page,
+    .chat-page,
+    .fxp-page {
+        height: auto;
+        min-height: 0;
+        display: block;
+    }
+
+    .dashboard-activity,
+    .dashboard-history {
+        flex: 0 0 auto;
+        max-height: 42vh;
+    }
+
+    .dashboard-scroll {
+        max-height: inherit;
+    }
+
+    .panel {
+        max-width: 100%;
+        overflow: auto;
+    }
+
+    table.grid {
+        min-width: 620px;
+    }
+
+    .tabs,
+    .site-tabs,
+    .channel-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .tab,
+    .site-tab,
+    .channel-tab {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .form-grid,
+    .form-grid.wide,
+    .pre-editor .form-grid.wide {
+        grid-template-columns: 1fr;
+    }
+
+    input,
+    select,
+    textarea {
+        max-width: 100%;
+    }
+
+    .chat-panel {
+        min-height: calc(100dvh - 260px);
+    }
+
+    .chat-toolbar {
+        gap: 8px;
+    }
+
+    .chat-body {
+        min-height: 54vh;
+        grid-template-columns: 1fr;
+    }
+
+    .userlist {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+        max-height: 150px;
+        overflow: auto;
+    }
+
+    .chat-send {
+        grid-template-columns: 1fr;
+    }
+
+    .chat-send .btn {
+        width: 100%;
+    }
+
+    .fxp-toolbar select {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .fxp-panes {
+        display: grid;
+        grid-template-columns: 1fr;
+        flex: 0 0 auto;
+    }
+
+    .fxp-pane {
+        min-height: 430px;
+    }
+
+    .fxp-pane-head,
+    .path-row {
+        grid-template-columns: 1fr;
+    }
+
+    .fxp-transfer-log .log-box {
+        height: 150px;
+        min-height: 150px;
+        max-height: 150px;
+    }
+
+    .pre-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+        min-height: 0;
+    }
+
+    .pre-sites-editor,
+    .sections-layout,
+    .rules-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .pre-release-list {
+        min-height: 240px;
+    }
+
+    .pre-actions {
+        flex-wrap: wrap;
+    }
+
+    .sections-list {
+        max-height: 320px;
+    }
+}
+
+html[data-theme="light"] .chat-notice.err {
+    color: #8a1f32;
+}
+
+.mobile-menu-toggle,
+.mobile-menu-button {
+    display: none;
+}
+
+/* ---------- final mobile pass ----------
+   These rules intentionally sit at the end so they win over older narrow-screen
+   fallbacks that turned the sidebar into a clipped horizontal strip. */
+@media (max-width: 760px) {
+    html,
+    body {
+        width: 100%;
+        min-width: 0;
+        overflow-x: hidden;
+    }
+
+    .app {
+        display: block;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .sidebar {
+        position: static;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        width: 100% !important;
+        height: auto;
+        min-height: 0;
+        padding: 12px;
+        gap: 10px;
+        overflow: visible;
+        border-right: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, .08);
+        box-shadow: none;
+    }
+
+    .brand {
+        width: 100%;
+        padding: 0;
+        flex: 0 0 auto;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .brand-logo {
+        width: 148px;
+        max-width: 58vw;
+    }
+
+    .brand-meta {
+        gap: 7px;
+    }
+
+    .status-card {
+        display: block !important;
+        width: 100%;
+        margin: 0;
+        padding: 12px;
+        flex: 0 0 auto;
+    }
+
+    .mobile-menu-toggle {
+        display: block;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .mobile-menu-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+        min-height: 38px;
+        padding: 0 12px;
+        border: 1px solid rgba(17, 215, 202, .36);
+        border-radius: 6px;
+        background: rgba(17, 215, 202, .08);
+        color: var(--fg);
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    .mobile-menu-toggle:checked + .mobile-menu-button {
+        background: rgba(17, 215, 202, .16);
+        border-color: rgba(17, 215, 202, .58);
+    }
+
+    .sidebar-scroll {
+        display: none !important;
+        flex-direction: column;
+        gap: 2px;
+        width: 100%;
+        max-height: 70vh;
+        padding: 6px 0 2px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: thin;
+    }
+
+    .mobile-menu-toggle:checked + .mobile-menu-button + .sidebar-scroll {
+        display: flex !important;
+    }
+
+    .sidebar-scroll::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+    }
+
+    .nav-title {
+        display: block !important;
+        margin: 8px 0 2px;
+        padding: 4px 4px;
+    }
+
+    .nav-item {
+        width: 100%;
+        flex: 0 0 auto;
+        margin: 0;
+        padding: 10px 12px;
+        border-radius: 6px;
+        white-space: normal;
+        box-shadow: none;
+    }
+
+    .nav-item.active {
+        box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .shell-content,
+    main {
+        width: 100%;
+        min-width: 0;
+        overflow-x: hidden;
+    }
+
+    .app-header {
+        padding: 8px 12px;
+    }
+
+    .header-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        width: 100%;
+    }
+
+    .app-header .theme-toggle,
+    .app-header .logout,
+    .app-header .logout button,
+    .app-header .quit {
+        width: 100%;
+        min-width: 0;
+    }
+
+    main,
+    .shell-content main:has(.dashboard-page),
+    .shell-content main:has(.chat-page),
+    .shell-content main:has(.fxp-page),
+    .shell-content main:has(.pre-grid),
+    .shell-content main:has(.fill-panel) {
+        padding: 14px 10px 18px;
+    }
+
+    .page-head {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .page-head h1 {
+        min-width: 0;
+    }
+
+    .page-head > .btn,
+    .page-head > .head-actions,
+    .page-head > .head-actions > .btn {
+        width: 100%;
+    }
+
+    .panel,
+    .form,
+    .card,
+    .server-panel,
+    .import-panel {
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: hidden;
+    }
+
+    .server-panel {
+        padding: 12px;
+    }
+
+    .server-panel > table.grid {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+
+    .server-panel > table.grid thead {
+        display: none;
+    }
+
+    .server-panel > table.grid tbody,
+    .server-panel > table.grid tr,
+    .server-panel > table.grid td {
+        display: block;
+        width: 100%;
+    }
+
+    .server-panel > table.grid tr {
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(0, 0, 0, .08);
+    }
+
+    .server-panel > table.grid tr + tr {
+        margin-top: 10px;
+    }
+
+    .server-panel > table.grid td {
+        padding: 6px 0;
+        border-bottom: 0;
+    }
+
+    .server-panel > table.grid td::before {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: .8px;
+        text-transform: uppercase;
+    }
+
+    .server-panel > table.grid td:nth-child(1)::before { content: "ID"; }
+    .server-panel > table.grid td:nth-child(2)::before { content: "Name"; }
+    .server-panel > table.grid td:nth-child(3)::before { content: "Host"; }
+    .server-panel > table.grid td:nth-child(4)::before { content: "Port"; }
+    .server-panel > table.grid td:nth-child(5)::before { content: "Password"; }
+    .server-panel > table.grid td:nth-child(6)::before { content: "Profile"; }
+
+    .server-panel > table.grid td.right {
+        text-align: left;
+    }
+
+    .server-panel > table.grid td.right .btn,
+    .server-panel .form-actions .btn {
+        width: 100%;
+    }
+
+    .server-panel > table.grid input,
+    .server-panel > table.grid input.w-xs {
+        width: 100%;
+    }
+
+    .import-toolbar,
+    .import-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .import-toolbar > *,
+    .import-actions > * {
+        width: 100%;
+    }
+
+    .import-panel .import-table {
+        min-width: 560px;
+    }
+
+    .dashboard-stats,
+    .dashboard-shortcuts,
+    .settings-grid,
+    .card-grid,
+    .cbftp-edit-grid,
+    .editor-with-aside,
+    .sections-layout,
+    .rules-grid,
+    .pre-sites-editor {
+        grid-template-columns: 1fr !important;
+    }
+
+    .toolbar,
+    .head-actions,
+    .form-actions,
+    .row-actions,
+    .card-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .toolbar > *,
+    .head-actions > *,
+    .form-actions > *,
+    .row-actions > *,
+    .card-actions > * {
+        width: 100%;
+        min-width: 0;
+    }
+
+    table.grid:not(.fxp-table):not(.import-table) {
+        min-width: 0;
+    }
+
+    .tabs,
+    .site-tabs,
+    .channel-tabs {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+
+    .chat-panel,
+    .fxp-page,
+    .pre-page,
+    .logs-page,
+    .history-page,
+    .skips-page {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .doc-page,
+    .doc-grid,
+    .doc-hero,
+    .doc-section,
+    .doc-card,
+    .timeline-item {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .doc-grid,
+    .doc-grid.compact {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .doc-page pre.code {
+        max-width: 100%;
+        min-width: 0;
+    }
+}
+
+html[data-theme="light"] .mobile-menu-button {
+    background: rgba(13, 148, 136, .08);
+    border-color: rgba(13, 148, 136, .26);
+    color: #0f2b3c;
+}
+
+html[data-theme="light"] .mobile-menu-toggle:checked + .mobile-menu-button {
+    background: rgba(13, 148, 136, .15);
+    border-color: rgba(13, 148, 136, .42);
+}
+
+@media (max-width: 760px) {
+    .dashboard-shortcuts .card-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
+        gap: 7px;
+    }
+
+    .dashboard-shortcuts .btn {
+        justify-content: center;
+        min-width: 0;
+        width: 100%;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .dashboard-shortcuts .btn span {
+        display: none;
+    }
+
+    .sites-table td.site-actions {
+        white-space: normal;
+    }
+
+    .sites-table td.site-actions .btn {
+        display: flex;
+        width: 30px;
+        min-width: 30px;
+        height: 30px;
+        min-height: 30px;
+        padding: 0;
+        margin: 0 0 5px auto;
+        justify-content: center;
+    }
+
+    .sites-table td.site-actions .btn:last-child {
+        margin-bottom: 0;
+    }
+
+    .sites-table td.site-actions .btn span {
+        display: none;
+    }
 }

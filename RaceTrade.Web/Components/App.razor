@@ -27,6 +27,14 @@
                 document.documentElement.setAttribute('data-bs-theme', next);
             }
         };
+
+        document.addEventListener('click', function (event) {
+            const link = event.target.closest('.sidebar-scroll a.nav-item');
+            if (!link) return;
+
+            const toggle = document.getElementById('mobile-menu-toggle');
+            if (toggle) toggle.checked = false;
+        });
     </script>
     <script src="_framework/blazor.web.js"></script>
 </body>

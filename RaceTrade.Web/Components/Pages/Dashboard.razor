@@ -5,13 +5,14 @@
 
 <PageTitle>Dashboard - RaceTrade</PageTitle>
 
-<div class="page-head">
-    <h1><Icon Name="dashboard" Size="18" />Dashboard</h1>
-</div>
+<div class="dashboard-page">
+    <div class="page-head dashboard-head">
+        <h1><Icon Name="dashboard" Size="18" />Dashboard</h1>
+    </div>
 
 @* Stat tiles first, then the action cards that mirror the WinForms dashboard
    (CBFTP SERVERS / SITES / PREBOTS / LOGS / TOOLS). *@
-<div class="card-grid">
+<div class="card-grid dashboard-stats">
     <div class="card">
         <div class="card-title">RACES SEEN</div>
         <div class="stat"><span class="stat-value">@_races</span><span class="stat-label">detected</span></div>
@@ -34,8 +35,8 @@
     </div>
 </div>
 
-<h2>SHORTCUTS</h2>
-<div class="card-grid">
+<h2 class="dashboard-section-title">SHORTCUTS</h2>
+<div class="card-grid dashboard-shortcuts">
     <div class="card">
         <div class="card-title">CBFTP SERVERS</div>
         <div class="card-actions">
@@ -45,7 +46,7 @@
     <div class="card">
         <div class="card-title">SITES</div>
         <div class="card-actions">
-            <a class="btn primary" href="sites/new">Add site</a>
+            <a class="btn primary" href="sites/new"><Icon Name="plus" Size="13" /><span>Add site</span></a>
             <a class="btn" href="sites"><Icon Name="folder" Size="13" /><span>Manage</span></a>
             <a class="btn" href="cbftp-site"><Icon Name="servers" Size="13" /><span>CBFTP site</span></a>
         </div>
@@ -57,7 +58,7 @@
             <a class="btn" href="prebots"><Icon Name="prebots" Size="13" /><span>Manage prebots</span></a>
         </div>
     </div>
-    <div class="card">
+    <div class="card dashboard-tools-card">
         <div class="card-title">TOOLS</div>
         <div class="card-actions">
             <a class="btn" href="test"><Icon Name="test" Size="13" /><span>Test release</span></a>
@@ -68,73 +69,78 @@
     </div>
 </div>
 
-<h2>LATEST ACTIVITY</h2>
-<div class="panel">
-    @if (_recent.Count == 0)
-    {
-        <div class="empty">
-            No engine activity yet. Press <strong>Start</strong> in the sidebar once the
-            engine is wired up.
-        </div>
-    }
-    else
-    {
-        <table class="grid logs">
-            <tbody>
-                @foreach (var e in _recent)
-                {
-                    <tr class="lvl-@e.Level.ToString().ToLowerInvariant()">
-                        <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
-                        <td class="ch">@e.Channel</td>
-                        <td class="site">@e.Site</td>
-                        <td class="msg">@e.Message</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
+<h2 class="dashboard-section-title">LATEST ACTIVITY</h2>
+<div class="panel dashboard-activity">
+    <div class="dashboard-scroll">
+        @if (_recent.Count == 0)
+        {
+            <div class="empty">
+                No engine activity yet. Press <strong>Start</strong> in the sidebar once the
+                engine is wired up.
+            </div>
+        }
+        else
+        {
+            <table class="grid logs">
+                <tbody>
+                    @foreach (var e in _recent)
+                    {
+                        <tr class="lvl-@e.Level.ToString().ToLowerInvariant()">
+                            <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
+                            <td class="ch">@e.Channel</td>
+                            <td class="site">@e.Site</td>
+                            <td class="msg">@e.Message</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
 </div>
 
-<h2>RELEASE HISTORY</h2>
-<div class="panel">
+<h2 class="dashboard-section-title">RELEASE HISTORY</h2>
+<div class="panel dashboard-history">
     <div class="toolbar">
         <span class="hint">@_historyStats.UniqueReleases release(s), @_historyStats.Events race event(s) stored</span>
         <span class="spacer"></span>
         <a class="btn" href="history"><Icon Name="logs" Size="13" /><span>Full history</span></a>
     </div>
 
-    @if (_releaseHistory.Count == 0)
-    {
-        <div class="empty">No releases seen yet.</div>
-    }
-    else
-    {
-        <table class="grid history">
-            <thead>
-                <tr>
-                    <th>LAST SEEN</th>
-                    <th>STATUS</th>
-                    <th>SITE</th>
-                    <th>SECTION</th>
-                    <th>RELEASE</th>
-                    <th>DETAIL</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var e in _releaseHistory)
-                {
+    <div class="dashboard-scroll dashboard-history-scroll">
+        @if (_releaseHistory.Count == 0)
+        {
+            <div class="empty">No releases seen yet.</div>
+        }
+        else
+        {
+            <table class="grid history">
+                <thead>
                     <tr>
-                        <td class="ts">@e.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td><span class="@StatusClass(e.Status)">@e.Status</span></td>
-                        <td class="site">@e.Site</td>
-                        <td>@e.Section</td>
-                        <td class="release-name">@e.Release</td>
-                        <td class="dim">@HistoryDetail(e)</td>
+                        <th>LAST SEEN</th>
+                        <th>STATUS</th>
+                        <th>SITE</th>
+                        <th>SECTION</th>
+                        <th>RELEASE</th>
+                        <th>DETAIL</th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    }
+                </thead>
+                <tbody>
+                    @foreach (var e in _releaseHistory)
+                    {
+                        <tr>
+                            <td class="ts">@e.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td><span class="@StatusClass(e.Status)">@e.Status</span></td>
+                            <td class="site">@e.Site</td>
+                            <td>@e.Section</td>
+                            <td class="release-name">@e.Release</td>
+                            <td class="dim">@HistoryDetail(e)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
 </div>
 
 @code {

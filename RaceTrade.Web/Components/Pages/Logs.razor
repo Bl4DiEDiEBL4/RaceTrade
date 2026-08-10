@@ -11,7 +11,7 @@
 @* The WinForms build had separate docked log windows (App / IRC / Race / Cbftp).
    Here it is one stream with a channel filter, which keeps a single scrollback and
    lets you correlate an announce with the race it triggered. *@
-<div class="panel">
+<div class="panel fill-panel">
     <div class="toolbar">
         <select @bind="_channel" @bind:after="Refresh">
             <option value="">All channels</option>
