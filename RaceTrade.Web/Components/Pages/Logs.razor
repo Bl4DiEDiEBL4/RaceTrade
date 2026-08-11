@@ -13,7 +13,7 @@
    lets you correlate an announce with the race it triggered. *@
 <div class="panel fill-panel">
     <div class="toolbar">
-        <select @bind="_channel" @bind:after="Refresh">
+        <select @bind="_channel" @bind:after="FilterChanged">
             <option value="">All channels</option>
             @foreach (var c in Enum.GetValues<LogChannel>())
             {
@@ -21,7 +21,7 @@
             }
         </select>
 
-        <select @bind="_minLevel" @bind:after="Refresh">
+        <select @bind="_minLevel" @bind:after="FilterChanged">
             <option value="">All levels</option>
             @foreach (var l in Enum.GetValues<LogLevel>())
             {
@@ -32,7 +32,19 @@
         <label class="chk"><input type="checkbox" @bind="_follow" /> Live</label>
 
         <span class="spacer"></span>
-        <span class="hint">@_entries.Count shown</span>
+        <select class="page-size" @bind="_pageSize" @bind:after="PageSizeChanged">
+            <option value="25">25 lines</option>
+            <option value="50">50 lines</option>
+            <option value="100">100 lines</option>
+            <option value="200">200 lines</option>
+        </select>
+        <div class="pager">
+            <button type="button" class="btn sm" @onclick="NewestPage" disabled="@(_page <= 1)">Newest</button>
+            <button type="button" class="btn sm" @onclick="PreviousPage" disabled="@(_page <= 1)">Prev</button>
+            <span class="hint">@PageLabel</span>
+            <button type="button" class="btn sm" @onclick="NextPage" disabled="@(_page >= TotalPages)">Next</button>
+            <button type="button" class="btn sm" @onclick="OldestPage" disabled="@(_page >= TotalPages)">Oldest</button>
+        </div>
     </div>
 
     @if (_entries.Count == 0)
@@ -56,7 +68,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var e in _entries)
+                @foreach (var e in PagedEntries)
                 {
                     <tr class="lvl-@e.Level.ToString().ToLowerInvariant()">
                         <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
@@ -72,6 +84,15 @@
                 }
             </tbody>
         </table>
+        <div class="table-footer">
+            <span class="hint">@PageLabel</span>
+            <div class="pager">
+                <button type="button" class="btn sm" @onclick="NewestPage" disabled="@(_page <= 1)">Newest</button>
+                <button type="button" class="btn sm" @onclick="PreviousPage" disabled="@(_page <= 1)">Prev</button>
+                <button type="button" class="btn sm" @onclick="NextPage" disabled="@(_page >= TotalPages)">Next</button>
+                <button type="button" class="btn sm" @onclick="OldestPage" disabled="@(_page >= TotalPages)">Oldest</button>
+            </div>
+        </div>
     }
 </div>
 
@@ -80,6 +101,23 @@
     private string _channel = "";
     private string _minLevel = "";
     private bool _follow = true;
+    private int _page = 1;
+    private int _pageSize = 50;
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_entries.Count / (double)_pageSize));
+    private IEnumerable<LogEvent> PagedEntries => _entries.Skip((_page - 1) * _pageSize).Take(_pageSize);
+
+    private string PageLabel
+    {
+        get
+        {
+            if (_entries.Count == 0) return "0 shown";
+
+            var first = ((_page - 1) * _pageSize) + 1;
+            var last = Math.Min(_entries.Count, _page * _pageSize);
+            return $"{first}-{last} of {_entries.Count}";
+        }
+    }
 
     protected override void OnInitialized()
     {
@@ -100,7 +138,53 @@
     {
         LogChannel? ch = string.IsNullOrEmpty(_channel) ? null : Enum.Parse<LogChannel>(_channel);
         LogLevel? lvl = string.IsNullOrEmpty(_minLevel) ? null : Enum.Parse<LogLevel>(_minLevel);
-        _entries = Sink.Snapshot(300, ch, lvl);
+        _entries = Sink.Snapshot(1000, ch, lvl);
+        ClampPage();
+    }
+
+    private void FilterChanged()
+    {
+        _page = 1;
+        Refresh();
+    }
+
+    private void PageSizeChanged()
+    {
+        _page = 1;
+        Refresh();
+    }
+
+    private void NewestPage()
+    {
+        _page = 1;
+        Refresh();
+    }
+
+    private void PreviousPage()
+    {
+        _follow = false;
+        _page = Math.Max(1, _page - 1);
+        Refresh();
+    }
+
+    private void NextPage()
+    {
+        _follow = false;
+        _page = Math.Min(TotalPages, _page + 1);
+        Refresh();
+    }
+
+    private void OldestPage()
+    {
+        _follow = false;
+        _page = TotalPages;
+        Refresh();
+    }
+
+    private void ClampPage()
+    {
+        if (_page < 1) _page = 1;
+        if (_page > TotalPages) _page = TotalPages;
     }
 
     private static string FormatSite(string? site) =>

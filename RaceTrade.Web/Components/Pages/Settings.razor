@@ -461,6 +461,17 @@ sudo systemctl enable --now racetrade</pre>
 
     private List<(string Name, int Count)> _dataCounts = new();
 
+    private static readonly (string Name, string[] Patterns)[] DataCountFolders =
+    {
+        ("sites", new[] { "*.json" }),
+        ("cbftp", new[] { "*.json" }),
+        ("pre_bots", new[] { "*.json" }),
+        ("sections", new[] { "*.json" }),
+        ("settings", new[] { "*.json" }),
+        ("db", new[] { "*.db", "*.sqlite", "*.sqlite3" }),
+        ("history", new[] { "*.json" })
+    };
+
     protected override void OnInitialized()
     {
         LoadEngine();
@@ -472,9 +483,31 @@ sudo systemctl enable --now racetrade</pre>
 
     private void CountData()
     {
-        _dataCounts = new[] { "sites", "cbftp", "pre_bots", "sections", "settings", "db", "history" }
-            .Select(d => (d, Directory.Exists(d) ? Directory.GetFiles(d).Length : 0))
+        _dataCounts = DataCountFolders
+            .Select(d => (d.Name, CountDataFiles(d.Name, d.Patterns)))
             .ToList();
+    }
+
+    private static int CountDataFiles(string directory, IEnumerable<string> patterns)
+    {
+        if (!Directory.Exists(directory)) return 0;
+
+        return patterns
+            .SelectMany(pattern => Directory.GetFiles(directory, pattern, SearchOption.TopDirectoryOnly))
+            .Where(IsCountableDataFile)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+    }
+
+    private static bool IsCountableDataFile(string path)
+    {
+        var name = Path.GetFileName(path);
+        return !name.EndsWith(".bak", StringComparison.OrdinalIgnoreCase)
+               && !name.EndsWith(".backup", StringComparison.OrdinalIgnoreCase)
+               && !name.EndsWith(".old", StringComparison.OrdinalIgnoreCase)
+               && !name.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)
+               && !name.EndsWith(".temp", StringComparison.OrdinalIgnoreCase)
+               && !name.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase);
     }
 
     private void ApplyEngine()

@@ -393,6 +393,18 @@ h2 { font-size: 12px; letter-spacing: 1.2px; color: var(--muted); margin: 24px 0
     overflow: auto;
 }
 
+.shell-content main:has(.panel.form.fill-tab) {
+    height: calc(100dvh - 54px);
+    max-height: calc(100dvh - 54px);
+    padding-bottom: 14px;
+    overflow: hidden;
+}
+
+.shell-content main:has(.panel.form.fill-tab) > .page-head,
+.shell-content main:has(.panel.form.fill-tab) > .tabs {
+    flex: 0 0 auto;
+}
+
 .fill-panel {
     flex: 1 1 auto;
     min-height: 0;
@@ -508,6 +520,32 @@ h2 { font-size: 12px; letter-spacing: 1.2px; color: var(--muted); margin: 24px 0
     padding: 10px 13px;
     border-bottom: 1px solid var(--line);
     flex-wrap: wrap;
+}
+
+.page-size {
+    width: auto;
+    min-width: 92px;
+}
+
+.pager {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.pager .hint {
+    min-width: 92px;
+    text-align: center;
+}
+
+.table-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 13px;
+    border-top: 1px solid var(--line);
 }
 
 select, input[type=text], input[type=password], textarea {
@@ -985,7 +1023,6 @@ tr.lvl-debug td { color: var(--dim); }
 .chan-table .w-act, table.grid .w-act { width: 1%; }
 .btn.sm { padding: 3px 8px; line-height: 1; font-size: 13px; }
 
-.filter-toggles { display: flex; gap: 16px; margin: 12px 0 4px; }
 
 .subcard.nested { background: #151a23; margin-top: 10px; }
 .subcard.nested .card-title { margin-bottom: 10px; }
@@ -2937,60 +2974,206 @@ pre.code {
 
 /* ---------- site editor sections ---------- */
 
+/* One line: title, hint, button. It used to be a two-line block that cost ~55px of a
+   viewport this page is trying to fit into. */
 .sections-topbar {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 14px;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
 }
 
 .sections-topbar h2 {
-    margin: 0 0 4px;
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.sections-topbar .fh {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sections-topbar .btn {
+    flex: 0 0 auto;
+    align-self: center;
+}
+
+/* The tab fills the viewport exactly - no hard-coded offset. main is already a flex
+   column (see .fill-panel on the Logs page), so the panel claims the leftover height and
+   the shell claims what is left inside it. The page never scrolls; the rail and the
+   editor scroll on their own. */
+.panel.form.fill-tab {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    padding: 12px 18px;
 }
 
 .sections-shell {
     display: grid;
-    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
-    gap: 16px;
-    align-items: start;
+    grid-template-columns: minmax(220px, 285px) minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Column flow so the mappings/rules row can claim every pixel the hero does not use,
+   instead of leaving dead space at the bottom of the tab. */
+.section-editor {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    height: 100%;
+    overflow: hidden;
+    padding-right: 0;
+}
+
+.section-editor.lookup-open {
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+/* Short windows: let the page scroll again rather than squeeze into nothing. */
+@media (max-height: 700px) {
+    .panel.form.fill-tab {
+        display: block;
+        flex: 0 0 auto;
+        overflow: visible;
+    }
+
+    .sections-shell {
+        height: auto;
+        overflow: visible;
+    }
+
+    .section-list-scroll {
+        max-height: 320px;
+    }
+
+    .section-editor {
+        display: block;
+        height: auto;
+        overflow: visible;
+    }
 }
 
 .section-list {
-    max-height: min(68vh, 720px);
-    overflow: auto;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
     padding: 8px;
     border: 1px solid rgba(255, 255, 255, .07);
     border-radius: 6px;
     background: rgba(8, 10, 15, .20);
 }
 
+/* The scroller sits INSIDE the rail so the filter box and the counter stay put while
+   the list moves. */
+.section-list-scroll {
+    min-height: 0;
+    overflow: auto;
+    padding-right: 2px;
+}
+
+.section-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: rgba(8, 10, 15, .35);
+    color: var(--dim);
+}
+
+.section-search input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    font-size: 12px;
+}
+
+.section-search input:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+.section-search-clear {
+    border: 0;
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+}
+
+.section-search-clear:hover {
+    color: var(--fg);
+}
+
 .section-list-head {
     display: flex;
     justify-content: space-between;
     gap: 10px;
-    padding: 4px 5px 9px;
+    padding: 9px 5px 7px;
     color: var(--dim);
-    font-size: 11px;
+    font-size: 10.5px;
     text-transform: uppercase;
     letter-spacing: .8px;
 }
 
 .section-row {
     width: 100%;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-    min-height: 54px;
-    margin-bottom: 6px;
-    padding: 10px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 2px;
+    padding: 6px 9px;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: 5px;
     background: transparent;
     color: var(--fg);
     text-align: left;
     cursor: pointer;
+}
+
+/* A section that cannot race is dimmed rather than labelled: the dot already says it,
+   and 44 "Off" pills is just noise. */
+.section-row.muted .section-row-main strong {
+    color: var(--muted);
+}
+
+.section-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    cursor: pointer;
+    background: rgba(255, 255, 255, .14);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, .03);
+}
+
+.section-dot.on {
+    background: var(--ok, #2ac77a);
+    box-shadow: 0 0 0 3px rgba(42, 199, 122, .14);
+}
+
+.section-dot:hover {
+    box-shadow: 0 0 0 3px rgba(17, 215, 202, .28);
 }
 
 .section-row:hover {
@@ -3036,8 +3219,7 @@ pre.code {
 
 .section-badges {
     display: flex;
-    align-items: flex-end;
-    flex-direction: column;
+    align-items: center;
     gap: 4px;
     flex: 0 0 auto;
 }
@@ -3083,11 +3265,6 @@ pre.code {
     outline: none;
 }
 
-.section-editor {
-    min-width: 0;
-}
-
-.section-editor-head,
 .section-block-head {
     display: flex;
     align-items: flex-start;
@@ -3095,55 +3272,213 @@ pre.code {
     gap: 14px;
 }
 
-.section-editor-head {
-    padding-bottom: 14px;
-    margin-bottom: 14px;
-    border-bottom: 1px solid rgba(255, 255, 255, .06);
-}
-
-.section-editor-head h2,
 .section-block-head h2 {
     margin: 0 0 4px;
 }
 
-.section-core-grid {
-    display: grid;
-    grid-template-columns: minmax(180px, 1fr) minmax(130px, 180px) minmax(220px, 1.1fr);
-    gap: 12px;
-    margin-bottom: 18px;
-}
+/* ---- selected-section header ---------------------------------------------- */
 
-.section-core-grid label {
-    display: grid;
-    gap: 6px;
-    min-width: 0;
-    color: var(--muted);
-    font-size: 12px;
-}
-
-.section-enable {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    padding: 9px 10px;
+.section-hero {
+    position: relative;
+    padding: 10px 12px 8px 16px;
+    margin-bottom: 0;
+    overflow: hidden;
     border: 1px solid rgba(255, 255, 255, .07);
-    border-radius: 5px;
-    background: rgba(8, 10, 15, .18);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(8, 10, 15, .18));
 }
 
-.section-enable span {
+/* Racing state as a colour bar down the left edge - visible before you read a word. */
+.section-hero::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 4px;
+    background: #48566b;
+}
+
+.section-hero.racing::before {
+    background: var(--ok, #2ac77a);
+}
+
+.hero-top {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+}
+
+.hero-name {
+    display: grid;
+    gap: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.hero-name .eyebrow {
+    margin-bottom: 0;
+}
+
+.hero-name input {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: .5px;
+}
+
+.hero-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* Both controls are labelled cards, so the on/off switch reads as a setting with a
+   name and a consequence rather than a bare toggle. */
+.control-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 8px 11px;
+    border: 1px solid rgba(255, 255, 255, .07);
+    border-radius: 6px;
+    background: rgba(8, 10, 15, .28);
+}
+
+.control-card > input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.control-text {
     display: grid;
     gap: 2px;
+    min-width: 0;
 }
 
-.section-enable strong {
+.control-text strong {
     color: var(--fg);
     font-size: 12.5px;
 }
 
-.section-enable em {
+.control-text em {
     color: var(--muted);
+    font-size: 11px;
     font-style: normal;
+}
+
+.toggle-card {
+    cursor: pointer;
+    user-select: none;
+}
+
+.toggle-card:hover {
+    border-color: rgba(17, 215, 202, .35);
+}
+
+.toggle-card.on {
+    border-color: rgba(42, 199, 122, .32);
+    background: rgba(42, 199, 122, .09);
+}
+
+.toggle-card.on .control-text strong {
+    color: #8ff3bf;
+}
+
+.pretime-input {
+    width: 84px;
+    min-width: 0;
+    margin-left: auto;
+    text-align: right;
+}
+
+/* .rules-head span is a descendant selector and would otherwise win over the badge. */
+.count-badge,
+.rules-head strong .count-badge {
+    display: inline-block;
+    min-width: 18px;
+    margin-left: 5px;
+    padding: 1px 5px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, .07);
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 700;
+    text-align: center;
+    vertical-align: middle;
+}
+
+/* Real switch, not a checkbox: this is the one control on the page that decides whether
+   the section does anything at all, so it should not look like the lookup toggles. */
+.switch-track {
+    position: relative;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 17px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, .12);
+    transition: background .12s ease;
+}
+
+.switch-track::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: #8b95a6;
+    transition: transform .12s ease, background .12s ease;
+}
+
+.toggle-card.on .switch-track {
+    background: rgba(42, 199, 122, .45);
+}
+
+.toggle-card.on .switch-track::after {
+    background: #eafff3;
+    transform: translateX(15px);
+}
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+}
+
+.section-stats {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+    padding-top: 7px;
+    border-top: 1px solid rgba(255, 255, 255, .06);
+    color: var(--muted);
     font-size: 11.5px;
+}
+
+.section-stats b {
+    color: var(--fg);
+    font-weight: 700;
+}
+
+.section-stats .on {
+    color: #9cecf0;
+}
+
+.section-stats .warn {
+    color: var(--warn, #f5c05a);
 }
 
 .section-block {
@@ -3152,23 +3487,10 @@ pre.code {
     border-top: 1px solid rgba(255, 255, 255, .06);
 }
 
-.mapping-table {
-    margin-top: 10px;
-}
-
-.mapping-rules-row td {
-    padding-top: 0;
-    background: rgba(8, 10, 15, .14);
-}
-
-.mapping-rules-row:hover td {
-    background: rgba(8, 10, 15, .18) !important;
-}
-
 .rules-box {
     display: grid;
-    gap: 9px;
-    padding: 10px;
+    gap: 8px;
+    padding: 9px;
     border: 1px solid rgba(255, 255, 255, .06);
     border-radius: 5px;
     background: rgba(8, 10, 15, .18);
@@ -3275,20 +3597,371 @@ pre.code {
 }
 
 .empty.compact {
-    padding: 16px 10px;
+    padding: 10px;
     text-align: left;
 }
 
-@media (max-width: 980px) {
-    .sections-shell {
+/* Mappings | section rules, side by side and equal width, equal height. */
+.hidden {
+    display: none !important;
+}
+
+/* Hero footer: counters on the left, lookup toggles on the right. */
+.hero-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 10px;
+    padding-top: 9px;
+    border-top: 1px solid rgba(255, 255, 255, .06);
+}
+
+.hero-footer .section-stats {
+    margin: 0;
+    padding: 0;
+    border-top: 0;
+}
+
+.lookup-inline {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 11.5px;
+}
+
+.lookup-inline > span {
+    font-weight: 700;
+}
+
+.lookup-inline .chk {
+    margin: 0;
+}
+
+.section-lookup-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 10px;
+    max-height: min(42vh, 460px);
+    margin-top: 8px;
+    padding-top: 8px;
+    overflow-y: auto;
+    border-top: 1px solid rgba(255, 255, 255, .06);
+}
+
+.section-editor.lookup-open .section-lookup-panel {
+    max-height: none;
+    overflow: visible;
+}
+
+.section-lookup-panel .lookup-card {
+    min-width: 0;
+    margin: 0;
+}
+
+.section-lookup-panel .lookup-card .form-grid {
+    grid-template-columns: 130px minmax(0, 1fr);
+    gap: 8px 12px;
+}
+
+.section-lookup-panel .check-chip-list {
+    max-height: none;
+    overflow-y: visible;
+}
+
+.section-lookup-panel .check-chip-list.compact {
+    max-height: none;
+}
+
+/* Flex children default to shrink:1. Without these the hero and the expanded IMDB /
+   TVMaze card got squeezed and their contents spilled over each other; only the
+   mappings/rules row is allowed to flex. */
+.section-editor > .section-hero,
+.section-editor > .section-block {
+    flex: 0 0 auto;
+}
+
+.section-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin-top: 10px;
+    overflow: hidden;
+}
+
+.section-columns > .section-block {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    margin-top: 0;
+    overflow: hidden;
+}
+
+/* The list is what grows and, if it has to, scrolls - the help line under it stays put. */
+.section-columns .mapping-cards,
+.section-columns .section-rules-box {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.section-columns .mapping-cards {
+    align-content: start;
+    overflow-y: auto;
+}
+
+.section-columns .section-rules-box {
+    align-content: start;
+    overflow-y: auto;
+}
+
+.section-columns .mapping-card {
+    min-height: max-content;
+    overflow: visible;
+}
+
+.section-columns .mapping-rules-box {
+    min-height: 108px;
+}
+
+.section-columns .section-rules-box {
+    min-height: 0;
+}
+
+.section-columns .trigger-help {
+    flex: 0 0 auto;
+}
+
+.section-columns > .section-block > .empty.compact {
+    flex: 1 1 auto;
+}
+
+.section-editor.lookup-open .section-columns {
+    flex: 0 0 auto;
+    min-height: clamp(380px, 46vh, 560px);
+    overflow: visible;
+}
+
+.section-editor.lookup-open .section-columns > .section-block {
+    min-height: clamp(340px, 42vh, 520px);
+}
+
+@media (max-width: 1400px) {
+    .section-columns {
         grid-template-columns: 1fr;
     }
 
+    .section-columns > .section-block + .section-block {
+        margin-top: 10px;
+    }
+}
+
+.section-block {
+    padding: 11px 13px;
+    margin-top: 10px;
+    border: 1px solid rgba(255, 255, 255, .07);
+    border-radius: 7px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .028), rgba(8, 10, 15, .16));
+}
+
+.eyebrow {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+}
+
+.mapping-card-grid label {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.mapping-card-grid label > span {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    color: var(--muted);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* Hint lives in the label instead of the placeholder: the placeholder disappears the
+   moment you type, which is exactly when "empty = fallback" stops being readable. */
+.mapping-card-grid label > span em {
+    overflow: hidden;
+    color: var(--dim);
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 400;
+    text-overflow: ellipsis;
+}
+
+.mapping-cards {
+    display: grid;
+    grid-auto-rows: max-content;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.mapping-card {
+    display: grid;
+    gap: 7px;
+    padding: 9px;
+    border: 1px solid rgba(255, 255, 255, .06);
+    border-radius: 6px;
+    background: rgba(8, 10, 15, .20);
+}
+
+.mapping-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mapping-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: rgba(17, 215, 202, .12);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.mapping-title {
+    overflow: hidden;
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mapping-card-head .spacer {
+    flex: 1 1 auto;
+}
+
+.mapping-remove {
+    min-width: 28px;
+    height: 26px;
+    padding: 0;
+}
+
+/* Collapsed by default: it is reference material, not something you read twice. */
+.trigger-help {
+    margin-top: 8px;
+    padding: 7px 10px;
+    border: 1px solid rgba(255, 255, 255, .06);
+    border-radius: 6px;
+    background: rgba(8, 10, 15, .18);
+}
+
+.trigger-help > summary {
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .3px;
+    list-style: none;
+}
+
+.trigger-help > summary::-webkit-details-marker {
+    display: none;
+}
+
+.trigger-help > summary::before {
+    content: "?";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    margin-right: 7px;
+    border-radius: 50%;
+    background: rgba(17, 215, 202, .14);
+    font-size: 10px;
+    vertical-align: -2px;
+}
+
+.trigger-help[open] > summary {
+    margin-bottom: 10px;
+}
+
+.trigger-help .regex-example-list + .regex-example-list {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, .06);
+}
+
+.trigger-help .fh {
+    margin: 10px 0 0;
+}
+
+input.mono {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 12.5px;
+}
+
+.mapping-card-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    gap: 10px;
+    align-items: end;
+}
+
+.mapping-card-grid input {
+    width: 100%;
+    min-width: 0;
+}
+
+.mapping-rules-box {
+    background: rgba(255, 255, 255, .018);
+}
+
+@media (max-width: 980px) {
+    .panel.form.fill-tab {
+        display: block;
+        flex: 0 0 auto;
+        overflow: visible;
+    }
+
+    .sections-shell {
+        grid-template-columns: 1fr;
+        height: auto;
+        overflow: visible;
+    }
+
     .section-list {
+        height: auto;
+    }
+
+    .section-list-scroll {
         max-height: 300px;
     }
 
-    .section-core-grid {
+    .section-editor {
+        display: block;
+        height: auto;
+        overflow: visible;
+    }
+
+    .hero-controls,
+    .mapping-card-grid {
         grid-template-columns: 1fr;
     }
 }
@@ -3326,11 +3999,18 @@ pre.code {
 
 .doc-hero h2,
 .doc-section h2,
+.doc-section h3,
 .doc-card h3,
 .timeline-version {
     display: block;
     margin: 0;
     color: var(--fg);
+}
+
+.doc-section h3 {
+    margin-top: 4px;
+    font-size: 13px;
+    letter-spacing: .4px;
 }
 
 .doc-hero h2 {
@@ -3890,6 +4570,69 @@ html[data-theme="light"] .section-row.active {
 html[data-theme="light"] .section-row-main span,
 html[data-theme="light"] .pre-grid .form-grid label {
     color: #334155;
+}
+
+html[data-theme="light"] .section-hero,
+html[data-theme="light"] .section-block,
+html[data-theme="light"] .mapping-card,
+html[data-theme="light"] .rules-box {
+    background: #ffffff;
+    border-color: #cbd8e6;
+}
+
+html[data-theme="light"] .section-lookup-panel {
+    border-top-color: #dbe4ee;
+}
+
+html[data-theme="light"] .section-stats {
+    border-top-color: #dbe4ee;
+    color: #475569;
+}
+
+html[data-theme="light"] .section-stats .on {
+    color: #0a6f6a;
+}
+
+html[data-theme="light"] .section-search {
+    background: #ffffff;
+    border-color: #cbd8e6;
+}
+
+html[data-theme="light"] .section-dot {
+    background: #cbd5e1;
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, .04);
+}
+
+html[data-theme="light"] .control-card {
+    background: #f4f8fc;
+    border-color: #cbd8e6;
+}
+
+html[data-theme="light"] .switch-track {
+    background: #cbd5e1;
+}
+
+html[data-theme="light"] .toggle-card.on {
+    background: #d7f7e5;
+    border-color: #8adcad;
+}
+
+html[data-theme="light"] .toggle-card.on .control-text strong {
+    color: #087044;
+}
+
+html[data-theme="light"] .count-badge {
+    background: #e8eef6;
+    color: #475569;
+}
+
+html[data-theme="light"] .mapping-index {
+    background: #dff6f6;
+    color: #075e59;
+}
+
+html[data-theme="light"] .mapping-rules-box {
+    background: #f8fbfe;
 }
 
 html[data-theme="light"] .mini-pill {

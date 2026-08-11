@@ -203,15 +203,51 @@
             <li>A mapping with an empty trigger acts as the default/catch-all mapping; keep it after more specific mappings.</li>
             <li>The first mapping that is allowed by its trigger and rules becomes the CBFTP section for the race.</li>
         </ol>
-        <p>
-            Trigger regex may be plain regex such as <code>2160p|UHD|HEVC</code>, or delimited
-            as <code>/2160p|UHD|HEVC/i</code>. The <code>i</code> flag makes the trigger
-            case-insensitive. Use <code>.*</code> only as a deliberate catch-all.
-        </p>
-<pre class="code">IRC section: TV
-Mapping 1: CBFTP TV-2160P  Trigger: 2160p|UHD|HEVC
-Mapping 2: CBFTP TV-1080P  Trigger: 1080p|H264|x264
-Mapping 3: CBFTP TV        Trigger: empty fallback</pre>
+        <h3>Trigger regex</h3>
+        <ul class="doc-list">
+            <li>
+                It is tested against the <strong>release name only</strong>. Not the whole
+                announce line, not the section, not the group on its own.
+            </li>
+            <li>
+                It is a <strong>search, not a full match</strong>: the pattern only has to
+                occur somewhere in the name. <code>1080p</code> matches
+                <code>Some.Show.S01E01.1080p.WEB.H264-GRP</code>. You do not need
+                <code>.*</code> around it.
+            </li>
+            <li>
+                It is <strong>case sensitive</strong> by default. Write it as
+                <code>/1080p/i</code> to ignore case. The <code>/pattern/flags</code> form is
+                the only place where <code>/</code> is stripped; a bare pattern is used exactly
+                as typed.
+            </li>
+            <li>
+                Standard .NET regex syntax: <code>|</code> is OR, <code>\b</code> is a word
+                boundary, <code>\.</code> is a literal dot.
+            </li>
+            <li>
+                An <strong>empty</strong> trigger is the catch-all. Because mappings are
+                walked in order, an empty trigger anywhere but last makes every mapping under
+                it unreachable.
+            </li>
+            <li>
+                An <strong>invalid</strong> pattern is logged as an error and that mapping is
+                skipped, so the release quietly falls through to the next mapping.
+            </li>
+        </ul>
+<pre class="code">Release: Some.Show.S01E01.2160p.WEB.DV.HEVC-GRP
+IRC section: TV
+
+Mapping 1: CBFTP TV-2160P  Trigger: 2160p|UHD|HEVC   -> matches, race goes here
+Mapping 2: CBFTP TV-1080P  Trigger: /1080p|x264/i    -> not reached
+Mapping 3: CBFTP TV        Trigger: (empty)          -> not reached
+
+Useful patterns
+2160p|UHD|HEVC        one of these words appears
+/x265/i               x265 or X265 or x265 in any casing
+\bMULTi\b             MULTi as a whole word, not MULTiSUBS
+-(GRP1|GRP2)$         release from one of these groups
+FRENCH|GERMAN|ITA     foreign language releases</pre>
     </section>
 
     <section class="doc-section">
