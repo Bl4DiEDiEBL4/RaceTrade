@@ -208,7 +208,7 @@
     private static string FormatMessage(LogEvent e)
     {
         if (e.Channel == LogChannel.Race)
-            return "";
+            return IrcMarkup.ToHtml(e.Details ?? "");
 
         return IrcMarkup.ToHtml(e.Message);
     }

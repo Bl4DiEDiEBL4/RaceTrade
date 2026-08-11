@@ -9,6 +9,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -413,8 +414,10 @@ public class CbftpRacer
             long timeSpentSeconds = ReadLong(jobData, "time_spent_seconds", "timeSpentSeconds");
 
             stats.BytesTransferred = estimatedBytes;
-            stats.FilesTransferred = 0; // stock cbftp doesn't give per-job file count here
-            stats.FilesTotal = 0;
+            stats.FilesTotal = (int)ReadLong(jobData,
+                "files_total", "filesTotal", "file_count", "files", "files_count", "total_files");
+            stats.FilesTransferred = (int)ReadLong(jobData,
+                "files_progress", "files_transferred", "filesTransferred", "files_done", "filesDone", "done_files");
             stats.TimeElapsed = TimeSpan.FromSeconds(timeSpentSeconds);
 
             if (stats.TimeElapsed.TotalSeconds > 0 && stats.BytesTransferred > 0)
@@ -505,7 +508,8 @@ public class CbftpRacer
                         announceSite,   // origin/winner
                         targetSite: allSites,
                         quality: section,
-                        ircChannel: ircChannel
+                        ircChannel: ircChannel,
+                        details: BuildRaceJobDetails(stats)
                     );
                     break;
                 }
@@ -532,7 +536,8 @@ public class CbftpRacer
                         targetSite: allSites,
                         quality: section,
                         filterReason: reason,
-                        ircChannel: ircChannel
+                        ircChannel: ircChannel,
+                        details: BuildRaceJobDetails(stats)
                     );
                     break;
                 }
@@ -567,7 +572,37 @@ public class CbftpRacer
         if (stats.Subpaths?.Count > 0)
             parts.Add($"Subpaths: {string.Join(", ", stats.Subpaths)}");
 
+        var metrics = BuildJobMetrics(stats);
+
+        if (metrics.Count > 0)
+            parts.Add(string.Join(" | ", metrics));
+
+        return parts.Count == 0 ? prefix : $"{prefix} {string.Join(" | ", parts)}";
+    }
+
+    private static string BuildRaceJobDetails(CbftpJobStats stats)
+    {
+        var parts = new List<string>();
+
+        if (stats.Subpaths?.Count > 0)
+            parts.Add($"Subpaths: {string.Join(", ", stats.Subpaths)}");
+
+        parts.AddRange(BuildJobMetrics(stats));
+
+        return string.Join(" | ", parts);
+    }
+
+    private static List<string> BuildJobMetrics(CbftpJobStats stats)
+    {
         var metrics = new List<string>();
+
+        if (stats.FilesTotal > 0)
+        {
+            metrics.Add(stats.FilesTransferred > 0 && stats.FilesTransferred != stats.FilesTotal
+                ? $"Files: {stats.FilesTransferred}/{stats.FilesTotal}"
+                : $"Files: {stats.FilesTotal}");
+        }
+
         if (stats.BytesTransferred > 0)
             metrics.Add($"Size(est): {FormatSize(stats.BytesTransferred)}");
 
@@ -577,10 +612,7 @@ public class CbftpRacer
         if (stats.TimeElapsed.TotalSeconds > 0)
             metrics.Add($"Time: {stats.TimeElapsed:mm\\:ss}");
 
-        if (metrics.Count > 0)
-            parts.Add(string.Join(" | ", metrics));
-
-        return parts.Count == 0 ? prefix : $"{prefix} {string.Join(" | ", parts)}";
+        return metrics;
     }
 
     private static void PopulateJobDetails(JObject jobData, CbftpJobStats stats)
@@ -591,11 +623,37 @@ public class CbftpRacer
         stats.Subpaths = ReadStringList(jobData,
             "subpaths", "sub_paths", "paths", "path_groups", "file_subpaths", "fileSubpaths");
 
+        if (stats.FilesTotal <= 0)
+            stats.FilesTotal = InferFileCountFromSubpaths(stats.Subpaths);
+
+        if (stats.FilesTransferred <= 0 &&
+            stats.FilesTotal > 0 &&
+            stats.Status?.Equals("DONE", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            stats.FilesTransferred = stats.FilesTotal;
+        }
+
         if (TryReadApiSpeedMiBps(jobData, out var apiSpeed))
         {
             stats.AverageSpeed = apiSpeed;
             stats.SpeedFromApi = true;
         }
+    }
+
+    private static int InferFileCountFromSubpaths(IEnumerable<string> subpaths)
+    {
+        var total = 0;
+
+        foreach (var subpath in subpaths ?? Enumerable.Empty<string>())
+        {
+            foreach (Match match in Regex.Matches(subpath, @"(?<!\w)(\d+)\s*f\b", RegexOptions.IgnoreCase))
+            {
+                if (int.TryParse(match.Groups[1].Value, out var count))
+                    total += count;
+            }
+        }
+
+        return total;
     }
 
     private static string SpeedLabel(CbftpJobStats stats) =>

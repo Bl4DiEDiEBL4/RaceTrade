@@ -64,6 +64,9 @@ namespace RaceTrade.Engine.Logging
         /// </summary>
         public string Source { get; set; }
 
+        /// <summary>Extra structured detail for rows where the core columns already carry the main event.</summary>
+        public string Details { get; set; }
+
         public string Message { get; set; }
 
         public override string ToString() =>

@@ -43,7 +43,7 @@ public static class LogManager
     private static void Emit(LogLevel level, LogChannel channel, string message,
         string site = null, string release = null, string source = null,
         string status = null, string section = null, string targetSite = null,
-        string reason = null)
+        string reason = null, string details = null)
     {
         // Never let a broken sink take down the race path.
         try
@@ -59,7 +59,8 @@ public static class LogManager
                 Section = section,
                 TargetSite = targetSite,
                 Reason = reason,
-                Source = source
+                Source = source,
+                Details = details
             });
         }
         catch
@@ -115,7 +116,8 @@ public static class LogManager
 
     public static void LogRace(RaceStatus status, string releaseName, string site,
         string targetSite = null, long size = 0, string quality = null,
-        string filterReason = null, int? spreadJobId = null, string ircChannel = null)
+        string filterReason = null, int? spreadJobId = null, string ircChannel = null,
+        string details = null)
     {
         if (DisableRaceLog) return;
 
@@ -139,7 +141,8 @@ public static class LogManager
             status: statusText,
             section: quality,
             targetSite: targetSite,
-            reason: filterReason);
+            reason: filterReason,
+            details: details);
     }
 
     public static void LogIRC(IRCEventType eventType, string message, string channel = null,
