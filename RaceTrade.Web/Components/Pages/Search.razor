@@ -1,0 +1,420 @@
+@page "/search"
+@inject ReleaseSearchService ReleaseSearch
+
+<PageTitle>Search - RaceTrade</PageTitle>
+
+<div class="search-page">
+    <div class="page-head search-head">
+        <h1><Icon Name="search" Size="18" />Search</h1>
+    </div>
+
+    <div class="panel search-shell">
+        <div class="toolbar search-toolbar">
+            <label>CBFTP</label>
+            <select value="@_serverId" @onchange="OnServerChanged" disabled="@_busy">
+                @foreach (var server in _servers)
+                {
+                    <option value="@ServerKey(server)">@ServerLabel(server)</option>
+                }
+            </select>
+            <button class="btn" @onclick="LoadSitesAsync" disabled="@(_busy || SelectedServer() is null)">
+                <Icon Name="refresh" Size="13" />
+                <span>Load sites</span>
+            </button>
+            <input class="search-query"
+                   type="search"
+                   placeholder="Release name or wildcard"
+                   @bind="_query"
+                   @bind:event="oninput"
+                   @onkeydown="OnSearchKeyDown" />
+            <button class="btn primary" @onclick="RunSearchAsync" disabled="@(_busy || !CanSearch)">
+                <Icon Name="search" Size="13" />
+                <span>Search</span>
+            </button>
+        </div>
+
+        <div class="search-sites">
+            <div class="search-section-head">
+                <div>
+                    <div class="card-title">Sites</div>
+                    <div class="muted small">Uses raw CBFTP command <code>SITE SEARCH</code> on the selected sites.</div>
+                </div>
+                <div class="row-actions">
+                    <button class="btn compact" @onclick="SelectAllSites" disabled="@(_busy || _sites.Count == 0)">All</button>
+                    <button class="btn compact" @onclick="SelectNoSites" disabled="@(_busy || _sites.Count == 0)">None</button>
+                </div>
+            </div>
+
+            @if (_sites.Count == 0)
+            {
+                <div class="empty-state">Load sites first.</div>
+            }
+            else
+            {
+                <div class="search-site-list">
+                    @foreach (var site in _sites)
+                    {
+                        <label class="search-chip">
+                            <input type="checkbox" checked="@_selectedSites.Contains(site)" @onchange="@(_ => ToggleSite(site))" />
+                            <span>@site</span>
+                        </label>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="search-results-wrap">
+            <div class="search-section-head">
+                <div>
+                    <div class="card-title">Results</div>
+                    <div class="muted small">@ResultSummary</div>
+                </div>
+            </div>
+
+            <div class="search-table">
+                <div class="search-table-head">
+                    <span>Site</span>
+                    <span>Section</span>
+                    <span>Release</span>
+                    <span>Path</span>
+                    <span></span>
+                </div>
+
+                @if (_results.Count == 0)
+                {
+                    <div class="empty-state">No search results yet.</div>
+                }
+                else
+                {
+                    @foreach (var result in _results)
+                    {
+                        <div class="search-row"
+                             @key="result.Key"
+                             @ondblclick="@(() => OpenFxp(result))"
+                             @oncontextmenu="@((MouseEventArgs e) => OpenContext(result, e))"
+                             @oncontextmenu:preventDefault>
+                            <span class="site-cell">@result.Site</span>
+                            <span class="section-cell">@(string.IsNullOrWhiteSpace(result.Section) ? "-" : result.Section)</span>
+                            <span class="release-cell">@result.Release</span>
+                            <span class="path-cell">@(string.IsNullOrWhiteSpace(result.Path) ? result.RawLine : result.Path)</span>
+                            <span class="action-cell">
+                                <button class="btn compact" @onclick="@(() => OpenFxp(result))">
+                                    <Icon Name="fxp" Size="13" />
+                                    <span>FXP</span>
+                                </button>
+                            </span>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        <div class="search-log">
+            <div class="search-section-head">
+                <div class="card-title">Search log</div>
+                <button class="btn compact" @onclick="ClearLog" disabled="@(_log.Count == 0)">
+                    <Icon Name="trash" Size="13" />
+                    <span>Clear</span>
+                </button>
+            </div>
+            <div class="log-box">
+                @if (_log.Count == 0)
+                {
+                    <div class="muted">No search activity yet.</div>
+                }
+                else
+                {
+                    @foreach (var line in _log)
+                    {
+                        <div>@line</div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_modalResult is not null)
+{
+    <div class="modal-backdrop" @onclick="CloseModal">
+        <div class="modal-card search-fxp-modal" @onclick:stopPropagation>
+            <div class="modal-head">
+                <h2>FXP search result</h2>
+                <button class="icon-button" @onclick="CloseModal" aria-label="Close"><Icon Name="close" Size="16" /></button>
+            </div>
+
+            <div class="search-result-selected">
+                <div class="muted small">Selected release</div>
+                <strong>@_modalResult.Release</strong>
+                <span>@_modalResult.Site:@(string.IsNullOrWhiteSpace(_modalResult.Path) ? _modalResult.Section : _modalResult.Path)</span>
+            </div>
+
+            <div class="search-transfer-grid">
+                <label>
+                    Destination site
+                    <select value="@_targetSite" @onchange="OnTargetSiteChanged">
+                        @foreach (var site in _sites)
+                        {
+                            <option value="@site">@site</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    Known section
+                    <select value="@SelectedSectionPath" @onchange="OnTargetSectionChanged">
+                        <option value="">Manual path</option>
+                        @foreach (var knownSection in TargetSections)
+                        {
+                            <option value="@knownSection.Path">@SectionLabel(knownSection)</option>
+                        }
+                    </select>
+                </label>
+                <label>
+                    Destination path
+                    <input type="text" @bind="_targetPath" placeholder="/" />
+                </label>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn" @onclick="CloseModal">Cancel</button>
+                <button class="btn primary" @onclick="QueueFxpAsync" disabled="@_busy">
+                    <Icon Name="fxp" Size="13" />
+                    <span>Queue FXP</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_context is not null)
+{
+    <div class="context-scrim" @onclick="CloseContext"></div>
+    <div class="fxp-context-menu" style="@($"left:{_context.X}px; top:{_context.Y}px")">
+        <button @onclick="@(() => OpenFxpFromContext())"><Icon Name="fxp" Size="13" />FXP...</button>
+        <button @onclick="CloseContext"><Icon Name="close" Size="13" />Close</button>
+    </div>
+}
+
+@code {
+    private readonly List<CbftpServer> _servers = new();
+    private readonly List<string> _sites = new();
+    private readonly Dictionary<string, List<ReleaseSearchSection>> _siteSections = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _selectedSites = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<ReleaseSearchResult> _results = new();
+    private readonly List<string> _log = new();
+
+    private string _serverId = "";
+    private string _query = "";
+    private string _targetSite = "";
+    private string _targetPath = "/";
+    private bool _busy;
+    private ReleaseSearchResult? _modalResult;
+    private SearchContext? _context;
+
+    private bool CanSearch => !string.IsNullOrWhiteSpace(_query) && _selectedSites.Count > 0 && SelectedServer() is not null;
+    private string ResultSummary => _results.Count == 0 ? "Search results can be sent straight to FXP." : $"{_results.Count} result(s)";
+    private IReadOnlyList<ReleaseSearchSection> TargetSections =>
+        _siteSections.TryGetValue(_targetSite, out var sections) ? sections : Array.Empty<ReleaseSearchSection>();
+    private string SelectedSectionPath =>
+        TargetSections.Any(s => string.Equals(s.Path, _targetPath, StringComparison.OrdinalIgnoreCase)) ? _targetPath : "";
+
+    protected override void OnInitialized()
+    {
+        _servers.Clear();
+        _servers.AddRange(ReleaseSearch.LoadServers());
+        _serverId = _servers.FirstOrDefault() is { } first ? ServerKey(first) : "";
+    }
+
+    private async Task OnServerChanged(ChangeEventArgs e)
+    {
+        _serverId = e.Value?.ToString() ?? "";
+        await LoadSitesAsync();
+    }
+
+    private async Task LoadSitesAsync()
+    {
+        var server = SelectedServer();
+        if (server is null)
+            return;
+
+        _busy = true;
+        try
+        {
+            _sites.Clear();
+            _siteSections.Clear();
+            _selectedSites.Clear();
+            var sites = await ReleaseSearch.FetchSitesAsync(server);
+            _sites.AddRange(sites.Select(s => s.Name));
+            foreach (var site in sites)
+                _siteSections[site.Name] = site.Sections.ToList();
+
+            foreach (var site in _sites)
+                _selectedSites.Add(site);
+
+            if (string.IsNullOrWhiteSpace(_targetSite) && _sites.Count > 0)
+                _targetSite = _sites[0];
+
+            AddLog($"Loaded {_sites.Count} site(s) from {ServerLabel(server)}.");
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Error loading sites: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RunSearchAsync()
+    {
+        var server = SelectedServer();
+        if (server is null || !CanSearch)
+            return;
+
+        _busy = true;
+        _results.Clear();
+        try
+        {
+            var response = await ReleaseSearch.SearchAsync(server, _query, _selectedSites.ToList());
+            _results.AddRange(response.Results);
+            AddLog($"Search '{_query}' returned {_results.Count} result(s).");
+            foreach (var line in response.Logs)
+                AddLog(line);
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Search failed: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task OnSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await RunSearchAsync();
+    }
+
+    private async Task QueueFxpAsync()
+    {
+        var server = SelectedServer();
+        if (server is null || _modalResult is null)
+            return;
+
+        _busy = true;
+        try
+        {
+            var result = await ReleaseSearch.QueueFxpAsync(server, _modalResult, _targetSite, _targetPath);
+            AddLog(result.Message);
+            foreach (var line in result.Logs)
+                AddLog(line);
+
+            if (result.Success)
+                CloseModal();
+        }
+        catch (Exception ex)
+        {
+            AddLog($"FXP failed: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OpenFxp(ReleaseSearchResult result)
+    {
+        _modalResult = result;
+        _targetSite = _sites.FirstOrDefault(s => !string.Equals(s, result.Site, StringComparison.OrdinalIgnoreCase))
+            ?? _sites.FirstOrDefault()
+            ?? "";
+        ApplyDefaultTargetPath(force: true);
+        CloseContext();
+    }
+
+    private void OnTargetSiteChanged(ChangeEventArgs e)
+    {
+        _targetSite = e.Value?.ToString() ?? "";
+        ApplyDefaultTargetPath(force: true);
+    }
+
+    private void OnTargetSectionChanged(ChangeEventArgs e)
+    {
+        var path = e.Value?.ToString() ?? "";
+        if (!string.IsNullOrWhiteSpace(path))
+            _targetPath = path;
+    }
+
+    private void ApplyDefaultTargetPath(bool force = false)
+    {
+        if (!force && !string.IsNullOrWhiteSpace(_targetPath) && _targetPath != "/")
+            return;
+
+        var sourceSection = _modalResult?.Section ?? "";
+        var match = TargetSections.FirstOrDefault(section =>
+            string.Equals(section.Name, sourceSection, StringComparison.OrdinalIgnoreCase));
+
+        _targetPath = match is not null ? match.Path : "/";
+    }
+
+    private void OpenContext(ReleaseSearchResult result, MouseEventArgs e)
+    {
+        _context = new SearchContext(result, e.ClientX, e.ClientY);
+    }
+
+    private void OpenFxpFromContext()
+    {
+        if (_context is { } context)
+            OpenFxp(context.Result);
+    }
+
+    private void CloseContext() => _context = null;
+    private void CloseModal() => _modalResult = null;
+    private void ClearLog() => _log.Clear();
+
+    private void SelectAllSites()
+    {
+        _selectedSites.Clear();
+        foreach (var site in _sites)
+            _selectedSites.Add(site);
+    }
+
+    private void SelectNoSites() => _selectedSites.Clear();
+
+    private void ToggleSite(string site)
+    {
+        if (!_selectedSites.Add(site))
+            _selectedSites.Remove(site);
+    }
+
+    private CbftpServer? SelectedServer() =>
+        _servers.FirstOrDefault(s => string.Equals(ServerKey(s), _serverId, StringComparison.OrdinalIgnoreCase));
+
+    private static string ServerKey(CbftpServer server) =>
+        server.Id ?? server.Name ?? $"{server.Host}:{server.Port}";
+
+    private static string ServerLabel(CbftpServer server)
+    {
+        var name = server.Name ?? server.Id ?? "cbftp";
+        var host = server.Host ?? "";
+        var port = server.Port ?? "";
+        return string.IsNullOrWhiteSpace(host) ? name : $"{name} - {host}:{port}";
+    }
+
+    private static string SectionLabel(ReleaseSearchSection section) =>
+        string.IsNullOrWhiteSpace(section.Name) || string.Equals(section.Name, section.Path.Trim('/'), StringComparison.OrdinalIgnoreCase)
+            ? section.Path
+            : $"{section.Name} - {section.Path}";
+
+    private void AddLog(string line)
+    {
+        _log.Insert(0, $"{DateTime.Now:HH:mm:ss}  {line}");
+        if (_log.Count > 200)
+            _log.RemoveRange(200, _log.Count - 200);
+    }
+
+    private sealed record SearchContext(ReleaseSearchResult Result, double X, double Y);
+}

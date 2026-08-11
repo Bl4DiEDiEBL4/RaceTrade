@@ -10,7 +10,7 @@
     <section class="doc-hero">
         <div>
             <span class="doc-kicker">Current branch</span>
-            <h2>v2.0.9</h2>
+            <h2>v2.1.0</h2>
             <p>
                 This page tracks user-facing RaceTrade changes for the new web build.
             </p>
@@ -19,6 +19,23 @@
 
     <section class="timeline">
         <article class="timeline-item current">
+            <div class="timeline-version">v2.1.0</div>
+            <div class="timeline-date">August 2026</div>
+            <ul>
+                <li>Added a global CBFTP release Search page using <code>SITE SEARCH</code>, with selected-site searching and direct FXP from search results.</li>
+                <li>Added an FXP search modal with destination site, known section and manual destination path selection.</li>
+                <li>Restored FXP Client file viewing for NFO, DIZ, SFV, text and image files without writing temporary files.</li>
+                <li>Added log pagination with configurable rows per page so large live logs stay usable.</li>
+                <li>Expanded CBFTP job-status logging with section, target sites, subpaths, size, time and speed details when the CBFTP API provides them.</li>
+                <li>Prepared speed handling for CBFTP's real transfer-average speed field while keeping size/time throughput clearly marked as an estimate.</li>
+                <li>Improved update checks so the header can refresh the available-version notice while RaceTrade is running.</li>
+                <li>Cleaned up the Site Editor Announce tab with generic examples, working default regex guidance and Ignore words placed with the announce fields.</li>
+                <li>Reworked the Site Editor Sections layout so default mapping/rule/filter panels use the viewport more cleanly and expanded filter panels appear under their toggles.</li>
+                <li>Improved rule editing with clearer mapping/section rule rows and move controls.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
             <div class="timeline-version">v2.0.9</div>
             <div class="timeline-date">August 2026</div>
             <ul>

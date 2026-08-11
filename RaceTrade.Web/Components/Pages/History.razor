@@ -82,10 +82,14 @@
 
     private static string HistoryDetail(RaceHistoryStore.RaceReleaseSummary e)
     {
-        if (!string.IsNullOrWhiteSpace(e.Reason)) return e.Reason;
+        if (ShowReason(e.Status) && !string.IsNullOrWhiteSpace(e.Reason)) return e.Reason;
         if (!string.IsNullOrWhiteSpace(e.TargetSite)) return $"Target: {e.TargetSite}";
         return e.EventCount > 1 ? $"{e.EventCount} event(s)" : "";
     }
+
+    private static bool ShowReason(string status) =>
+        status.Equals("Failed", StringComparison.OrdinalIgnoreCase) ||
+        status.Equals("Filtered", StringComparison.OrdinalIgnoreCase);
 
     public void Dispose() => HistoryStore.Changed -= OnHistoryChanged;
 }

@@ -61,7 +61,7 @@ public sealed class UpdateService
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseUri);
-                request.Headers.UserAgent.ParseAdd("RaceTrade-WebUI");
+                request.Headers.UserAgent.ParseAdd("RaceTrade");
                 request.Headers.Accept.ParseAdd("application/vnd.github+json");
 
                 using var response = await _http.SendAsync(request, timeout.Token);

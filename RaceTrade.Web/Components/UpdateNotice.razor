@@ -14,19 +14,41 @@
 }
 
 @code {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(30);
+
     private UpdateCheckResult? _result;
+    private CancellationTokenSource? _pollCts;
 
     protected override void OnInitialized()
     {
         Updates.Changed += OnChanged;
+        _pollCts = new CancellationTokenSource();
         _ = Refresh();
+        _ = PollForUpdates(_pollCts.Token);
     }
 
     private void OnChanged() => _ = Refresh(force: true);
 
-    private async Task Refresh(bool force = false)
+    private async Task PollForUpdates(CancellationToken cancellationToken)
     {
-        var result = await Updates.CheckAsync(force);
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(PollInterval, cancellationToken);
+                await Refresh(force: true, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task Refresh(bool force = false, CancellationToken cancellationToken = default)
+    {
+        var result = await Updates.CheckAsync(force, cancellationToken);
+        if (cancellationToken.IsCancellationRequested)
+            return;
 
         await InvokeAsync(() =>
         {
@@ -35,5 +57,10 @@
         });
     }
 
-    public void Dispose() => Updates.Changed -= OnChanged;
+    public void Dispose()
+    {
+        Updates.Changed -= OnChanged;
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+    }
 }

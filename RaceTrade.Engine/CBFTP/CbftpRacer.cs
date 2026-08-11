@@ -12,17 +12,21 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using RaceTrade;
 
 public class CbftpJobStats
 {
     public string Status { get; set; }
+    public string Section { get; set; }
     public int FilesTotal { get; set; }          // not used by stock cbftp (will be 0)
     public int FilesTransferred { get; set; }    // not used by stock cbftp (will be 0)
     public long BytesTransferred { get; set; }   // mapped from size_estimated_bytes
-    public double AverageSpeed { get; set; }     // MB/s
+    public double AverageSpeed { get; set; }     // MiB/s
+    public bool SpeedFromApi { get; set; }
     public TimeSpan TimeElapsed { get; set; }    // from time_spent_seconds
     public List<string> DestinationSites { get; set; }
+    public List<string> Subpaths { get; set; }
 }
 
 /// <summary>
@@ -113,59 +117,35 @@ public class CbftpRacer
                 LogManager.Debug($"CBFTP TransferJob '{releaseName}' Response: {content}");
             }
 
-            dynamic jobData = JsonConvert.DeserializeObject<dynamic>(content);
+            var jobData = JsonConvert.DeserializeObject<JObject>(content) ?? new JObject();
+            var jobStatus = ReadString(jobData, "status");
 
             var stats = new CbftpJobStats
             {
-                Status = jobData.status != null ? (string)jobData.status : "unknown",
-                DestinationSites = new List<string>()
+                Status = string.IsNullOrWhiteSpace(jobStatus) ? "unknown" : jobStatus,
+                DestinationSites = new List<string>(),
+                Subpaths = new List<string>()
             };
 
-            try
-            {
-                if (jobData.dst_site != null)
-                {
-                    string dstSite = (string)jobData.dst_site;
-                    if (!string.IsNullOrEmpty(dstSite))
-                        stats.DestinationSites.Add(dstSite);
-                }
-            }
-            catch
-            {
-                // ignore
-            }
+            AddDistinct(stats.DestinationSites, ReadStringList(jobData,
+                "dst_site", "dst_sites", "destination_site", "destination_sites", "target_site", "target_sites", "sites"));
 
             // Files info
-            try { stats.FilesTotal = jobData.files_total != null ? (int)jobData.files_total : 0; } catch { }
-            try { stats.FilesTransferred = jobData.files_progress != null ? (int)jobData.files_progress : 0; } catch { }
+            stats.FilesTotal = (int)ReadLong(jobData, "files_total", "filesTotal");
+            stats.FilesTransferred = (int)ReadLong(jobData, "files_progress", "files_transferred", "filesTransferred");
 
-            long bytesDone = 0;
-            try
-            {
-                if (jobData.size_progress_bytes != null)
-                    bytesDone = (long)jobData.size_progress_bytes;
-                else if (jobData.size_estimated_bytes != null)
-                    bytesDone = (long)jobData.size_estimated_bytes;
-            }
-            catch { }
+            stats.BytesTransferred = ReadLong(jobData,
+                "size_progress_bytes", "bytes_transferred", "bytesTransferred", "size_estimated_bytes");
 
-            stats.BytesTransferred = bytesDone;
-
-            long timeSpentSeconds = 0;
-            try
-            {
-                if (jobData.time_spent_seconds != null)
-                    timeSpentSeconds = (long)jobData.time_spent_seconds;
-            }
-            catch { }
-
-            stats.TimeElapsed = TimeSpan.FromSeconds(timeSpentSeconds);
+            stats.TimeElapsed = TimeSpan.FromSeconds(ReadLong(jobData, "time_spent_seconds", "timeSpentSeconds"));
 
             if (stats.TimeElapsed.TotalSeconds > 0 && stats.BytesTransferred > 0)
             {
                 stats.AverageSpeed =
                     (stats.BytesTransferred / stats.TimeElapsed.TotalSeconds) / (1024.0 * 1024.0);
             }
+
+            PopulateJobDetails(jobData, stats);
 
             return stats;
         }
@@ -413,58 +393,24 @@ public class CbftpRacer
                 LogManager.Debug($"CBFTP Job '{releaseName}' Response: {content}");
             }
 
-            dynamic jobData = JsonConvert.DeserializeObject<dynamic>(content);
+            var jobData = JsonConvert.DeserializeObject<JObject>(content) ?? new JObject();
+            var jobStatus = ReadString(jobData, "status");
 
             var stats = new CbftpJobStats
             {
-                Status = jobData.status != null ? (string)jobData.status : "unknown",
-                DestinationSites = new List<string>()
+                Status = string.IsNullOrWhiteSpace(jobStatus) ? "unknown" : jobStatus,
+                DestinationSites = new List<string>(),
+                Subpaths = new List<string>()
             };
 
-            // sites: [ "sitea", "siteb" ]
-            if (jobData.sites != null)
-            {
-                foreach (var siteObj in jobData.sites)
-                {
-                    try
-                    {
-                        string siteName = (string)siteObj;
-                        if (!string.IsNullOrEmpty(siteName) &&
-                            !stats.DestinationSites.Contains(siteName))
-                        {
-                            stats.DestinationSites.Add(siteName);
-                        }
-                    }
-                    catch
-                    {
-                        // ignore bad entries
-                    }
-                }
-            }
+            AddDistinct(stats.DestinationSites, ReadStringList(jobData,
+                "sites", "destination_sites", "dst_sites", "target_sites"));
 
             // size_estimated_bytes (stock CBFTP field)
-            long estimatedBytes = 0;
-            try
-            {
-                if (jobData.size_estimated_bytes != null)
-                    estimatedBytes = (long)jobData.size_estimated_bytes;
-            }
-            catch
-            {
-                // ignore
-            }
+            long estimatedBytes = ReadLong(jobData, "size_estimated_bytes", "size_bytes", "bytes_total", "bytes");
 
             // time_spent_seconds (stock CBFTP field)
-            long timeSpentSeconds = 0;
-            try
-            {
-                if (jobData.time_spent_seconds != null)
-                    timeSpentSeconds = (long)jobData.time_spent_seconds;
-            }
-            catch
-            {
-                // ignore
-            }
+            long timeSpentSeconds = ReadLong(jobData, "time_spent_seconds", "timeSpentSeconds");
 
             stats.BytesTransferred = estimatedBytes;
             stats.FilesTransferred = 0; // stock cbftp doesn't give per-job file count here
@@ -477,12 +423,14 @@ public class CbftpRacer
                     (stats.BytesTransferred / stats.TimeElapsed.TotalSeconds) / (1024.0 * 1024.0);
             }
 
+            PopulateJobDetails(jobData, stats);
+
             if (EngineSettings.DebugEnabled)
             {
                 LogManager.Debug(
                     $"Job '{releaseName}': Status={stats.Status}, " +
                     $"Size(est)={FormatSize(stats.BytesTransferred)}, " +
-                    $"Speed={stats.AverageSpeed:F1} MB/s"
+                    $"{SpeedLabel(stats)}={stats.AverageSpeed:F1} MiB/s"
                 );
             }
 
@@ -539,11 +487,8 @@ public class CbftpRacer
 
                 if (status == "DONE")
                 {
-                    string completionMsg =
-                        $"✓ Size(est): {FormatSize(stats.BytesTransferred)} | " +
-                        $"Avg: {stats.AverageSpeed:F1} MB/s | Time: {stats.TimeElapsed:mm\\:ss}";
-
                     var allSites = string.Join(",", targetSites);
+                    string completionMsg = BuildJobLogMessage(stats, section, targetSites, "✓");
 
                     LogManager.LogCBFTP(
                         CBFTPEventType.SpreadJobCompleted,
@@ -570,8 +515,7 @@ public class CbftpRacer
                                   : status == "ABORTED" ? "CBFTP transfer aborted"
                                   : "CBFTP transfer failed";
 
-                    string failMsg =
-                        $"✗ {reason} | Size(est): {FormatSize(stats.BytesTransferred)} | Time: {stats.TimeElapsed:mm\\:ss}";
+                    string failMsg = BuildJobLogMessage(stats, section, targetSites, $"✗ {reason}");
 
                     LogManager.LogCBFTP(
                         CBFTPEventType.SpreadJobFailed,
@@ -600,6 +544,202 @@ public class CbftpRacer
         catch (Exception ex)
         {
             LogManager.Error($"Error monitoring job '{releaseName}': {ex.Message}");
+        }
+    }
+
+    private static string BuildJobLogMessage(CbftpJobStats stats, string fallbackSection, IEnumerable<string> fallbackSites, string prefix)
+    {
+        var parts = new List<string>();
+        var section = !string.IsNullOrWhiteSpace(stats.Section) ? stats.Section : fallbackSection;
+        var sites = stats.DestinationSites?.Where(s => !string.IsNullOrWhiteSpace(s)).ToList() ?? new List<string>();
+        if (sites.Count == 0 && fallbackSites != null)
+            sites = fallbackSites.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+
+        if (!string.IsNullOrWhiteSpace(section))
+            parts.Add($"Section: {section}");
+
+        if (sites.Count > 0)
+            parts.Add($"Sites: {string.Join(",", sites)}");
+
+        if (!string.IsNullOrWhiteSpace(stats.Status))
+            parts.Add($"Status: {FormatStatus(stats.Status)}");
+
+        if (stats.Subpaths?.Count > 0)
+            parts.Add($"Subpaths: {string.Join(", ", stats.Subpaths)}");
+
+        var metrics = new List<string>();
+        if (stats.BytesTransferred > 0)
+            metrics.Add($"Size(est): {FormatSize(stats.BytesTransferred)}");
+
+        if (stats.AverageSpeed > 0)
+            metrics.Add($"{SpeedLabel(stats)}: {stats.AverageSpeed:F1} MiB/s");
+
+        if (stats.TimeElapsed.TotalSeconds > 0)
+            metrics.Add($"Time: {stats.TimeElapsed:mm\\:ss}");
+
+        if (metrics.Count > 0)
+            parts.Add(string.Join(" | ", metrics));
+
+        return parts.Count == 0 ? prefix : $"{prefix} {string.Join(" | ", parts)}";
+    }
+
+    private static void PopulateJobDetails(JObject jobData, CbftpJobStats stats)
+    {
+        stats.Section = ReadString(jobData,
+            "section", "cbftp_section", "cbftpSection", "src_section", "dst_section", "section_name", "category");
+
+        stats.Subpaths = ReadStringList(jobData,
+            "subpaths", "sub_paths", "paths", "path_groups", "file_subpaths", "fileSubpaths");
+
+        if (TryReadApiSpeedMiBps(jobData, out var apiSpeed))
+        {
+            stats.AverageSpeed = apiSpeed;
+            stats.SpeedFromApi = true;
+        }
+    }
+
+    private static string SpeedLabel(CbftpJobStats stats) =>
+        stats.SpeedFromApi ? "Speed" : "Avg(est)";
+
+    private static string FormatStatus(string status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return "";
+
+        return status.Equals("DONE", StringComparison.OrdinalIgnoreCase)
+            ? "Done"
+            : status.Equals("TIMEOUT", StringComparison.OrdinalIgnoreCase)
+                ? "Timeout"
+                : status.Equals("ABORTED", StringComparison.OrdinalIgnoreCase)
+                    ? "Aborted"
+                    : status.Equals("FAILED", StringComparison.OrdinalIgnoreCase)
+                        ? "Failed"
+                        : status;
+    }
+
+    private static JToken FindToken(JObject data, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var prop = data.Properties()
+                .FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (prop?.Value != null && prop.Value.Type != JTokenType.Null)
+                return prop.Value;
+        }
+
+        return null;
+    }
+
+    private static string ReadString(JObject data, params string[] names)
+    {
+        var token = FindToken(data, names);
+        return token == null ? "" : token.ToString();
+    }
+
+    private static long ReadLong(JObject data, params string[] names)
+    {
+        var token = FindToken(data, names);
+        if (token == null) return 0;
+
+        try { return token.Value<long>(); }
+        catch
+        {
+            return long.TryParse(token.ToString(), out var value) ? value : 0;
+        }
+    }
+
+    private static bool TryReadDouble(JObject data, out double value, params string[] names)
+    {
+        value = 0;
+        var token = FindToken(data, names);
+        if (token == null) return false;
+
+        try
+        {
+            value = token.Value<double>();
+            return true;
+        }
+        catch
+        {
+            return double.TryParse(token.ToString(), out value);
+        }
+    }
+
+    private static bool TryReadApiSpeedMiBps(JObject data, out double value)
+    {
+        if (TryReadDouble(data, out var bytesPerSecond,
+                "speed_bytes_per_second", "average_speed_bytes_per_second", "avg_speed_bytes_per_second",
+                "bytes_per_second", "speed_bps"))
+        {
+            value = bytesPerSecond / (1024.0 * 1024.0);
+            return true;
+        }
+
+        if (TryReadDouble(data, out value,
+                "speed_mib_per_second", "average_speed_mib_per_second", "avg_speed_mib_per_second",
+                "speed_mibps", "average_speed_mibps"))
+        {
+            return true;
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static List<string> ReadStringList(JObject data, params string[] names)
+    {
+        var token = FindToken(data, names);
+        if (token == null) return new List<string>();
+
+        if (token is JArray array)
+        {
+            return array
+                .Select(FormatListItem)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+        }
+
+        if (token is JObject obj)
+        {
+            return obj.Properties()
+                .Select(p => $"{p.Name} {p.Value}".Trim())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+        }
+
+        var raw = token.ToString();
+        return raw.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+    }
+
+    private static string FormatListItem(JToken token)
+    {
+        if (token is JObject obj)
+        {
+            var name = ReadString(obj, "path", "subpath", "name", "dir", "directory");
+            var files = ReadString(obj, "files", "file_count", "files_total", "count");
+            var note = ReadString(obj, "note", "type", "kind");
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                var suffix = string.Join("/", new[] { files, note }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                return string.IsNullOrWhiteSpace(suffix) ? name : $"{name} ({suffix})";
+            }
+        }
+
+        return token.ToString();
+    }
+
+    private static void AddDistinct(List<string> target, IEnumerable<string> values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value) &&
+                !target.Contains(value, StringComparer.OrdinalIgnoreCase))
+            {
+                target.Add(value);
+            }
         }
     }
 

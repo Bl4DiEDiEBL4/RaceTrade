@@ -92,12 +92,42 @@
 {
     <div class="context-backdrop" @onclick="CloseContextMenu"></div>
     <div class="fxp-context-menu" style="@ContextMenuStyle" @onclick:stopPropagation="true">
+        <button type="button" @onclick="ContextView" disabled="@(!CanContextView || Busy)">View</button>
         <button type="button" @onclick="ContextOpen" disabled="@(!_contextMenu.Item.IsDirectory || Busy)">Open</button>
         <button type="button" @onclick="ContextTransfer" disabled="@(!CanContextTransfer || Busy)">
             @(_contextMenu.Side == "left" ? "FXP to right" : "FXP to left")
         </button>
         <button type="button" @onclick="ContextDelete" disabled="@(!ContextHasSelection || Busy)">Delete selected</button>
         <button type="button" @onclick="ContextRefresh" disabled="@Busy">Refresh</button>
+    </div>
+}
+
+@if (_viewer is not null)
+{
+    <div class="modal-backdrop" @onclick="CloseViewer">
+        <div class="modal-card fxp-viewer-modal" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2>@_viewer.ViewerTitle</h2>
+                <button class="btn icon-only" type="button" @onclick="CloseViewer" title="Close">
+                    <Icon Name="close" Size="15" />
+                </button>
+            </div>
+            <div class="fxp-viewer-meta">
+                <strong>@_viewer.Name</strong>
+                <span>@_viewer.Path</span>
+            </div>
+
+            @if (_viewer.IsImage)
+            {
+                <div class="fxp-image-stage">
+                    <img src="@_viewer.DataUrl" alt="@_viewer.Name" />
+                </div>
+            }
+            else
+            {
+                <pre class="fxp-text-viewer @(_viewer.IsNfo ? "nfo-art" : "plain-text")">@_viewer.Text</pre>
+            }
+        </div>
     </div>
 }
 
@@ -124,6 +154,7 @@
     private string _rightSort = "name";
     private bool _leftSortDesc;
     private bool _rightSortDesc;
+    private FxpViewedFile? _viewer;
     private bool Busy { get; set; }
     private bool CanTransferLeftToRight =>
         SelectedLeftItems.Any() && !string.IsNullOrWhiteSpace(_leftSite) && !string.IsNullOrWhiteSpace(_rightSite);
@@ -375,7 +406,12 @@
     private async Task OpenItem(string side, FxpFileItem item)
     {
         if (!item.IsDirectory)
+        {
+            if (FxpClientService.CanView(item))
+                await ViewFile(side, item);
+
             return;
+        }
 
         if (side == "left")
         {
@@ -440,7 +476,7 @@
                     // rounds it means the job never materialised, which is worth saying.
                     if (i >= 3)
                     {
-                        UpsertJob(new FxpJobProgress(name, "UNKNOWN", 0, 0, 0, 0, TimeSpan.Zero));
+                        UpsertJob(new FxpJobProgress(name, "UNKNOWN", 0, 0, 0, 0, TimeSpan.Zero, false));
                         AddLine($"cbftp does not know job '{name}' — it was accepted but never created.");
                         pending.Remove(name);
                     }
@@ -522,7 +558,7 @@
             parts.Add(FxpClientService.FormatSize(j.BytesTransferred));
 
         if (j.HasMeaningfulSpeed)
-            parts.Add($"{j.AverageSpeed:F1} MB/s");
+            parts.Add(j.SpeedFromApi ? $"{j.AverageSpeed:F1} MB/s" : $"~{j.AverageSpeed:F1} MB/s est");
 
         if (j.Elapsed.TotalSeconds >= 1)
             parts.Add(j.Elapsed.TotalMinutes >= 1 ? $"{j.Elapsed:mm\\:ss}" : $"{j.Elapsed.TotalSeconds:F0}s");
@@ -537,6 +573,9 @@
         _contextMenu is not null &&
         ((_contextMenu.Side == "left" && CanTransferLeftToRight) ||
          (_contextMenu.Side == "right" && CanTransferRightToLeft));
+
+    private bool CanContextView =>
+        _contextMenu is not null && FxpClientService.CanView(_contextMenu.Item);
 
     private bool ContextHasSelection =>
         _contextMenu is not null &&
@@ -554,6 +593,18 @@
     }
 
     private void CloseContextMenu() => _contextMenu = null;
+
+    private void CloseViewer() => _viewer = null;
+
+    private async Task ContextView()
+    {
+        if (_contextMenu is null)
+            return;
+
+        var context = _contextMenu;
+        CloseContextMenu();
+        await ViewFile(context.Side, context.Item);
+    }
 
     private async Task ContextOpen()
     {
@@ -593,6 +644,33 @@
         var left = _contextMenu.Side == "left";
         CloseContextMenu();
         await Browse(left);
+    }
+
+    private async Task ViewFile(string side, FxpFileItem item)
+    {
+        var server = SelectedServer();
+        var site = side == "left" ? _leftSite : _rightSite;
+        var currentPath = side == "left" ? _leftPath : _rightPath;
+
+        if (server is null || string.IsNullOrWhiteSpace(site))
+        {
+            AddLine("Select a CBFTP server and site first.", isError: true);
+            return;
+        }
+
+        if (!FxpClientService.CanView(item))
+        {
+            AddLine($"No viewer for {item.Name}.", isError: true);
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var fullPath = FxpClientService.ResolveItemPath(currentPath, item);
+            AddLine($"Opening {site}:{fullPath}...");
+            _viewer = await Fxp.ReadFileAsync(server, site, fullPath, item.Name);
+            AddLine($"Opened {item.Name}.");
+        });
     }
 
     private async Task Delete(bool left)

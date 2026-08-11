@@ -1122,14 +1122,18 @@ public class IRCClient
 
             AppendOutput($"[{siteName}] [{botName}] [{section}] {releaseName}", Color.LightBlue);
 
-            // Store pretime immediately (BEFORE ANY CHECKS!)
-            // A Global PreBot feeds multiple linked sites; a plain PreBot feeds one
-            // site. Both announce "pre" data and must populate the pretime database.
+            // Store pretime immediately (BEFORE ANY CHECKS!), but only for real PRE
+            // lines or raw PreBot feeds. A normal NEW/race announce must not seed
+            // the pretime cache, otherwise max-pretime checks always see 0s/1s.
             var isPreBotAnnounceMode =
                 isGlobalPreBotMode ||
                 string.Equals(PreOrSite, "PreBot", StringComparison.OrdinalIgnoreCase);
 
-            if (isPreBotAnnounceMode)
+            var shouldStorePretime =
+                isPreLine ||
+                (isPreBotAnnounceMode && !isNewLine);
+
+            if (shouldStorePretime)
             {
                 // The pretime write stays awaited: the value is used by the pretime
                 // rules further down. The read-back exists only to log whether we

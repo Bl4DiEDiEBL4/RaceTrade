@@ -474,9 +474,10 @@ namespace RaceTrader
 
                         if (status == "DONE")
                         {
+                            var speedLabel = stats.SpeedFromApi ? "speed" : "avg(est)";
                             LogManager.LogCBFTP(
                                 CBFTPEventType.Info,
-                                $"[RequestAutoFill] Transferjob for '{jobName}' is DONE ({stats.FilesTransferred}/{stats.FilesTotal} files, {stats.AverageSpeed:F1} MB/s). Sending REQFILLED...",
+                                $"[RequestAutoFill] Transferjob for '{jobName}' is DONE ({stats.FilesTransferred}/{stats.FilesTotal} files, {speedLabel}: {stats.AverageSpeed:F1} MB/s). Sending REQFILLED...",
                                 releaseName: jobName,
                                 targetSite: dstName);
 

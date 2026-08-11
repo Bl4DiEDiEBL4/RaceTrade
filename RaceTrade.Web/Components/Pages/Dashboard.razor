@@ -62,6 +62,7 @@
         <div class="card-title">TOOLS</div>
         <div class="card-actions">
             <a class="btn" href="test"><Icon Name="test" Size="13" /><span>Test release</span></a>
+            <a class="btn" href="search"><Icon Name="search" Size="13" /><span>Search</span></a>
             <a class="btn" href="fxp"><Icon Name="fxp" Size="13" /><span>FXP Client</span></a>
             <a class="btn" href="logs"><Icon Name="logs" Size="13" /><span>Logs</span></a>
             <a class="btn" href="chat"><Icon Name="chat" Size="13" /><span>Chat</span></a>
@@ -191,10 +192,14 @@
 
     private static string HistoryDetail(RaceHistoryStore.RaceReleaseSummary e)
     {
-        if (!string.IsNullOrWhiteSpace(e.Reason)) return e.Reason;
+        if (ShowReason(e.Status) && !string.IsNullOrWhiteSpace(e.Reason)) return e.Reason;
         if (!string.IsNullOrWhiteSpace(e.TargetSite)) return $"Target: {e.TargetSite}";
         return e.EventCount > 1 ? $"{e.EventCount} event(s)" : "";
     }
+
+    private static bool ShowReason(string status) =>
+        status.Equals("Failed", StringComparison.OrdinalIgnoreCase) ||
+        status.Equals("Filtered", StringComparison.OrdinalIgnoreCase);
 
     public void Dispose()
     {

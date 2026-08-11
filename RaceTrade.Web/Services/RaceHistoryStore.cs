@@ -18,7 +18,6 @@ public sealed class RaceHistoryStore : IDisposable
 
     private static readonly string[] KnownStatuses = ["Detected", "Filtered", "Racing", "Completed", "Failed"];
     private static readonly Regex SectionRegex = new(@"\[(?<section>[^\]]+)\]", RegexOptions.Compiled);
-    private static readonly Regex ReasonRegex = new(@"\((?<reason>[^)]*)\)", RegexOptions.Compiled);
 
     private readonly object _gate = new();
     private readonly Timer _flushTimer;
@@ -100,7 +99,7 @@ public sealed class RaceHistoryStore : IDisposable
                     latest.Status,
                     latest.Section,
                     latest.TargetSite,
-                    latest.Reason,
+                    ShouldShowReason(latest.Status) ? latest.Reason : "",
                     g.Count());
             })
             .OrderByDescending(e => e.LastSeen)
@@ -177,6 +176,10 @@ public sealed class RaceHistoryStore : IDisposable
         try { Changed?.Invoke(); } catch { }
     }
 
+    private static bool ShouldShowReason(string status) =>
+        status.Equals("Failed", StringComparison.OrdinalIgnoreCase) ||
+        status.Equals("Filtered", StringComparison.OrdinalIgnoreCase);
+
     public void Dispose()
     {
         _flushTimer.Dispose();
@@ -203,9 +206,7 @@ public sealed class RaceHistoryStore : IDisposable
             var section = !string.IsNullOrWhiteSpace(entry.Section)
                 ? entry.Section
                 : SectionRegex.Match(message).Groups["section"].Value;
-            var reason = !string.IsNullOrWhiteSpace(entry.Reason)
-                ? entry.Reason
-                : ReasonRegex.Match(message).Groups["reason"].Value;
+            var reason = ShouldShowReason(status) ? entry.Reason ?? "" : "";
             var targetSite = entry.TargetSite ?? "";
 
             if (string.IsNullOrWhiteSpace(targetSite))

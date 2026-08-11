@@ -131,6 +131,7 @@ builder.Services.AddSingleton<SiteStore>();
 builder.Services.AddSingleton<CbftpStore>();
 builder.Services.AddSingleton<PreBotStore>();
 builder.Services.AddSingleton<FxpClientService>();
+builder.Services.AddSingleton<ReleaseSearchService>();
 builder.Services.AddSingleton<PreSpreadService>();
 builder.Services.AddSingleton<CbftpSiteService>();
 builder.Services.AddSingleton<HttpClient>();

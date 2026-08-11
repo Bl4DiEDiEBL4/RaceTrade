@@ -423,6 +423,7 @@ sudo systemctl enable --now racetrade</pre>
 
             _resetMessage = $"{item.Title}: cleared {before} entr{(before == 1 ? "y" : "ies")}.";
             LogManager.Info($"Cleared {item.Title.ToLowerInvariant()} ({before} entries) from Settings.");
+            CountData();
         }
         catch (Exception ex)
         {
