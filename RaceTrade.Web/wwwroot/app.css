@@ -359,6 +359,15 @@ h2 { font-size: 12px; letter-spacing: 1.2px; color: var(--muted); margin: 24px 0
     padding-top: 14px;
 }
 
+.settings-action-card.is-disabled {
+    opacity: .72;
+}
+
+.settings-action-card.is-disabled input,
+.settings-action-card.is-disabled button {
+    cursor: not-allowed;
+}
+
 .settings-status-row {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);

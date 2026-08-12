@@ -127,16 +127,16 @@
         </div>
     </div>
 
-    <div class="card settings-action-card">
+    <div class="@($"card settings-action-card {(!TrayNotificationsSupported ? "is-disabled" : "")}")">
         <div class="card-title">NOTIFICATIONS</div>
 
-        @if (!OperatingSystem.IsWindows())
+        @if (!TrayNotificationsSupported)
         {
-            <p class="fh">Tray icon notifications are Windows-only. This setting is kept for when the same data folder is used on Windows.</p>
+            <p class="fh">Tray icon notifications are Windows-only. These controls are disabled on Linux and other non-Windows builds.</p>
         }
 
         <label class="opt">
-            <input type="checkbox" @bind="_trayIconEnabled" />
+            <input type="checkbox" @bind="_trayIconEnabled" disabled="@(!TrayNotificationsSupported)" />
             <span>
                 <span class="opt-name">Tray icon</span>
                 <span class="fh">Show RaceTrade in the Windows notification area.</span>
@@ -144,7 +144,7 @@
         </label>
 
         <label class="opt">
-            <input type="checkbox" @bind="_raceNotificationsEnabled" disabled="@(!_trayIconEnabled)" />
+            <input type="checkbox" @bind="_raceNotificationsEnabled" disabled="@(!TrayNotificationsSupported || !_trayIconEnabled)" />
             <span>
                 <span class="opt-name">Race notifications</span>
                 <span class="fh">Notify only for Racing, Completed and Failed race events. No chat, update or app popups.</span>
@@ -157,10 +157,10 @@
         </div>
 
         <div class="card-actions">
-            <button class="btn primary" @onclick="SaveNotifications">
+            <button class="btn primary" @onclick="SaveNotifications" disabled="@(!TrayNotificationsSupported)">
                 <Icon Name="save" Size="13" /><span>Save</span>
             </button>
-            <button class="btn" @onclick="TestNotification" disabled="@(!_trayIconEnabled || !_raceNotificationsEnabled)">
+            <button class="btn" @onclick="TestNotification" disabled="@(!TrayNotificationsSupported || !_trayIconEnabled || !_raceNotificationsEnabled)">
                 <Icon Name="test" Size="13" /><span>Test race</span>
             </button>
             @if (!string.IsNullOrWhiteSpace(_notificationsMessage))
@@ -487,6 +487,7 @@ sudo systemctl enable --now racetrade</pre>
     private bool _raceNotificationsEnabled = true;
     private string _notificationsMessage = "";
     private bool _notificationsMessageIsError;
+    private static bool TrayNotificationsSupported => OperatingSystem.IsWindows();
 
     private string _movieProvider = "tiffara";
     private string _tmdbKey = "";
@@ -665,6 +666,13 @@ sudo systemctl enable --now racetrade</pre>
 
     private void LoadNotifications()
     {
+        if (!TrayNotificationsSupported)
+        {
+            _trayIconEnabled = false;
+            _raceNotificationsEnabled = false;
+            return;
+        }
+
         var settings = Notifications.Current;
         _trayIconEnabled = settings.TrayIconEnabled;
         _raceNotificationsEnabled = settings.RaceNotificationsEnabled;
@@ -674,6 +682,13 @@ sudo systemctl enable --now racetrade</pre>
     {
         _notificationsMessage = "";
         _notificationsMessageIsError = false;
+
+        if (!TrayNotificationsSupported)
+        {
+            _notificationsMessage = "Tray icon notifications are Windows-only.";
+            _notificationsMessageIsError = true;
+            return;
+        }
 
         try
         {
