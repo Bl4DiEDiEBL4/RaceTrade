@@ -7,6 +7,8 @@
 @inject UiLogSink Sink
 @inject SkipStore Skips
 @inject UpdateService Updates
+@inject NotificationSettingsService Notifications
+@inject TrayNotificationService TrayNotifications
 
 <PageTitle>Settings - RaceTrade</PageTitle>
 
@@ -121,6 +123,49 @@
             @if (!string.IsNullOrWhiteSpace(_updatesMessage))
             {
                 <span class="@($"fh inline {(_updatesMessageIsError ? "err-text" : "")}")">@_updatesMessage</span>
+            }
+        </div>
+    </div>
+
+    <div class="card settings-action-card">
+        <div class="card-title">NOTIFICATIONS</div>
+
+        @if (!OperatingSystem.IsWindows())
+        {
+            <p class="fh">Tray icon notifications are Windows-only. This setting is kept for when the same data folder is used on Windows.</p>
+        }
+
+        <label class="opt">
+            <input type="checkbox" @bind="_trayIconEnabled" />
+            <span>
+                <span class="opt-name">Tray icon</span>
+                <span class="fh">Show RaceTrade in the Windows notification area.</span>
+            </span>
+        </label>
+
+        <label class="opt">
+            <input type="checkbox" @bind="_raceNotificationsEnabled" disabled="@(!_trayIconEnabled)" />
+            <span>
+                <span class="opt-name">Race notifications</span>
+                <span class="fh">Notify only for Racing, Completed and Failed race events. No chat, update or app popups.</span>
+            </span>
+        </label>
+
+        <div class="settings-status-row">
+            <span>Status</span>
+            <strong>@TrayNotifications.StatusText</strong>
+        </div>
+
+        <div class="card-actions">
+            <button class="btn primary" @onclick="SaveNotifications">
+                <Icon Name="save" Size="13" /><span>Save</span>
+            </button>
+            <button class="btn" @onclick="TestNotification" disabled="@(!_trayIconEnabled || !_raceNotificationsEnabled)">
+                <Icon Name="test" Size="13" /><span>Test race</span>
+            </button>
+            @if (!string.IsNullOrWhiteSpace(_notificationsMessage))
+            {
+                <span class="@($"fh inline {(_notificationsMessageIsError ? "err-text" : "")}")">@_notificationsMessage</span>
             }
         </div>
     </div>
@@ -438,6 +483,10 @@ sudo systemctl enable --now racetrade</pre>
     private bool _checkForUpdates = true;
     private string _updatesMessage = "";
     private bool _updatesMessageIsError;
+    private bool _trayIconEnabled = true;
+    private bool _raceNotificationsEnabled = true;
+    private string _notificationsMessage = "";
+    private bool _notificationsMessageIsError;
 
     private string _movieProvider = "tiffara";
     private string _tmdbKey = "";
@@ -477,6 +526,7 @@ sudo systemctl enable --now racetrade</pre>
     {
         LoadEngine();
         LoadUpdates();
+        LoadNotifications();
         LoadWebAccess();
         LoadLookup();
         CountData();
@@ -611,6 +661,41 @@ sudo systemctl enable --now racetrade</pre>
             _updatesMessageIsError = true;
             LogManager.Error($"Failed to save update settings: {ex.Message}");
         }
+    }
+
+    private void LoadNotifications()
+    {
+        var settings = Notifications.Current;
+        _trayIconEnabled = settings.TrayIconEnabled;
+        _raceNotificationsEnabled = settings.RaceNotificationsEnabled;
+    }
+
+    private void SaveNotifications()
+    {
+        _notificationsMessage = "";
+        _notificationsMessageIsError = false;
+
+        try
+        {
+            Notifications.Save(new NotificationSettings(
+                _trayIconEnabled,
+                _trayIconEnabled && _raceNotificationsEnabled));
+
+            _notificationsMessage = "Saved.";
+            LogManager.Success("Saved notification settings.");
+        }
+        catch (Exception ex)
+        {
+            _notificationsMessage = $"Failed to save: {ex.Message}";
+            _notificationsMessageIsError = true;
+            LogManager.Error($"Failed to save notification settings: {ex.Message}");
+        }
+    }
+
+    private void TestNotification()
+    {
+        _notificationsMessageIsError = !TrayNotifications.TrySendTestRaceNotification(out var message);
+        _notificationsMessage = message;
     }
 
     private void LoadWebAccess()

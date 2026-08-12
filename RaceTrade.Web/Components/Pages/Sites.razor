@@ -1,5 +1,6 @@
 @page "/sites"
 @inject SiteStore Store
+@inject SiteConnectionTestService SiteTester
 
 <PageTitle>Sites - RaceTrade</PageTitle>
 
@@ -13,6 +14,23 @@
 @if (_error is not null)
 {
     <p class="hint err">@_error</p>
+}
+
+@if (_siteTestResult is not null)
+{
+    <div class="site-test-result @(_siteTestResult.Success ? "ok" : "err")">
+        <strong>@(_siteTestResult.Success ? "CBFTP site check passed" : "CBFTP site check failed")</strong>
+        <span>@_siteTestResult.Message</span>
+        @if (_siteTestResult.Details.Count > 0)
+        {
+            <ul>
+                @foreach (var detail in _siteTestResult.Details)
+                {
+                    <li>@detail</li>
+                }
+            </ul>
+        }
+    </div>
 }
 
 <div class="panel">
@@ -77,9 +95,19 @@
                             }
                         </td>
                         <td class="site-actions">
-                            <a class="btn" href="@($"sites/edit/{r.Name}")"><Icon Name="edit" Size="13" /><span>Edit</span></a>
-                            <a class="btn" href="@($"cbftp-site/{r.Name}")"><Icon Name="servers" Size="13" /><span>Edit CBFTP Site</span></a>
-                            <button class="btn danger" @onclick="() => Delete(r.Name)"><Icon Name="trash" Size="13" /><span>Delete</span></button>
+                            <div class="site-action-row">
+                                <button class="btn" title="Check the CBFTP site config" disabled="@IsBusy"
+                                        @onclick="() => TestSite(r.Name)">
+                                    <Icon Name="test" Size="13" /><span>@ActionText(r.Name, "test", "Test")</span>
+                                </button>
+                                <button class="btn" title="Test the CBFTP site login with a root listing" disabled="@IsBusy"
+                                        @onclick="() => LoginSite(r.Name)">
+                                    <Icon Name="play" Size="13" /><span>@ActionText(r.Name, "login", "Login")</span>
+                                </button>
+                                <a class="btn" href="@($"sites/edit/{r.Name}")"><Icon Name="edit" Size="13" /><span>Edit</span></a>
+                                <a class="btn" href="@($"cbftp-site/{r.Name}")"><Icon Name="servers" Size="13" /><span>Edit CBFTP Site</span></a>
+                                <button class="btn danger" disabled="@IsBusy" @onclick="() => Delete(r.Name)"><Icon Name="trash" Size="13" /><span>Delete</span></button>
+                            </div>
                         </td>
                     </tr>
                 }
@@ -94,6 +122,11 @@
 
     private List<Row> _rows = new();
     private string? _error;
+    private SiteConnectionTestResult? _siteTestResult;
+    private string? _busySite;
+    private string? _busyAction;
+
+    private bool IsBusy => _busySite is not null;
 
     protected override void OnInitialized() => Reload();
 
@@ -102,6 +135,7 @@
         try
         {
             _error = null;
+            _siteTestResult = null;
             _rows = Store.ListNames().Select(n =>
             {
                 var c = Store.Load(n);
@@ -129,6 +163,54 @@
         try { Store.Delete(name); Reload(); }
         catch (Exception ex) { _error = ex.Message; }
     }
+
+    private async Task TestSite(string name)
+    {
+        try
+        {
+            _error = null;
+            _siteTestResult = null;
+            _busySite = name;
+            _busyAction = "test";
+            _siteTestResult = await SiteTester.ValidateAsync(name);
+        }
+        catch (Exception ex)
+        {
+            _siteTestResult = SiteConnectionTestResult.Fail($"Could not test '{name}'.", new[] { ex.Message });
+        }
+        finally
+        {
+            _busySite = null;
+            _busyAction = null;
+        }
+    }
+
+    private async Task LoginSite(string name)
+    {
+        try
+        {
+            _error = null;
+            _siteTestResult = null;
+            _busySite = name;
+            _busyAction = "login";
+            _siteTestResult = await SiteTester.LoginAsync(name);
+        }
+        catch (Exception ex)
+        {
+            _siteTestResult = SiteConnectionTestResult.Fail($"Could not test login for '{name}'.", new[] { ex.Message });
+        }
+        finally
+        {
+            _busySite = null;
+            _busyAction = null;
+        }
+    }
+
+    private string ActionText(string site, string action, string fallback) =>
+        string.Equals(_busySite, site, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(_busyAction, action, StringComparison.OrdinalIgnoreCase)
+            ? "Testing..."
+            : fallback;
 
     private void ToggleDisabled(string name)
     {

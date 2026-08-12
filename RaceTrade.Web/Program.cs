@@ -116,6 +116,9 @@ builder.Services.AddSingleton(security);
 
 // Singletons: engine components are process-wide, not per browser circuit.
 builder.Services.AddSingleton<RaceHistoryStore>();
+builder.Services.AddSingleton<NotificationSettingsService>();
+builder.Services.AddSingleton<TrayNotificationService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TrayNotificationService>());
 builder.Services.AddSingleton<UiLogSink>();
 builder.Services.AddSingleton<ILogSink>(sp => sp.GetRequiredService<UiLogSink>());
 builder.Services.AddSingleton<WebIrcOutput>();
@@ -128,6 +131,7 @@ builder.Services.AddSingleton<RacerState>();
 // the first time somebody opens the Skips page.
 builder.Services.AddSingleton<SkipStore>();
 builder.Services.AddSingleton<SiteStore>();
+builder.Services.AddSingleton<SiteConnectionTestService>();
 builder.Services.AddSingleton<CbftpStore>();
 builder.Services.AddSingleton<PreBotStore>();
 builder.Services.AddSingleton<FxpClientService>();

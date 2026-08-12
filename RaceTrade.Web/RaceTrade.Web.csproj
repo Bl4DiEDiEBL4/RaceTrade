@@ -4,10 +4,10 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>RaceTrade.Web</RootNamespace>
     <AssemblyName>RaceTrade</AssemblyName>
-    <Version>2.1.0</Version>
-    <AssemblyVersion>2.1.0.0</AssemblyVersion>
-    <FileVersion>2.1.0.0</FileVersion>
-    <InformationalVersion>2.1.0</InformationalVersion>
+    <Version>2.1.1</Version>
+    <AssemblyVersion>2.1.1.0</AssemblyVersion>
+    <FileVersion>2.1.1.0</FileVersion>
+    <InformationalVersion>2.1.1</InformationalVersion>
     <!-- Enabled because the host code uses nullable annotations (string?, event Action?).
          The engine library stays on 'disable' - it is ported .NET Framework code that
          was never annotated, and turning it on there would produce thousands of warnings

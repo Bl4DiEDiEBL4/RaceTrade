@@ -54,7 +54,27 @@
     <div class="form-actions">
         <button class="btn primary" @onclick="Save"><Icon Name="save" Size="13" /><span>Save</span></button>
         <button class="btn" @onclick="Reload"><Icon Name="refresh" Size="13" /><span>Reload</span></button>
+        <button class="btn" @onclick="TestSelected" disabled="@(_testingServer || !_config.CbftpServers.Any())">
+            <Icon Name="test" Size="13" />
+            <span>@(_testingServer ? "Testing..." : "Test")</span>
+        </button>
     </div>
+
+    @if (_testResult is not null)
+    {
+        <div class="cbftp-test-result @(_testResult.Success ? "ok" : "err")">
+            <strong>@(_testResult.Success ? "CBFTP test passed" : "CBFTP test failed")</strong>
+            <span>@_testResult.Message</span>
+            @if (!string.IsNullOrWhiteSpace(_testResult.Endpoint))
+            {
+                <code>@_testResult.Endpoint</code>
+            }
+            @if (!string.IsNullOrWhiteSpace(_testResult.ResponsePreview))
+            {
+                <pre>@_testResult.ResponsePreview</pre>
+            }
+        </div>
+    }
 </div>
 
 <div class="panel form import-panel">
@@ -147,9 +167,11 @@
     private string? _error;
     private string? _syncError;
     private string? _syncStatus;
+    private CbftpTestResult? _testResult;
     private string _selectedServerId = "";
     private bool _fetching;
     private bool _importing;
+    private bool _testingServer;
     private bool _overwriteExisting;
     private readonly List<ImportSiteRow> _fetchedSites = new();
 
@@ -162,6 +184,7 @@
         try
         {
             _error = null;
+            _testResult = null;
             _config = Store.Load();
 
             // Stored (encrypted) passwords are kept aside and never rendered; the input
@@ -193,6 +216,7 @@
         _passwords.Add("");
         _storedPasswords.Add("");
         _selectedServerId = _config.CbftpServers.Last().Id ?? "";
+        _testResult = null;
     }
 
     private void RemoveRow(int i)
@@ -202,6 +226,7 @@
         _storedPasswords.RemoveAt(i);
         if (!_config.CbftpServers.Any(s => string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase)))
             _selectedServerId = _config.CbftpServers.FirstOrDefault()?.Id ?? "";
+        _testResult = null;
     }
 
     private void Save()
@@ -209,6 +234,7 @@
         try
         {
             _error = null;
+            _testResult = null;
 
             for (var i = 0; i < _config.CbftpServers.Count; i++)
             {
@@ -224,6 +250,32 @@
         catch (Exception ex)
         {
             _error = ex.Message;
+        }
+    }
+
+    private async Task TestSelected()
+    {
+        var server = SelectedServer();
+        if (server is null)
+        {
+            _testResult = CbftpTestResult.Fail("Select a CBFTP server first.");
+            return;
+        }
+
+        try
+        {
+            _testingServer = true;
+            _error = null;
+            _testResult = null;
+            _testResult = await Store.TestAsync(CloneForTest(server));
+        }
+        catch (Exception ex)
+        {
+            _testResult = CbftpTestResult.Fail(ex.Message);
+        }
+        finally
+        {
+            _testingServer = false;
         }
     }
 
@@ -320,6 +372,26 @@
     private CbftpServer? SelectedServer() =>
         _config.CbftpServers.FirstOrDefault(s => string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase))
         ?? _config.CbftpServers.FirstOrDefault();
+
+    private CbftpServer CloneForTest(CbftpServer server)
+    {
+        var idx = _config.CbftpServers.IndexOf(server);
+        var password = idx >= 0 && idx < _passwords.Count && !string.IsNullOrEmpty(_passwords[idx])
+            ? _passwords[idx]
+            : idx >= 0 && idx < _storedPasswords.Count
+                ? _storedPasswords[idx]
+                : server.Password;
+
+        return new CbftpServer
+        {
+            Id = server.Id,
+            Name = server.Name,
+            Host = server.Host,
+            Port = server.Port,
+            Password = password,
+            Profile = server.Profile
+        };
+    }
 
     private HashSet<string> ExistingSiteNames() =>
         SiteStore.ListNames().ToHashSet(StringComparer.OrdinalIgnoreCase);

@@ -24,6 +24,7 @@ public sealed class UiLogSink : ILogSink, IDisposable
     private const int MaxEntries = 5000;
 
     private readonly RaceHistoryStore _history;
+    private readonly TrayNotificationService _tray;
     private readonly ConcurrentQueue<LogEvent> _events = new();
     private readonly Timer _notifyTimer;
     private int _count;
@@ -32,9 +33,10 @@ public sealed class UiLogSink : ILogSink, IDisposable
     /// <summary>Raised (on a timer thread) when new events have arrived.</summary>
     public event Action? Changed;
 
-    public UiLogSink(RaceHistoryStore history)
+    public UiLogSink(RaceHistoryStore history, TrayNotificationService tray)
     {
         _history = history;
+        _tray = tray;
 
         // Coalesce notifications to ~4/sec: enough to feel live, cheap enough that a
         // race storm cannot saturate the circuit.
@@ -52,6 +54,7 @@ public sealed class UiLogSink : ILogSink, IDisposable
         if (entry is null) return;
 
         try { _history.Capture(entry); } catch { /* history must never disturb the race path */ }
+        try { _tray.NotifyRace(entry); } catch { /* tray notifications must never disturb the race path */ }
         _events.Enqueue(entry);
         Interlocked.Increment(ref _pendingSinceLastNotify);
 
