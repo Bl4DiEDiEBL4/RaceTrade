@@ -6,37 +6,38 @@
 
 @* Answers the question the logs never did: why did it not race this?
    Every rejection carries the exact rule that fired, not just "filtered". *@
-<div class="page-head">
-    <h1><Icon Name="warn" Size="18" />Skips</h1>
-    <div class="head-actions">
-        <span class="hint">@Store.Total since start</span>
-        @* Refresh explicitly: Store.Clear() fires Changed, but OnChanged ignores it while
-           Live is off, which would leave the cleared rows on screen. *@
-        <button class="btn" @onclick="Clear">
-            <Icon Name="trash" Size="13" /><span>Clear</span>
-        </button>
-    </div>
-</div>
-
-@if (_byReason.Count > 0)
-{
-    <div class="reason-bar">
-        <button class="reason-chip @(_reason is null ? "active" : "")" @onclick="() => SetReason(null)">
-            All <em>@_byReason.Sum(x => x.Count)</em>
-        </button>
-        @foreach (var (reason, count) in _byReason)
-        {
-            <button class="reason-chip @(_reason == reason ? "active" : "") @ReasonClass(reason)"
-                    @onclick="() => SetReason(reason)">
-                @Label(reason) <em>@count</em>
+<div class="skips-page paged-page">
+    <div class="page-head">
+        <h1><Icon Name="warn" Size="18" />Skips</h1>
+        <div class="head-actions">
+            <span class="hint">@Store.Total since start</span>
+            @* Refresh explicitly: Store.Clear() fires Changed, but OnChanged ignores it while
+               Live is off, which would leave the cleared rows on screen. *@
+            <button class="btn" @onclick="Clear">
+                <Icon Name="trash" Size="13" /><span>Clear</span>
             </button>
-        }
+        </div>
     </div>
-}
 
-<div class="panel fill-panel">
-    <div class="toolbar">
-        <select @bind="_site" @bind:after="Refresh">
+    @if (_byReason.Count > 0)
+    {
+        <div class="reason-bar">
+            <button class="reason-chip @(_reason is null ? "active" : "")" @onclick="() => SetReason(null)">
+                All <em>@_byReason.Sum(x => x.Count)</em>
+            </button>
+            @foreach (var (reason, count) in _byReason)
+            {
+                <button class="reason-chip @(_reason == reason ? "active" : "") @ReasonClass(reason)"
+                        @onclick="() => SetReason(reason)">
+                    @Label(reason) <em>@count</em>
+                </button>
+            }
+        </div>
+    }
+
+    <div class="panel fill-panel paged-panel">
+        <div class="toolbar">
+        <select @bind="_site" @bind:after="FilterChanged">
             <option value="">All sites</option>
             @foreach (var s in _sites)
             {
@@ -44,7 +45,7 @@
             }
         </select>
 
-        <select @bind="_section" @bind:after="Refresh">
+        <select @bind="_section" @bind:after="FilterChanged">
             <option value="">All sections</option>
             @foreach (var s in _sections)
             {
@@ -52,19 +53,34 @@
             }
         </select>
 
-        <input class="search" @bind="_search" @bind:event="oninput" @bind:after="Refresh"
+        <input class="search" @bind="_search" @bind:event="oninput" @bind:after="FilterChanged"
                placeholder="Filter on release or reason" />
 
         <span class="spacer"></span>
         <label class="chk">
-            <input type="checkbox" @bind="_live" />
+            <input type="checkbox" @bind="_live" @bind:after="LiveChanged" />
             <span>Live</span>
         </label>
+        <select class="page-size" @bind="_pageSize" @bind:after="PageSizeChanged">
+            <option value="10">10 lines</option>
+            <option value="20">20 lines</option>
+            <option value="25">25 lines</option>
+            <option value="50">50 lines</option>
+            <option value="100">100 lines</option>
+            <option value="200">200 lines</option>
+        </select>
+        <div class="pager">
+            <button type="button" class="btn sm" @onclick="NewestPage" disabled="@(_page <= 1)">Newest</button>
+            <button type="button" class="btn sm" @onclick="PreviousPage" disabled="@(_page <= 1)">Prev</button>
+            <span class="hint">@PageLabel</span>
+            <button type="button" class="btn sm" @onclick="NextPage" disabled="@(_page >= TotalPages)">Next</button>
+            <button type="button" class="btn sm" @onclick="OldestPage" disabled="@(_page >= TotalPages)">Oldest</button>
+        </div>
     </div>
 
-    @if (_rows.Count == 0)
-    {
-        <div class="empty">
+        @if (_rows.Count == 0)
+        {
+        <div class="empty paged-empty">
             @if (Store.Total == 0)
             {
                 <text>
@@ -80,6 +96,7 @@
     }
     else
     {
+        <div class="paged-table-wrap">
         <table class="grid logs skip-table">
             <thead>
                 <tr>
@@ -92,7 +109,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach (var r in _rows)
+                @foreach (var r in PagedRows)
                 {
                     <tr>
                         <td class="ts">@r.At.ToString("HH:mm:ss")</td>
@@ -105,7 +122,18 @@
                 }
             </tbody>
         </table>
+        </div>
+        <div class="table-footer">
+            <span class="hint">@PageLabel</span>
+            <div class="pager">
+                <button type="button" class="btn sm" @onclick="NewestPage" disabled="@(_page <= 1)">Newest</button>
+                <button type="button" class="btn sm" @onclick="PreviousPage" disabled="@(_page <= 1)">Prev</button>
+                <button type="button" class="btn sm" @onclick="NextPage" disabled="@(_page >= TotalPages)">Next</button>
+                <button type="button" class="btn sm" @onclick="OldestPage" disabled="@(_page >= TotalPages)">Oldest</button>
+            </div>
+        </div>
     }
+    </div>
 </div>
 
 @code {
@@ -119,6 +147,23 @@
     private string _search = "";
     private SkipReason? _reason;
     private bool _live = true;
+    private int _page = 1;
+    private int _pageSize = 20;
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_rows.Count / (double)_pageSize));
+    private IEnumerable<SkipRecord> PagedRows => _rows.Skip((_page - 1) * _pageSize).Take(_pageSize);
+
+    private string PageLabel
+    {
+        get
+        {
+            if (_rows.Count == 0) return "0 shown";
+
+            var first = ((_page - 1) * _pageSize) + 1;
+            var last = Math.Min(_rows.Count, _page * _pageSize);
+            return $"{first}-{last} of {_rows.Count}";
+        }
+    }
 
     protected override void OnInitialized()
     {
@@ -137,6 +182,7 @@
     private void SetReason(SkipReason? reason)
     {
         _reason = reason;
+        _page = 1;
         Refresh();
     }
 
@@ -146,9 +192,58 @@
         Refresh();
     }
 
+    private void FilterChanged()
+    {
+        _page = 1;
+        Refresh();
+    }
+
+    private void PageSizeChanged()
+    {
+        _page = 1;
+        Refresh();
+    }
+
+    private void LiveChanged()
+    {
+        if (_live)
+        {
+            _page = 1;
+            Refresh();
+        }
+    }
+
+    private void NewestPage()
+    {
+        _live = true;
+        _page = 1;
+        Refresh();
+    }
+
+    private void PreviousPage()
+    {
+        _live = false;
+        _page = Math.Max(1, _page - 1);
+        Refresh();
+    }
+
+    private void NextPage()
+    {
+        _live = false;
+        _page = Math.Min(TotalPages, _page + 1);
+        Refresh();
+    }
+
+    private void OldestPage()
+    {
+        _live = false;
+        _page = TotalPages;
+        Refresh();
+    }
+
     private void Refresh()
     {
-        _rows = Store.Recent(_site, _section, _reason, _search);
+        _rows = Store.Recent(_site, _section, _reason, _search, int.MaxValue);
         _sites = Store.Sites();
         _sections = Store.Sections();
 
@@ -156,6 +251,13 @@
         // otherwise picking a chip would zero out every other chip and you could never
         // see what else is being skipped.
         _byReason = Store.CountsByReason(_site, _section, _search);
+        ClampPage();
+    }
+
+    private void ClampPage()
+    {
+        if (_page < 1) _page = 1;
+        if (_page > TotalPages) _page = TotalPages;
     }
 
     private static string Label(SkipReason reason) => reason switch

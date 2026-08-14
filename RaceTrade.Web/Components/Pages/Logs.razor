@@ -4,14 +4,15 @@
 
 <PageTitle>Logs - RaceTrade</PageTitle>
 
-<div class="page-head">
-    <h1><Icon Name="logs" Size="18" />Logs</h1>
-</div>
+<div class="logs-page paged-page">
+    <div class="page-head">
+        <h1><Icon Name="logs" Size="18" />Logs</h1>
+    </div>
 
 @* The WinForms build had separate docked log windows (App / IRC / Race / Cbftp).
    Here it is one stream with a channel filter, which keeps a single scrollback and
    lets you correlate an announce with the race it triggered. *@
-<div class="panel fill-panel">
+    <div class="panel fill-panel paged-panel">
     <div class="toolbar">
         <select @bind="_channel" @bind:after="FilterChanged">
             <option value="">All channels</option>
@@ -29,10 +30,12 @@
             }
         </select>
 
-        <label class="chk"><input type="checkbox" @bind="_follow" /> Live</label>
+        <label class="chk"><input type="checkbox" @bind="_follow" @bind:after="LiveChanged" /> Live</label>
 
         <span class="spacer"></span>
         <select class="page-size" @bind="_pageSize" @bind:after="PageSizeChanged">
+            <option value="10">10 lines</option>
+            <option value="20">20 lines</option>
             <option value="25">25 lines</option>
             <option value="50">50 lines</option>
             <option value="100">100 lines</option>
@@ -49,41 +52,43 @@
 
     @if (_entries.Count == 0)
     {
-        <div class="empty">Nothing logged yet.</div>
+        <div class="empty paged-empty">Nothing logged yet.</div>
     }
     else
     {
-        <table class="grid logs log-table">
-            <thead>
-                <tr>
-                    <th class="ts">Time</th>
-                    <th class="ch">Type</th>
-                    <th class="site">Site</th>
-                    <th class="ircchan">Channel</th>
-                    <th class="race-status">Status</th>
-                    <th class="section">Section</th>
-                    <th class="rel">Release</th>
-                    <th class="targets">Sites</th>
-                    <th class="msg">Message</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var e in PagedEntries)
-                {
-                    <tr class="lvl-@e.Level.ToString().ToLowerInvariant()">
-                        <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
-                        <td class="ch">@e.Channel</td>
-                        <td class="site">@((MarkupString)FormatSite(e.Site))</td>
-                        <td class="ircchan">@e.Source</td>
-                        <td class="race-status @StatusClass(e.Status)">@e.Status</td>
-                        <td class="section">@((MarkupString)FormatSection(e.Section))</td>
-                        <td class="rel">@((MarkupString)FormatRelease(e.Release))</td>
-                        <td class="targets">@((MarkupString)FormatSites(e.TargetSite, e.Reason))</td>
-                        <td class="msg">@((MarkupString)FormatMessage(e))</td>
+        <div class="paged-table-wrap">
+            <table class="grid logs log-table">
+                <thead>
+                    <tr>
+                        <th class="ts">Time</th>
+                        <th class="ch">Type</th>
+                        <th class="site">Site</th>
+                        <th class="ircchan">Channel</th>
+                        <th class="race-status">Status</th>
+                        <th class="section">Section</th>
+                        <th class="rel">Release</th>
+                        <th class="targets">Sites</th>
+                        <th class="msg">Message</th>
                     </tr>
-                }
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    @foreach (var e in PagedEntries)
+                    {
+                        <tr class="lvl-@e.Level.ToString().ToLowerInvariant()">
+                            <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
+                            <td class="ch">@e.Channel</td>
+                            <td class="site">@((MarkupString)FormatSite(e.Site))</td>
+                            <td class="ircchan">@e.Source</td>
+                            <td class="race-status @StatusClass(e.Status)">@e.Status</td>
+                            <td class="section">@((MarkupString)FormatSection(e.Section))</td>
+                            <td class="rel">@((MarkupString)FormatRelease(e.Release))</td>
+                            <td class="targets">@((MarkupString)FormatSites(e.TargetSite, e.Reason))</td>
+                            <td class="msg">@((MarkupString)FormatMessage(e))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
         <div class="table-footer">
             <span class="hint">@PageLabel</span>
             <div class="pager">
@@ -94,6 +99,7 @@
             </div>
         </div>
     }
+    </div>
 </div>
 
 @code {
@@ -102,7 +108,7 @@
     private string _minLevel = "";
     private bool _follow = true;
     private int _page = 1;
-    private int _pageSize = 50;
+    private int _pageSize = 20;
 
     private int TotalPages => Math.Max(1, (int)Math.Ceiling(_entries.Count / (double)_pageSize));
     private IEnumerable<LogEvent> PagedEntries => _entries.Skip((_page - 1) * _pageSize).Take(_pageSize);
@@ -154,8 +160,18 @@
         Refresh();
     }
 
+    private void LiveChanged()
+    {
+        if (_follow)
+        {
+            _page = 1;
+            Refresh();
+        }
+    }
+
     private void NewestPage()
     {
+        _follow = true;
         _page = 1;
         Refresh();
     }

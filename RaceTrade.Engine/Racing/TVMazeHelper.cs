@@ -19,6 +19,41 @@ namespace RaceTrader
         private static readonly HttpClient httpClient = new HttpClient();
         private const string API_BASE_URL = "https://api.tvmaze.com";
 
+        /// <summary>
+        /// Precompiled release-name regexes (same idea as TRD.js' EPISODE_FORM statics).
+        /// The static Regex.* methods only cache ~15 patterns process-wide, so these
+        /// inline patterns were being re-parsed on every announce.
+        /// </summary>
+        private static class Rx
+        {
+            private const RegexOptions CI = RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant;
+
+            public static readonly Regex Codec = new(@"[\s._-]([xh]26[45]|xvid|VP[89])[\s._-]", CI);
+            public static readonly Regex SourceBluray = new(@"[\s._-](((720p|1080p)\.(PURE\.)?M?BLURAY)|COMPLETE(\.PURE)?\.M?BLURAY)", CI);
+            public static readonly Regex SourceUhdBluray = new(@"[\s._-]((2160p\.UHD\.M?BLURAY)|COMPLETE(\.UHD)?\.M?BLURAY)", CI);
+            public static readonly Regex SourceSd = new(@"[\s._-](DVDRIP|BDRIP)", CI);
+            public static readonly Regex SourceTv = new(@"[\s._-]([AU]?HDTV|AUHDTV|PDTV|DSR|WEBRIP|WEB)[\s._-]", CI);
+            public static readonly Regex Resolution = new(@"[\s._-](720P|1080P|1280P|1440P|1920P|2160P|2300P|2700P|2880P)[\s._-]", CI);
+            // HDR.DV added for parity with TRD.js (normalized to DV.HDR in ExtractRange).
+            public static readonly Regex Range = new(@"[\s._-](DV\.HDR|HDR\.DV|HDR|DV|HLG)[\s._-]", CI);
+            public static readonly Regex Internal = new(@"[\s._-](INTERNAL|INT)[\s._-]", CI);
+            public static readonly Regex Multi = new(@"[\s._-]MULTI([\s._-]|$)", CI);
+            public static readonly Regex Group = new(@"-([^-]+)$", RegexOptions.Compiled);
+            public static readonly Regex GroupStrip = new(@"-[^-]+$", RegexOptions.Compiled);
+            public static readonly Regex TvSxxExx = new(@"[\s._-]S\d+E\d+", CI);
+            public static readonly Regex TvNxN = new(@"[\s._-]\d+x\d+[\s._-]", CI);
+            public static readonly Regex TvEpisodeWord = new(@"[\s._-](?:Episode|E|Part)\.?\d+[\s._-]", CI);
+            public static readonly Regex TvDate = new(@"[\s._-]\d{4}\.\d{2}\.\d{2}[\s._-]", RegexOptions.Compiled);
+            public static readonly Regex EpisodeToken1 = new(@"[\s._-](S\d+E\d+-?E\d+)[\s._-]", CI);
+            public static readonly Regex EpisodeToken2 = new(@"[\s._-]((?:S\d+)?(?:Episode|E|Part)\.?\d+)[\s._-]", CI);
+            public static readonly Regex EpisodeToken3 = new(@"[\s._-](\d+x\d+)[\s._-]", CI);
+            public static readonly Regex EpisodeToken4 = new(@"[\s._-](\d{4}\.\d{2}\.\d{2})[\s._-]", RegexOptions.Compiled);
+            public static readonly Regex SeasonEpisode1 = new(@"[\s._-](S(\d+)E(\d+)-?E(\d+))[\s._-]", CI);
+            public static readonly Regex SeasonEpisode2 = new(@"[\s._-](?:S(\d+)?)?(?:Episode|E|Part)\.?(\d+)[\s._-]", CI);
+            public static readonly Regex SeasonEpisode3 = new(@"[\s._-](\d+)x(\d+)[\s._-]", CI);
+            public static readonly Regex SeasonEpisode4 = new(@"[\s._-](\d{4})\.(\d{2}\.\d{2})[\s._-]", RegexOptions.Compiled);
+        }
+
         // Rate limiting - TVMaze allows 20 requests per 10 seconds
         private static DateTime lastRequestTime = DateTime.MinValue;
         private static readonly TimeSpan minRequestInterval = TimeSpan.FromMilliseconds(500);
@@ -256,7 +291,7 @@ namespace RaceTrader
         /// </summary>
         public static string ExtractCodec(string releaseName)
         {
-            var match = Regex.Match(releaseName, @"[\s._-]([xh]26[45]|xvid|VP[89])[\s._-]", RegexOptions.IgnoreCase);
+            var match = Rx.Codec.Match(releaseName);
             if (match.Success)
             {
                 return match.Groups[1].Value.ToUpper();
@@ -270,25 +305,25 @@ namespace RaceTrader
         public static string ExtractSource(string releaseName)
         {
             // Check for complete BluRay first
-            if (Regex.IsMatch(releaseName, @"[\s._-](((720p|1080p)\.(PURE\.)?M?BLURAY)|COMPLETE(\.PURE)?\.M?BLURAY)", RegexOptions.IgnoreCase))
+            if (Rx.SourceBluray.IsMatch(releaseName))
             {
                 return "BLURAY";
             }
 
-            if (Regex.IsMatch(releaseName, @"[\s._-]((2160p\.UHD\.M?BLURAY)|COMPLETE(\.UHD)?\.M?BLURAY)", RegexOptions.IgnoreCase))
+            if (Rx.SourceUhdBluray.IsMatch(releaseName))
             {
                 return "UHD.BLURAY";
             }
 
             // Check SD sources
-            var match = Regex.Match(releaseName, @"[\s._-](DVDRIP|BDRIP)", RegexOptions.IgnoreCase);
+            var match = Rx.SourceSd.Match(releaseName);
             if (match.Success)
             {
                 return match.Groups[1].Value.ToUpper();
             }
 
             // Check other sources
-            match = Regex.Match(releaseName, @"[\s._-]([AU]?HDTV|AUHDTV|PDTV|DSR|WEBRIP|WEB)[\s._-]", RegexOptions.IgnoreCase);
+            match = Rx.SourceTv.Match(releaseName);
             if (match.Success)
             {
                 return match.Groups[1].Value.ToUpper();
@@ -302,7 +337,7 @@ namespace RaceTrader
         /// </summary>
         public static string ExtractResolution(string releaseName)
         {
-            var match = Regex.Match(releaseName, @"[\s._-](720P|1080P|1280P|1440P|1920P|2160P|2300P|2700P|2880P)[\s._-]", RegexOptions.IgnoreCase);
+            var match = Rx.Resolution.Match(releaseName);
             if (match.Success)
             {
                 return match.Groups[1].Value.ToUpper();
@@ -315,10 +350,12 @@ namespace RaceTrader
         /// </summary>
         public static string ExtractRange(string releaseName)
         {
-            var match = Regex.Match(releaseName, @"[\s._-](DV\.HDR|HDR|DV|HLG)[\s._-]", RegexOptions.IgnoreCase);
+            var match = Rx.Range.Match(releaseName);
             if (match.Success)
             {
-                return match.Groups[1].Value.ToUpper();
+                // HDR.DV -> DV.HDR normalization, same as TRD.js.
+                var value = match.Groups[1].Value.ToUpper();
+                return value == "HDR.DV" ? "DV.HDR" : value;
             }
             return null;
         }
@@ -329,7 +366,7 @@ namespace RaceTrader
         public static bool IsInternal(string releaseName)
         {
             // Check for INTERNAL or INT tag
-            if (Regex.IsMatch(releaseName, @"[\s._-](INTERNAL|INT)[\s._-]", RegexOptions.IgnoreCase))
+            if (Rx.Internal.IsMatch(releaseName))
             {
                 return true;
             }
@@ -354,7 +391,7 @@ namespace RaceTrader
 
             // Must be a delimited MULTi tag, not any title containing the substring
             // (e.g. "Multitude") - same approach as IsInternal above.
-            return Regex.IsMatch(releaseName, @"[\s._-]MULTI([\s._-]|$)", RegexOptions.IgnoreCase);
+            return Rx.Multi.IsMatch(releaseName);
         }
 
         /// <summary>
@@ -362,7 +399,7 @@ namespace RaceTrader
         /// </summary>
         public static string ExtractGroup(string releaseName)
         {
-            var match = Regex.Match(releaseName, @"-([^-]+)$");
+            var match = Rx.Group.Match(releaseName);
             if (match.Success)
             {
                 return match.Groups[1].Value;
@@ -376,7 +413,7 @@ namespace RaceTrader
         public static string ExtractRepeatTag(string releaseName)
         {
             // Remove group first
-            var nameWithoutGroup = Regex.Replace(releaseName, @"-[^-]+$", "");
+            var nameWithoutGroup = Rx.GroupStrip.Replace(releaseName, "");
 
             var tags = new[] { "REAL.PROPER", "PROPER", "RERIP", "REPACK" };
             foreach (var tag in tags)
@@ -402,13 +439,13 @@ namespace RaceTrader
                 return false;
 
             // Check for any episode pattern
-            if (Regex.IsMatch(releaseName, @"[\s._-]S\d+E\d+", RegexOptions.IgnoreCase))
+            if (Rx.TvSxxExx.IsMatch(releaseName))
                 return true;
-            if (Regex.IsMatch(releaseName, @"[\s._-]\d+x\d+[\s._-]", RegexOptions.IgnoreCase))
+            if (Rx.TvNxN.IsMatch(releaseName))
                 return true;
-            if (Regex.IsMatch(releaseName, @"[\s._-](?:Episode|E|Part)\.?\d+[\s._-]", RegexOptions.IgnoreCase))
+            if (Rx.TvEpisodeWord.IsMatch(releaseName))
                 return true;
-            if (Regex.IsMatch(releaseName, @"[\s._-]\d{4}\.\d{2}\.\d{2}[\s._-]"))
+            if (Rx.TvDate.IsMatch(releaseName))
                 return true;
 
             return false;
@@ -454,22 +491,22 @@ namespace RaceTrader
                 return null;
 
             // Pattern 1: S01E01-E02
-            var match = Regex.Match(releaseName, @"[\s._-](S\d+E\d+-?E\d+)[\s._-]", RegexOptions.IgnoreCase);
+            var match = Rx.EpisodeToken1.Match(releaseName);
             if (match.Success)
                 return match.Groups[1].Value;
 
             // Pattern 2: Episode01 or Part01 (with optional season)
-            match = Regex.Match(releaseName, @"[\s._-]((?:S\d+)?(?:Episode|E|Part)\.?\d+)[\s._-]", RegexOptions.IgnoreCase);
+            match = Rx.EpisodeToken2.Match(releaseName);
             if (match.Success)
                 return match.Groups[1].Value;
 
             // Pattern 3: 1x01
-            match = Regex.Match(releaseName, @"[\s._-](\d+x\d+)[\s._-]", RegexOptions.IgnoreCase);
+            match = Rx.EpisodeToken3.Match(releaseName);
             if (match.Success)
                 return match.Groups[1].Value;
 
             // Pattern 4: Date format 2024.01.15
-            match = Regex.Match(releaseName, @"[\s._-](\d{4}\.\d{2}\.\d{2})[\s._-]");
+            match = Rx.EpisodeToken4.Match(releaseName);
             if (match.Success)
                 return match.Groups[1].Value;
 
@@ -486,7 +523,7 @@ namespace RaceTrader
                 return (null, null);
 
             // Pattern 1: S01E01-E02 (multi-episode range)
-            var match = Regex.Match(releaseName, @"[\s._-](S(\d+)E(\d+)-?E(\d+))[\s._-]", RegexOptions.IgnoreCase);
+            var match = Rx.SeasonEpisode1.Match(releaseName);
             if (match.Success)
             {
                 var season = int.Parse(match.Groups[2].Value);
@@ -502,7 +539,7 @@ namespace RaceTrader
             }
 
             // Pattern 2: S01E01 or Episode01 or Part01
-            match = Regex.Match(releaseName, @"[\s._-](?:S(\d+)?)?(?:Episode|E|Part)\.?(\d+)[\s._-]", RegexOptions.IgnoreCase);
+            match = Rx.SeasonEpisode2.Match(releaseName);
             if (match.Success)
             {
                 int? season = null;
@@ -514,7 +551,7 @@ namespace RaceTrader
             }
 
             // Pattern 3: 1x01
-            match = Regex.Match(releaseName, @"[\s._-](\d+)x(\d+)[\s._-]", RegexOptions.IgnoreCase);
+            match = Rx.SeasonEpisode3.Match(releaseName);
             if (match.Success)
             {
                 return (
@@ -524,7 +561,7 @@ namespace RaceTrader
             }
 
             // Pattern 4: Date format 2024.01.15
-            match = Regex.Match(releaseName, @"[\s._-](\d{4})\.(\d{2}\.\d{2})[\s._-]");
+            match = Rx.SeasonEpisode4.Match(releaseName);
             if (match.Success)
             {
                 return (

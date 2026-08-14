@@ -21,7 +21,7 @@
 
 * { box-sizing: border-box; }
 
-html, body { height: 100%; }
+html, body { height: 100%; overflow: hidden; }
 
 body {
     margin: 0;
@@ -35,11 +35,19 @@ a { color: var(--accent); }
 
 /* ---------- shell ---------- */
 
-.app { display: flex; min-height: 100vh; }
+.app {
+    display: flex;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+}
 
 .shell-content {
     flex: 1 1 auto;
     min-width: 0;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
 }
@@ -313,6 +321,23 @@ main {
     padding: 20px 24px 28px;
     display: flex;
     flex-direction: column;
+    overflow: auto;
+}
+
+/* Normal content pages, such as Settings, are taller than one viewport and should
+   scroll as full sections. Without this, flexbox can shrink panels into thin bars. */
+.shell-content > main > * {
+    flex-shrink: 0;
+}
+
+.shell-content > main > .dashboard-page,
+.shell-content > main > .chat-page,
+.shell-content > main > .fxp-page,
+.shell-content > main > .search-page,
+.shell-content > main > .pre-grid,
+.shell-content > main > .paged-page,
+.shell-content > main > .fill-panel {
+    flex-shrink: 1;
 }
 
 .page-head {
@@ -577,6 +602,49 @@ h2 { font-size: 12px; letter-spacing: 1.2px; color: var(--muted); margin: 24px 0
     gap: 10px;
     padding: 9px 13px;
     border-top: 1px solid var(--line);
+}
+
+.paged-page {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.paged-page > .page-head,
+.paged-page > .reason-bar {
+    flex: 0 0 auto;
+}
+
+.paged-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.paged-panel > .toolbar,
+.paged-panel > .table-footer {
+    flex: 0 0 auto;
+}
+
+.paged-table-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.paged-table-wrap > table.grid {
+    width: 100%;
+}
+
+.paged-empty {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 select, input[type=text], input[type=password], textarea {
@@ -1166,11 +1234,11 @@ table.grid td.path { background: transparent; padding: 2px 0; margin: 0; }
 }
 
 .sites-table .c-site { width: 10%; }
-.sites-table .c-host { width: 15%; }
-.sites-table .c-network { width: 10%; }
-.sites-table .c-small { width: 8%; }
-.sites-table .c-status { width: 9%; }
-.sites-table .c-actions { width: 42%; }
+.sites-table .c-host { width: 12%; }
+.sites-table .c-network { width: 8%; }
+.sites-table .c-small { width: 7%; }
+.sites-table .c-status { width: 8%; }
+.sites-table .c-actions { width: 48%; }
 
 .sites-table th.site-status,
 .sites-table td.site-status {
@@ -1612,7 +1680,9 @@ body {
 }
 
 .app {
-    min-height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
     background:
         linear-gradient(135deg, rgba(17, 215, 202, .055), transparent 34%),
         linear-gradient(180deg, var(--content-2), #0d1118 70%);
@@ -1621,7 +1691,7 @@ body {
 .sidebar {
     position: sticky;
     top: 0;
-    height: 100vh;
+    height: 100dvh;
     min-height: 0;
     overflow: hidden;
     overscroll-behavior: contain;
@@ -2446,6 +2516,7 @@ pre.code {
 
 .search-toolbar {
     row-gap: 8px;
+    column-gap: 10px;
 }
 
 .search-toolbar select {
@@ -2511,6 +2582,10 @@ pre.code {
     border: 1px solid var(--line);
     border-radius: 5px;
     background: var(--content);
+}
+
+.search-empty-row {
+    padding: 13px 14px;
 }
 
 .search-table-head,
@@ -2580,10 +2655,20 @@ pre.code {
     border-top: 1px solid var(--line);
 }
 
+.search-log .search-section-head {
+    min-height: 34px;
+    margin-bottom: 6px;
+}
+
+.search-log .search-section-head .btn {
+    align-self: center;
+}
+
 .search-log .log-box {
     height: 96px;
     min-height: 96px;
     max-height: 96px;
+    padding: 12px 14px;
 }
 
 .search-fxp-modal {
@@ -2751,6 +2836,45 @@ pre.code {
     margin: 0;
     border: 0;
     border-radius: 0;
+}
+
+.duplicate-modal {
+    width: min(560px, 96vw);
+}
+
+.duplicate-body {
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+}
+
+.duplicate-body label,
+.selected-block .label {
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+}
+
+.selected-block {
+    display: grid;
+    gap: 4px;
+    padding: 11px 12px;
+    border: 1px solid rgba(20, 184, 166, .25);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    background: rgba(20, 184, 166, .10);
+}
+
+.selected-block strong {
+    color: var(--accent);
+}
+
+.duplicate-body .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 4px;
 }
 
 .modal-head .icon-only {
@@ -4865,6 +4989,7 @@ html[data-theme="light"] textarea,
 html[data-theme="light"] input[type=text],
 html[data-theme="light"] input[type=password],
 html[data-theme="light"] input[type=number],
+html[data-theme="light"] input[type=search],
 html[data-theme="light"] .chat-send input {
     background: #ffffff;
     border-color: #b8c4d4;
@@ -4876,6 +5001,37 @@ html[data-theme="light"] input::placeholder,
 html[data-theme="light"] textarea::placeholder,
 html[data-theme="light"] .chat-send input::placeholder {
     color: #7b8798;
+}
+
+html[data-theme="light"] .search-shell {
+    background: #ffffff;
+    border-color: #c8d4e3;
+}
+
+html[data-theme="light"] .search-sites,
+html[data-theme="light"] .search-results-wrap,
+html[data-theme="light"] .search-log {
+    background: #f8fbff;
+}
+
+html[data-theme="light"] .search-table,
+html[data-theme="light"] .search-log .log-box {
+    background: #eef6fb;
+    border-color: #c5d2e1;
+}
+
+html[data-theme="light"] .search-table-head {
+    background: #e1e9f3;
+    color: #25364b;
+    border-bottom-color: #c1cedd;
+}
+
+html[data-theme="light"] .search-row {
+    border-bottom-color: rgba(15, 23, 42, .08);
+}
+
+html[data-theme="light"] .search-empty-row {
+    color: #334155;
 }
 
 html[data-theme="light"] .btn,
@@ -6026,5 +6182,100 @@ html[data-theme="light"] .mobile-menu-toggle:checked + .mobile-menu-button {
 
     .chat-lines {
         flex: 0 0 auto;
+    }
+}
+
+/* ---------- fixed shell scroll model ----------
+   Header/sidebar stay put. The active page is the only vertical scroll area. */
+@media (min-width: 761px) {
+    .app {
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .sidebar {
+        height: 100dvh;
+    }
+
+    .shell-content {
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .shell-content > main {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+    }
+
+    .shell-content main:has(.paged-page) {
+        height: calc(100dvh - 54px);
+        max-height: calc(100dvh - 54px);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .paged-page {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+}
+
+@media (max-width: 760px) {
+    html,
+    body {
+        height: 100%;
+        overflow: hidden;
+    }
+
+    .app {
+        display: flex !important;
+        flex-direction: column;
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .sidebar {
+        flex: 0 0 auto;
+        max-height: 64dvh;
+        overflow: visible;
+    }
+
+    .sidebar-scroll {
+        max-height: 48dvh;
+    }
+
+    .shell-content {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .app-header {
+        flex: 0 0 auto;
+        position: static;
+    }
+
+    .shell-content > main,
+    .shell-content main:has(.dashboard-page),
+    .shell-content main:has(.chat-page),
+    .shell-content main:has(.fxp-page),
+    .shell-content main:has(.search-page),
+    .shell-content main:has(.pre-grid),
+    .shell-content main:has(.fill-panel),
+    .shell-content main:has(.paged-page) {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+    }
+
+    .paged-page,
+    .paged-panel {
+        min-height: 0;
     }
 }

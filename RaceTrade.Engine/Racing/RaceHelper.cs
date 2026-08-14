@@ -32,8 +32,43 @@ public static class RaceHelper
     // NOT shared statically anymore — each racing path creates its own instance and
     // loads rules immediately before evaluating (avoids stale rules + concurrency races).
 
+    /// <summary>
+    /// Precompiled release-name regexes (mirrors TRD.js' precompiled EPISODE_FORM/etc.
+    /// statics). The static Regex.* methods only cache ~15 patterns process-wide; this
+    /// codebase uses far more, so the inline calls in ParseReleaseName were re-parsing
+    /// their patterns on every announce for every site.
+    /// </summary>
+    private static class Rx
+    {
+        private const RegexOptions CI = RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant;
+
+        public static readonly Regex Year = new(@"(19\d{2}|20\d{2})", RegexOptions.Compiled);
+        public static readonly Regex Resolution = new(@"[\s._-](720P|1080P|1280P|1440P|1920P|2160P|2300P|2700P|2880P)[\s._-]", CI);
+        public static readonly Regex SourceBluray = new(@"[\s._-](((720p|1080p)\.(PURE\.)?M?BLURAY)|COMPLETE(\.PURE)?\.M?BLURAY)", CI);
+        public static readonly Regex SourceUhdBluray = new(@"[\s._-]((2160p\.UHD\.M?BLURAY)|COMPLETE(\.UHD)?\.M?BLURAY)", CI);
+        public static readonly Regex SourceSd = new(@"[\s._-](DVDRIP|BDRIP)", CI);
+        public static readonly Regex SourceTv = new(@"[\s._-]([AU]?HDTV|AUHDTV|PDTV|DSR|WEBRIP|WEB)[\s._-]", CI);
+        public static readonly Regex Codec = new(@"[\s._-]([xh]26[45]|xvid|VP[89])[\s._-]", CI);
+        // HDR.DV added for parity with TRD.js (which normalizes it to DV.HDR).
+        public static readonly Regex Range = new(@"[\s._-](DV\.HDR|HDR\.DV|HDR|DV|HLG)[\s._-]", CI);
+        public static readonly Regex Group = new(@"-([A-Z0-9_]+)$", CI);
+        public static readonly Regex Internal = new(@"[\s._-](INTERNAL|INT)[\s._-]", CI);
+        public static readonly Regex Language = new(@"[\s._-](GERMAN|FRENCH|SPANISH|ITALIAN|DUTCH|POLISH|RUSSIAN|JAPANESE|KOREAN|CHINESE|SWEDISH|DANISH|NORWEGIAN|FINNISH)[\s._-]", CI);
+        public static readonly Regex Repeat = new(@"[\s._-](REAL\.PROPER|PROPER|RERIP|REPACK)[\s._-]", CI);
+        public static readonly Regex Episode1 = new(@"[\s._-](S\d+E(\d+)-?E(\d+))[\s._-]", CI);
+        public static readonly Regex Episode2 = new(@"[\s._-]((?:S\d+)?(?:Episode|E|Part)\.?(\d+))[\s._-]", CI);
+        public static readonly Regex Episode3 = new(@"[\s._-](\d+)x(\d+)[\s._-]", CI);
+        public static readonly Regex Episode4 = new(@"[\s._-](\d{4})\.(\d{2}\.\d{2})[\s._-]", CI);
+        public static readonly Regex SeasonFallback = new(@"[\s._]S(\d+)[\s._E]", CI);
+        public static readonly Regex DelimitedTrigger = new(@"^/(?<pat>.*)/(?<flags>[a-zA-Z]*)$", RegexOptions.Singleline | RegexOptions.Compiled);
+        public static readonly Regex GlobalPreBotMode = new(@"^Global\s+PreBot\s*\(([^)]+)\)\s*$", CI);
+    }
+
     // Global blacklist (set from MainApp)
     private static List<string> globalBlacklist = new List<string>();
+    // Patterns compiled once at SetGlobalBlacklist time instead of being rebuilt
+    // (and re-parsed by the regex engine) on every single announce.
+    private static List<(string Pattern, Regex Regex)> globalBlacklistCompiled = new();
     private static readonly object blacklistLock = new();
 
     /// <summary>
@@ -46,23 +81,15 @@ public static class RaceHelper
             // Copy — the caller (MainApp) keeps mutating its own list on the UI thread,
             // and sharing the reference would defeat blacklistLock entirely.
             globalBlacklist = patterns != null ? new List<string>(patterns) : new List<string>();
-        }
-    }
 
-    /// <summary>
-    /// Checks if a release matches any global blacklist pattern.
-    /// </summary>
-    private static bool IsGloballyBlacklisted(string releaseName, out string matchedPattern)
-    {
-        matchedPattern = null;
-
-        lock (blacklistLock)
-        {
-            if (!globalBlacklist.Any())
-                return false;
-
+            // Compile once here instead of on every announce. Invalid patterns are
+            // logged once at config time and skipped, instead of erroring per release.
+            var compiled = new List<(string, Regex)>(globalBlacklist.Count);
             foreach (var pattern in globalBlacklist)
             {
+                if (string.IsNullOrWhiteSpace(pattern))
+                    continue;
+
                 try
                 {
                     string regexPattern;
@@ -76,16 +103,48 @@ public static class RaceHelper
                         regexPattern = pattern;
                     }
 
-                    if (Regex.IsMatch(releaseName, regexPattern, RegexOptions.IgnoreCase, RegexSafeTimeout))
-                    {
-                        matchedPattern = pattern;
-                        return true;
-                    }
+                    compiled.Add((pattern, new Regex(regexPattern,
+                        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant,
+                        RegexSafeTimeout)));
                 }
                 catch (Exception ex)
                 {
                     LogManager.Error($"Invalid global blacklist pattern '{pattern}': {ex.Message}");
                 }
+            }
+
+            globalBlacklistCompiled = compiled;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a release matches any global blacklist pattern.
+    /// </summary>
+    private static bool IsGloballyBlacklisted(string releaseName, out string matchedPattern)
+    {
+        matchedPattern = null;
+
+        // Snapshot under the lock, match outside it: the compiled list is replaced
+        // wholesale by SetGlobalBlacklist, never mutated in place.
+        List<(string Pattern, Regex Regex)> compiled;
+        lock (blacklistLock)
+        {
+            compiled = globalBlacklistCompiled;
+        }
+
+        foreach (var (pattern, regex) in compiled)
+        {
+            try
+            {
+                if (regex.IsMatch(releaseName))
+                {
+                    matchedPattern = pattern;
+                    return true;
+                }
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                LogManager.Error($"Global blacklist pattern '{pattern}' timed out on '{releaseName}'");
             }
         }
 
@@ -204,7 +263,7 @@ public static class RaceHelper
         if (string.IsNullOrWhiteSpace(mode))
             return false;
 
-        var match = Regex.Match(mode, @"^Global\s+PreBot\s*\(([^)]+)\)\s*$", RegexOptions.IgnoreCase);
+        var match = Rx.GlobalPreBotMode.Match(mode);
         return match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value);
     }
 
@@ -427,6 +486,67 @@ public static class RaceHelper
             // Per-call engine: rules are (re)loaded per site immediately before Evaluate.
             var rulesEngine = new RulesEngine();
 
+            // ------------------------------------------------------------------
+            // Release metadata depends ONLY on the release name, so it is parsed
+            // ONCE here instead of once per site (previously ~15 regex passes over
+            // the name were repeated for every configured site).
+            // ------------------------------------------------------------------
+            string codec, sourceType, resolution, range, group, repeatTag;
+            bool isInternal, isMulti;
+
+            if (TVMazeHelper.IsTVShow(releaseName))
+            {
+                codec = TVMazeHelper.ExtractCodec(releaseName);
+                sourceType = TVMazeHelper.ExtractSource(releaseName);
+                resolution = TVMazeHelper.ExtractResolution(releaseName);
+                range = TVMazeHelper.ExtractRange(releaseName);
+                group = TVMazeHelper.ExtractGroup(releaseName);
+                repeatTag = TVMazeHelper.ExtractRepeatTag(releaseName);
+                isInternal = TVMazeHelper.IsInternal(releaseName);
+                isMulti = TVMazeHelper.IsMulti(releaseName);
+            }
+            else
+            {
+                codec = IMDBHelper.ExtractCodec(releaseName);
+                sourceType = IMDBHelper.ExtractSource(releaseName);
+                resolution = IMDBHelper.ExtractResolution(releaseName);
+                range = IMDBHelper.ExtractRange(releaseName);
+                group = IMDBHelper.ExtractGroup(releaseName);
+                repeatTag = IMDBHelper.ExtractRepeatTag(releaseName);
+                isInternal = IMDBHelper.IsInternal(releaseName);
+                isMulti = IMDBHelper.IsMulti(releaseName);
+            }
+
+            var parsedAttributes = ParseReleaseName(releaseName);
+
+            // Base rule input shared by every site; the per-site copy only swaps
+            // the section. Extra keys (language/season/episode/type) mirror TRD.js'
+            // rlsname.* fields so rules can use them too.
+            var baseInput = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "release", releaseName }
+            };
+
+            if (parsedAttributes.TryGetValue("year", out var parsedYear)) baseInput["year"] = parsedYear;
+            if (parsedAttributes.TryGetValue("language", out var parsedLanguage)) baseInput["language"] = parsedLanguage;
+            if (parsedAttributes.TryGetValue("season", out var parsedSeason)) baseInput["season"] = parsedSeason;
+            if (parsedAttributes.TryGetValue("episode", out var parsedEpisode)) baseInput["episode"] = parsedEpisode;
+            if (parsedAttributes.TryGetValue("season_episode", out var parsedSeasonEpisode)) baseInput["season_episode"] = parsedSeasonEpisode;
+            if (parsedAttributes.TryGetValue("type", out var parsedType)) baseInput["type"] = parsedType;
+
+            // Use helper-extracted metadata (overrides ParseReleaseName)
+            if (!string.IsNullOrEmpty(group)) baseInput["group"] = group;
+            if (!string.IsNullOrEmpty(resolution)) baseInput["resolution"] = resolution;
+            if (!string.IsNullOrEmpty(resolution)) baseInput["quality"] = resolution; // alias
+            if (!string.IsNullOrEmpty(sourceType)) baseInput["source"] = sourceType;
+            if (!string.IsNullOrEmpty(codec)) baseInput["codec"] = codec;
+            if (!string.IsNullOrEmpty(range)) baseInput["range"] = range;
+            if (!string.IsNullOrEmpty(range)) baseInput["hdr"] = range; // alias
+            if (!string.IsNullOrEmpty(repeatTag)) baseInput["repeat"] = repeatTag;
+            if (!string.IsNullOrEmpty(repeatTag)) baseInput["proper"] = repeatTag; // alias
+            baseInput["internal"] = isInternal.ToString().ToLower();
+            baseInput["multi"] = isMulti.ToString().ToLower();
+
             foreach (var siteConfig in siteConfigsSnapshot)
             {
                 string siteName = siteConfig["site_settings"]?["sitename"]?.ToString();
@@ -615,58 +735,12 @@ public static class RaceHelper
                     // load rules for THIS site using the CBFTP section
                     rulesEngine.LoadRulesForIrcSection(siteConfig, ircSectionToCheck, cbftpSection);
 
-                    // Extract metadata using helpers (TV or Movie)
-                    string codec = null, sourceType = null, resolution = null, range = null;
-                    string group = null, repeatTag = null;
-                    bool isInternal = false, isMulti = false;
-
-                    if (TVMazeHelper.IsTVShow(releaseName))
+                    // Metadata was parsed once before the loop; only the section
+                    // differs per site.
+                    var input = new Dictionary<string, string>(baseInput, StringComparer.OrdinalIgnoreCase)
                     {
-                        // TV Show - extract metadata
-                        codec = TVMazeHelper.ExtractCodec(releaseName);
-                        sourceType = TVMazeHelper.ExtractSource(releaseName);
-                        resolution = TVMazeHelper.ExtractResolution(releaseName);
-                        range = TVMazeHelper.ExtractRange(releaseName);
-                        group = TVMazeHelper.ExtractGroup(releaseName);
-                        repeatTag = TVMazeHelper.ExtractRepeatTag(releaseName);
-                        isInternal = TVMazeHelper.IsInternal(releaseName);
-                        isMulti = TVMazeHelper.IsMulti(releaseName);
-                    }
-                    else
-                    {
-                        // Movie - extract metadata
-                        codec = IMDBHelper.ExtractCodec(releaseName);
-                        sourceType = IMDBHelper.ExtractSource(releaseName);
-                        resolution = IMDBHelper.ExtractResolution(releaseName);
-                        range = IMDBHelper.ExtractRange(releaseName);
-                        group = IMDBHelper.ExtractGroup(releaseName);
-                        repeatTag = IMDBHelper.ExtractRepeatTag(releaseName);
-                        isInternal = IMDBHelper.IsInternal(releaseName);
-                        isMulti = IMDBHelper.IsMulti(releaseName);
-                    }
-
-                    var parsedAttributes = ParseReleaseName(releaseName);
-                    var input = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    { "release", releaseName },
-                    { "section", ircSectionToCheck }
-                };
-
-                    // Add parsed year from ParseReleaseName
-                    if (parsedAttributes.TryGetValue("year", out var year)) input["year"] = year;
-
-                    // Use helper-extracted metadata (overrides ParseReleaseName)
-                    if (!string.IsNullOrEmpty(group)) input["group"] = group;
-                    if (!string.IsNullOrEmpty(resolution)) input["resolution"] = resolution;
-                    if (!string.IsNullOrEmpty(resolution)) input["quality"] = resolution; // alias
-                    if (!string.IsNullOrEmpty(sourceType)) input["source"] = sourceType;
-                    if (!string.IsNullOrEmpty(codec)) input["codec"] = codec;
-                    if (!string.IsNullOrEmpty(range)) input["range"] = range;
-                    if (!string.IsNullOrEmpty(range)) input["hdr"] = range; // alias
-                    if (!string.IsNullOrEmpty(repeatTag)) input["repeat"] = repeatTag;
-                    if (!string.IsNullOrEmpty(repeatTag)) input["proper"] = repeatTag; // alias
-                    input["internal"] = isInternal.ToString().ToLower();
-                    input["multi"] = isMulti.ToString().ToLower();
+                        ["section"] = ircSectionToCheck
+                    };
 
                     var evaluationResult = rulesEngine.Evaluate(input, cbftpSection);
 
@@ -829,7 +903,7 @@ public static class RaceHelper
                             string regexPattern = triggerRegex.Trim();
                             bool isCaseInsensitive = false;
 
-                            var delimited = Regex.Match(regexPattern, @"^/(?<pat>.*)/(?<flags>[a-zA-Z]*)$", RegexOptions.Singleline);
+                            var delimited = Rx.DelimitedTrigger.Match(regexPattern);
                             if (delimited.Success)
                             {
                                 regexPattern = delimited.Groups["pat"].Value;
@@ -904,6 +978,9 @@ public static class RaceHelper
             var rulesEngine = new RulesEngine();
             rulesEngine.LoadRulesForIrcSection(siteConfig, strippedSection, strippedSection);
 
+            // Parsed once — it only depends on the release name, not the tag.
+            var parsedAttributes = ParseReleaseName(releaseName);
+
             // Process tags and triggers
             foreach (var tag in regularTags)
             {
@@ -924,7 +1001,7 @@ public static class RaceHelper
                     string regexPattern = triggerRegex.Trim();
                     bool isCaseInsensitive = false;
 
-                    var delimited = Regex.Match(regexPattern, @"^/(?<pat>.*)/(?<flags>[a-zA-Z]*)$", RegexOptions.Singleline);
+                    var delimited = Rx.DelimitedTrigger.Match(regexPattern);
                     if (delimited.Success)
                     {
                         regexPattern = delimited.Groups["pat"].Value;
@@ -965,9 +1042,6 @@ public static class RaceHelper
                     }
                     return cbftpSection;
                 }
-
-                // Parse release name to extract attributes
-                var parsedAttributes = ParseReleaseName(releaseName);
 
                 // Evaluate rules with README keys
                 var input = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -1039,7 +1113,7 @@ public static class RaceHelper
         if (string.IsNullOrWhiteSpace(releaseName))
             return string.Empty;
 
-        var match = Regex.Match(releaseName, @"-([A-Z0-9_]+)$", RegexOptions.IgnoreCase);
+        var match = Rx.Group.Match(releaseName);
         return match.Success ? match.Groups[1].Value : string.Empty;
     }
 
@@ -1065,56 +1139,60 @@ public static class RaceHelper
         try
         {
             // Year
-            var yearMatch = Regex.Match(releaseName, @"(19\d{2}|20\d{2})");
+            var yearMatch = Rx.Year.Match(releaseName);
             if (yearMatch.Success)
                 parsed["year"] = yearMatch.Groups[1].Value;
 
             // Resolution (expanded)
-            var resolutionMatch = Regex.Match(releaseName, @"[\s._-](720P|1080P|1280P|1440P|1920P|2160P|2300P|2700P|2880P)[\s._-]", RegexOptions.IgnoreCase);
+            var resolutionMatch = Rx.Resolution.Match(releaseName);
             if (resolutionMatch.Success)
                 parsed["resolution"] = resolutionMatch.Groups[1].Value.ToUpper();
 
             // Source (expanded)
-            if (Regex.IsMatch(releaseName, @"[\s._-](((720p|1080p)\.(PURE\.)?M?BLURAY)|COMPLETE(\.PURE)?\.M?BLURAY)", RegexOptions.IgnoreCase))
+            if (Rx.SourceBluray.IsMatch(releaseName))
             {
                 parsed["source"] = "BLURAY";
             }
-            else if (Regex.IsMatch(releaseName, @"[\s._-]((2160p\.UHD\.M?BLURAY)|COMPLETE(\.UHD)?\.M?BLURAY)", RegexOptions.IgnoreCase))
+            else if (Rx.SourceUhdBluray.IsMatch(releaseName))
             {
                 parsed["source"] = "UHD.BLURAY";
             }
             else
             {
-                var sdMatch = Regex.Match(releaseName, @"[\s._-](DVDRIP|BDRIP)", RegexOptions.IgnoreCase);
+                var sdMatch = Rx.SourceSd.Match(releaseName);
                 if (sdMatch.Success)
                 {
                     parsed["source"] = sdMatch.Groups[1].Value.ToUpper();
                 }
                 else
                 {
-                    var sourceMatch = Regex.Match(releaseName, @"[\s._-]([AU]?HDTV|AUHDTV|PDTV|DSR|WEBRIP|WEB)[\s._-]", RegexOptions.IgnoreCase);
+                    var sourceMatch = Rx.SourceTv.Match(releaseName);
                     if (sourceMatch.Success)
                         parsed["source"] = sourceMatch.Groups[1].Value.ToUpper();
                 }
             }
 
             // Codec
-            var codecMatch = Regex.Match(releaseName, @"[\s._-]([xh]26[45]|xvid|VP[89])[\s._-]", RegexOptions.IgnoreCase);
+            var codecMatch = Rx.Codec.Match(releaseName);
             if (codecMatch.Success)
                 parsed["codec"] = codecMatch.Groups[1].Value.ToUpper();
 
-            // Range (HDR, DV, HLG)
-            var rangeMatch = Regex.Match(releaseName, @"[\s._-](DV\.HDR|HDR|DV|HLG)[\s._-]", RegexOptions.IgnoreCase);
+            // Range (HDR, DV, HLG). HDR.DV is normalized to DV.HDR like TRD.js does,
+            // so rules only ever need to match one spelling.
+            var rangeMatch = Rx.Range.Match(releaseName);
             if (rangeMatch.Success)
-                parsed["range"] = rangeMatch.Groups[1].Value.ToUpper();
+            {
+                var rangeValue = rangeMatch.Groups[1].Value.ToUpper();
+                parsed["range"] = rangeValue == "HDR.DV" ? "DV.HDR" : rangeValue;
+            }
 
             // Group
-            var groupMatch = Regex.Match(releaseName, @"-([A-Z0-9_]+)$", RegexOptions.IgnoreCase);
+            var groupMatch = Rx.Group.Match(releaseName);
             if (groupMatch.Success)
                 parsed["group"] = groupMatch.Groups[1].Value;
 
             // Internal detection
-            if (Regex.IsMatch(releaseName, @"[\s._-](INTERNAL|INT)[\s._-]", RegexOptions.IgnoreCase) ||
+            if (Rx.Internal.IsMatch(releaseName) ||
                 (parsed.ContainsKey("group") && parsed["group"].ToUpper().EndsWith("_INT")))
             {
                 parsed["internal"] = "true";
@@ -1127,18 +1205,18 @@ public static class RaceHelper
             }
 
             // Language detection (simplified - add more if needed)
-            var languageMatch = Regex.Match(releaseName, @"[\s._-](GERMAN|FRENCH|SPANISH|ITALIAN|DUTCH|POLISH|RUSSIAN|JAPANESE|KOREAN|CHINESE|SWEDISH|DANISH|NORWEGIAN|FINNISH)[\s._-]", RegexOptions.IgnoreCase);
+            var languageMatch = Rx.Language.Match(releaseName);
             if (languageMatch.Success)
                 parsed["language"] = languageMatch.Groups[1].Value.ToUpper();
 
             // PROPER/REPACK/RERIP detection
-            var repeatMatch = Regex.Match(releaseName, @"[\s._-](REAL\.PROPER|PROPER|RERIP|REPACK)[\s._-]", RegexOptions.IgnoreCase);
+            var repeatMatch = Rx.Repeat.Match(releaseName);
             if (repeatMatch.Success)
                 parsed["repeat"] = repeatMatch.Groups[1].Value.ToUpper();
 
             // TV episode (multiple formats)
             // Format 1: S01E01-E02
-            var episodeMatch1 = Regex.Match(releaseName, @"[\s._-](S\d+E(\d+)-?E(\d+))[\s._-]", RegexOptions.IgnoreCase);
+            var episodeMatch1 = Rx.Episode1.Match(releaseName);
             if (episodeMatch1.Success)
             {
                 parsed["season_episode"] = episodeMatch1.Groups[1].Value;
@@ -1148,7 +1226,7 @@ public static class RaceHelper
             else
             {
                 // Format 2: S01E01 or Episode.01
-                var episodeMatch2 = Regex.Match(releaseName, @"[\s._-]((?:S\d+)?(?:Episode|E|Part)\.?(\d+))[\s._-]", RegexOptions.IgnoreCase);
+                var episodeMatch2 = Rx.Episode2.Match(releaseName);
                 if (episodeMatch2.Success)
                 {
                     parsed["episode"] = episodeMatch2.Groups[2].Value;
@@ -1157,7 +1235,7 @@ public static class RaceHelper
                 else
                 {
                     // Format 3: 1x01
-                    var episodeMatch3 = Regex.Match(releaseName, @"[\s._-](\d+)x(\d+)[\s._-]", RegexOptions.IgnoreCase);
+                    var episodeMatch3 = Rx.Episode3.Match(releaseName);
                     if (episodeMatch3.Success)
                     {
                         parsed["season"] = episodeMatch3.Groups[1].Value;
@@ -1167,7 +1245,7 @@ public static class RaceHelper
                     else
                     {
                         // Format 4: Date-based (2024.12.23)
-                        var episodeMatch4 = Regex.Match(releaseName, @"[\s._-](\d{4})\.(\d{2}\.\d{2})[\s._-]", RegexOptions.IgnoreCase);
+                        var episodeMatch4 = Rx.Episode4.Match(releaseName);
                         if (episodeMatch4.Success)
                         {
                             parsed["season"] = episodeMatch4.Groups[1].Value;
@@ -1185,7 +1263,7 @@ public static class RaceHelper
             // Extract season if not already set (fallback)
             if (!parsed.ContainsKey("season"))
             {
-                var seasonMatch = Regex.Match(releaseName, @"[\s._]S(\d+)[\s._E]", RegexOptions.IgnoreCase);
+                var seasonMatch = Rx.SeasonFallback.Match(releaseName);
                 if (seasonMatch.Success)
                     parsed["season"] = seasonMatch.Groups[1].Value;
             }
@@ -1534,6 +1612,7 @@ public static class RaceHelper
         lock (blacklistLock)
         {
             globalBlacklist.Clear();
+            globalBlacklistCompiled = new List<(string, Regex)>();
         }
 
         LogManager.Info("All caches cleared");

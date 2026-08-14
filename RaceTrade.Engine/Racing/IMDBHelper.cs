@@ -25,6 +25,31 @@ namespace RaceTrader
         private const string TIFFARA_API_BASE = "https://api.tiffara.com";
         private const string TMDB_API_BASE = "https://api.themoviedb.org/3";
         private const string SETTINGS_FILE = "settings/settings.json";
+
+        /// <summary>
+        /// Precompiled release-name regexes (same idea as TRD.js' precompiled statics).
+        /// The static Regex.* methods only cache ~15 patterns process-wide, so these
+        /// inline patterns were being re-parsed on every announce.
+        /// </summary>
+        private static class Rx
+        {
+            private const RegexOptions CI = RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant;
+
+            public static readonly Regex Codec = new(@"[\s._-]([xh]26[45]|xvid|VP[89])[\s._-]", CI);
+            public static readonly Regex SourceBluray = new(@"[\s._-](((720p|1080p)\.(PURE\.)?M?BLURAY)|COMPLETE(\.PURE)?\.M?BLURAY)", CI);
+            public static readonly Regex SourceUhdBluray = new(@"[\s._-]((2160p\.UHD\.M?BLURAY)|COMPLETE(\.UHD)?\.M?BLURAY)", CI);
+            public static readonly Regex SourceSd = new(@"[\s._-](DVDRIP|BDRIP)", CI);
+            public static readonly Regex SourceTv = new(@"[\s._-]([AU]?HDTV|AUHDTV|PDTV|DSR|WEBRIP|WEB)[\s._-]", CI);
+            public static readonly Regex Resolution = new(@"[\s._-](720P|1080P|1280P|1440P|1920P|2160P|2300P|2700P|2880P)[\s._-]", CI);
+            // HDR.DV added for parity with TRD.js (normalized to DV.HDR in ExtractRange).
+            public static readonly Regex Range = new(@"[\s._-](DV\.HDR|HDR\.DV|HDR|DV|HLG)[\s._-]", CI);
+            public static readonly Regex Internal = new(@"[\s._-](INTERNAL|INT)[\s._-]", CI);
+            public static readonly Regex Multi = new(@"[\s._-]MULTI([\s._-]|$)", CI);
+            public static readonly Regex Group = new(@"-([^-]+)$", RegexOptions.Compiled);
+            public static readonly Regex GroupStrip = new(@"-[^-]+$", RegexOptions.Compiled);
+            public static readonly Regex TitleBeforeYear = new(@"^(.+?)[\s._-](19\d{2}|20\d{2})[\s._-]", RegexOptions.Compiled);
+            public static readonly Regex Year = new(@"\b(19\d{2}|20\d{2})\b", RegexOptions.Compiled);
+        }
         public const string ProviderTiffara = "tiffara";
         public const string ProviderTmdb = "tmdb";
 
@@ -903,7 +928,7 @@ namespace RaceTrader
         /// </summary>
         public static string ExtractCodec(string releaseName)
         {
-            var match = Regex.Match(releaseName, @"[\s._-]([xh]26[45]|xvid|VP[89])[\s._-]", RegexOptions.IgnoreCase);
+            var match = Rx.Codec.Match(releaseName);
             if (match.Success)
             {
                 return match.Groups[1].Value.ToUpper();
@@ -917,25 +942,25 @@ namespace RaceTrader
         public static string ExtractSource(string releaseName)
         {
             // Check for complete BluRay first
-            if (Regex.IsMatch(releaseName, @"[\s._-](((720p|1080p)\.(PURE\.)?M?BLURAY)|COMPLETE(\.PURE)?\.M?BLURAY)", RegexOptions.IgnoreCase))
+            if (Rx.SourceBluray.IsMatch(releaseName))
             {
                 return "BLURAY";
             }
 
-            if (Regex.IsMatch(releaseName, @"[\s._-]((2160p\.UHD\.M?BLURAY)|COMPLETE(\.UHD)?\.M?BLURAY)", RegexOptions.IgnoreCase))
+            if (Rx.SourceUhdBluray.IsMatch(releaseName))
             {
                 return "UHD.BLURAY";
             }
 
             // Check SD sources
-            var match = Regex.Match(releaseName, @"[\s._-](DVDRIP|BDRIP)", RegexOptions.IgnoreCase);
+            var match = Rx.SourceSd.Match(releaseName);
             if (match.Success)
             {
                 return match.Groups[1].Value.ToUpper();
             }
 
             // Check other sources
-            match = Regex.Match(releaseName, @"[\s._-]([AU]?HDTV|AUHDTV|PDTV|DSR|WEBRIP|WEB)[\s._-]", RegexOptions.IgnoreCase);
+            match = Rx.SourceTv.Match(releaseName);
             if (match.Success)
             {
                 return match.Groups[1].Value.ToUpper();
@@ -949,7 +974,7 @@ namespace RaceTrader
         /// </summary>
         public static string ExtractResolution(string releaseName)
         {
-            var match = Regex.Match(releaseName, @"[\s._-](720P|1080P|1280P|1440P|1920P|2160P|2300P|2700P|2880P)[\s._-]", RegexOptions.IgnoreCase);
+            var match = Rx.Resolution.Match(releaseName);
             if (match.Success)
             {
                 return match.Groups[1].Value.ToUpper();
@@ -962,10 +987,12 @@ namespace RaceTrader
         /// </summary>
         public static string ExtractRange(string releaseName)
         {
-            var match = Regex.Match(releaseName, @"[\s._-](DV\.HDR|HDR|DV|HLG)[\s._-]", RegexOptions.IgnoreCase);
+            var match = Rx.Range.Match(releaseName);
             if (match.Success)
             {
-                return match.Groups[1].Value.ToUpper();
+                // HDR.DV -> DV.HDR normalization, same as TRD.js.
+                var value = match.Groups[1].Value.ToUpper();
+                return value == "HDR.DV" ? "DV.HDR" : value;
             }
             return null;
         }
@@ -976,7 +1003,7 @@ namespace RaceTrader
         public static bool IsInternal(string releaseName)
         {
             // Check for INTERNAL or INT tag
-            if (Regex.IsMatch(releaseName, @"[\s._-](INTERNAL|INT)[\s._-]", RegexOptions.IgnoreCase))
+            if (Rx.Internal.IsMatch(releaseName))
             {
                 return true;
             }
@@ -1001,7 +1028,7 @@ namespace RaceTrader
 
             // Must be a delimited MULTi tag, not any title containing the substring
             // (e.g. "Multitude") - same approach as IsInternal.
-            return Regex.IsMatch(releaseName, @"[\s._-]MULTI([\s._-]|$)", RegexOptions.IgnoreCase);
+            return Rx.Multi.IsMatch(releaseName);
         }
 
         /// <summary>
@@ -1009,7 +1036,7 @@ namespace RaceTrader
         /// </summary>
         public static string ExtractGroup(string releaseName)
         {
-            var match = Regex.Match(releaseName, @"-([^-]+)$");
+            var match = Rx.Group.Match(releaseName);
             if (match.Success)
             {
                 return match.Groups[1].Value;
@@ -1023,7 +1050,7 @@ namespace RaceTrader
         public static string ExtractRepeatTag(string releaseName)
         {
             // Remove group first
-            var nameWithoutGroup = Regex.Replace(releaseName, @"-[^-]+$", "");
+            var nameWithoutGroup = Rx.GroupStrip.Replace(releaseName, "");
 
             var tags = new[] { "REAL.PROPER", "PROPER", "RERIP", "REPACK" };
             foreach (var tag in tags)
@@ -1052,7 +1079,7 @@ namespace RaceTrader
             var name = System.IO.Path.GetFileNameWithoutExtension(releaseName);
 
             // Extract everything before the year
-            var match = Regex.Match(name, @"^(.+?)[\s._-](19\d{2}|20\d{2})[\s._-]");
+            var match = Rx.TitleBeforeYear.Match(name);
             if (match.Success)
             {
                 name = match.Groups[1].Value;
@@ -1075,7 +1102,7 @@ namespace RaceTrader
                 return null;
 
             // Look for 4-digit year (1900-2099)
-            var match = Regex.Match(releaseName, @"\b(19\d{2}|20\d{2})\b");
+            var match = Rx.Year.Match(releaseName);
             if (match.Success && int.TryParse(match.Groups[1].Value, out int year))
             {
                 return year;

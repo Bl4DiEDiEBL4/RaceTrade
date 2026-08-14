@@ -10,6 +10,7 @@
     <div class="head-actions">
         <button class="btn" @onclick="LoadSites" disabled="@Busy"><Icon Name="refresh" Size="13" /><span>Load sites</span></button>
         <button class="btn" @onclick="ShowRules" disabled="@(Busy || string.IsNullOrWhiteSpace(_model.Name))"><Icon Name="logs" Size="13" /><span>Get site rules</span></button>
+        <button class="btn" @onclick="OpenDuplicate" disabled="@(Busy || string.IsNullOrWhiteSpace(_model.Name))"><Icon Name="copy" Size="13" /><span>Duplicate</span></button>
         <button class="btn primary" @onclick="Save" disabled="@Busy"><Icon Name="save" Size="13" /><span>Save CBFTP site</span></button>
     </div>
 </div>
@@ -235,6 +236,36 @@
     </div>
 }
 
+@if (_showDuplicate)
+{
+    <div class="modal-backdrop" @onclick="CloseDuplicate">
+        <div class="modal-card duplicate-modal" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2>Duplicate CBFTP Site</h2>
+                <button class="btn icon-only" @onclick="CloseDuplicate" aria-label="Close"><Icon Name="close" Size="15" /></button>
+            </div>
+            <div class="modal-body duplicate-body">
+                <div class="selected-block">
+                    <span class="label">Source CBFTP site</span>
+                    <strong>@_model.Name</strong>
+                </div>
+                <label>New CBFTP site name</label>
+                <input type="text" @bind="_duplicateName" @bind:event="oninput" placeholder="NEW-SITE" />
+                <p class="hint">
+                    Keep this identical to the RaceTrade site name. RaceTrade finds the CBFTP site by name
+                    when testing, browsing, FXP'ing and racing.
+                </p>
+                <div class="modal-actions">
+                    <button class="btn" @onclick="CloseDuplicate" disabled="@Busy">Cancel</button>
+                    <button class="btn primary" @onclick="ConfirmDuplicate" disabled="@Busy">
+                        <Icon Name="copy" Size="13" /><span>Duplicate CBFTP site</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public string? SiteName { get; set; }
 
@@ -249,7 +280,9 @@
     private string? _status;
     private bool Busy { get; set; }
     private bool _showRules;
+    private bool _showDuplicate;
     private string _rulesText = "";
+    private string _duplicateName = "";
     private string _newAffil = "";
     private string _newSectionName = "";
     private string _newSectionPath = "";
@@ -352,6 +385,41 @@
         _status = "New CBFTP site.";
     }
 
+    private void OpenDuplicate()
+    {
+        _error = null;
+        _duplicateName = SuggestCopyName(_model.Name);
+        _showDuplicate = true;
+    }
+
+    private void CloseDuplicate()
+    {
+        _showDuplicate = false;
+        _duplicateName = "";
+    }
+
+    private async Task ConfirmDuplicate()
+    {
+        var server = SelectedServer();
+        if (server is null)
+        {
+            _error = "Add a CBFTP server first.";
+            return;
+        }
+
+        var sourceName = _model.Name;
+        await RunAsync(async () =>
+        {
+            var copy = await CbftpSites.DuplicateSiteAsync(server, sourceName, _duplicateName);
+            _model = copy;
+            _selectedSiteName = copy.Name;
+            _siteNames = (await CbftpSites.LoadSiteNamesAsync(server)).ToList();
+            _tab = "Basic";
+            _status = $"Duplicated CBFTP site '{sourceName}' as '{copy.Name}'. Keep the RaceTrade site name the same.";
+            CloseDuplicate();
+        });
+    }
+
     private void AddAffil()
     {
         var value = _newAffil.Trim();
@@ -406,6 +474,22 @@
         $"{server.Name ?? server.Id} - {server.Host}:{server.Port}";
 
     private void CloseRules() => _showRules = false;
+
+    private string SuggestCopyName(string source)
+    {
+        var baseName = $"{source}-copy";
+        if (!_siteNames.Contains(baseName, StringComparer.OrdinalIgnoreCase))
+            return baseName;
+
+        for (var i = 2; i < 1000; i++)
+        {
+            var candidate = $"{baseName}-{i}";
+            if (!_siteNames.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                return candidate;
+        }
+
+        return $"{baseName}-{DateTime.Now:HHmmss}";
+    }
 
     private static RenderFragment Options(params string[] values) => @<text>
         @foreach (var value in values)

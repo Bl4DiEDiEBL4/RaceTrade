@@ -257,6 +257,36 @@ namespace RaceTrade
         [JsonProperty("request_can_fill_source")]
         public bool RequestCanFillSource { get; set; } = false;
 
+        [JsonProperty("incomplete_auto_fxp_enabled")]
+        public bool IncompleteAutoFxpEnabled { get; set; }
+
+        [JsonProperty("incomplete_search_source")]
+        public bool IncompleteSearchSource { get; set; }
+
+        [JsonProperty("incomplete_marker_regex")]
+        public string IncompleteMarkerRegex { get; set; }
+
+        [JsonProperty("incomplete_section_regex")]
+        public string IncompleteSectionRegex { get; set; }
+
+        [JsonProperty("incomplete_release_regex")]
+        public string IncompleteReleaseRegex { get; set; }
+
+        [JsonProperty("incomplete_section_prefix")]
+        public string IncompleteSectionPrefix { get; set; }
+
+        [JsonProperty("incomplete_section_suffix")]
+        public string IncompleteSectionSuffix { get; set; }
+
+        [JsonProperty("incomplete_ignore_words")]
+        public string IncompleteIgnoreWords { get; set; }
+
+        [JsonProperty("incomplete_search_command_template")]
+        public string IncompleteSearchCommandTemplate { get; set; }
+
+        [JsonProperty("incomplete_dst_path_template")]
+        public string IncompleteDstPathTemplate { get; set; }
+
         [JsonProperty("pre_regex_pattern")]
         public string PreRegexPattern { get; set; }              // Pre_field_regex
 

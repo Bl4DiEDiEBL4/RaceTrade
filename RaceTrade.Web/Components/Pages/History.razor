@@ -4,15 +4,16 @@
 
 <PageTitle>Release History - RaceTrade</PageTitle>
 
-<div class="page-head">
-    <h1><Icon Name="logs" Size="18" />Release History</h1>
-    <a class="btn" href="settings"><Icon Name="settings" Size="13" /><span>Reset in Settings</span></a>
-</div>
+<div class="history-page paged-page">
+    <div class="page-head">
+        <h1><Icon Name="logs" Size="18" />Release History</h1>
+        <a class="btn" href="settings"><Icon Name="settings" Size="13" /><span>Reset in Settings</span></a>
+    </div>
 
-<div class="panel fill-panel">
-    <div class="toolbar">
-        <input type="text" placeholder="Search release, site, section..." @bind="_query" @bind:event="oninput" @bind:after="Refresh" />
-        <select @bind="_status" @bind:after="Refresh">
+    <div class="panel fill-panel paged-panel">
+        <div class="toolbar">
+        <input type="text" placeholder="Search release, site, section..." @bind="_query" @bind:event="oninput" @bind:after="FilterChanged" />
+        <select @bind="_status" @bind:after="FilterChanged">
             <option value="">All statuses</option>
             <option value="Detected">Detected</option>
             <option value="Filtered">Filtered</option>
@@ -22,40 +23,67 @@
         </select>
         <span class="spacer"></span>
         <span class="hint">@_stats.UniqueReleases release(s), @_stats.Events event(s) stored</span>
+        <select class="page-size" @bind="_pageSize" @bind:after="PageSizeChanged">
+            <option value="10">10 lines</option>
+            <option value="20">20 lines</option>
+            <option value="25">25 lines</option>
+            <option value="50">50 lines</option>
+            <option value="100">100 lines</option>
+            <option value="200">200 lines</option>
+        </select>
+        <div class="pager">
+            <button type="button" class="btn sm" @onclick="NewestPage" disabled="@(_page <= 1)">Newest</button>
+            <button type="button" class="btn sm" @onclick="PreviousPage" disabled="@(_page <= 1)">Prev</button>
+            <span class="hint">@PageLabel</span>
+            <button type="button" class="btn sm" @onclick="NextPage" disabled="@(_page >= TotalPages)">Next</button>
+            <button type="button" class="btn sm" @onclick="OldestPage" disabled="@(_page >= TotalPages)">Oldest</button>
+        </div>
     </div>
 
-    @if (_entries.Count == 0)
-    {
-        <div class="empty">No matching release history.</div>
-    }
-    else
-    {
-        <table class="grid history">
-            <thead>
-                <tr>
-                    <th>LAST SEEN</th>
-                    <th>STATUS</th>
-                    <th>SITE</th>
-                    <th>SECTION</th>
-                    <th>RELEASE</th>
-                    <th>DETAIL</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var e in _entries)
-                {
-                    <tr>
-                        <td class="ts">@e.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                        <td><span class="@StatusClass(e.Status)">@e.Status</span></td>
-                        <td class="site">@e.Site</td>
-                        <td>@e.Section</td>
-                        <td class="release-name">@e.Release</td>
-                        <td class="dim">@HistoryDetail(e)</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
+        @if (_entries.Count == 0)
+        {
+            <div class="empty paged-empty">No matching release history.</div>
+        }
+        else
+        {
+            <div class="paged-table-wrap">
+                <table class="grid history">
+                    <thead>
+                        <tr>
+                            <th>LAST SEEN</th>
+                            <th>STATUS</th>
+                            <th>SITE</th>
+                            <th>SECTION</th>
+                            <th>RELEASE</th>
+                            <th>DETAIL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var e in PagedEntries)
+                        {
+                            <tr>
+                                <td class="ts">@e.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td><span class="@StatusClass(e.Status)">@e.Status</span></td>
+                                <td class="site">@e.Site</td>
+                                <td>@e.Section</td>
+                                <td class="release-name">@e.Release</td>
+                                <td class="dim">@HistoryDetail(e)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="table-footer">
+                <span class="hint">@PageLabel</span>
+                <div class="pager">
+                    <button type="button" class="btn sm" @onclick="NewestPage" disabled="@(_page <= 1)">Newest</button>
+                    <button type="button" class="btn sm" @onclick="PreviousPage" disabled="@(_page <= 1)">Prev</button>
+                    <button type="button" class="btn sm" @onclick="NextPage" disabled="@(_page >= TotalPages)">Next</button>
+                    <button type="button" class="btn sm" @onclick="OldestPage" disabled="@(_page >= TotalPages)">Oldest</button>
+                </div>
+            </div>
+        }
+    </div>
 </div>
 
 @code {
@@ -63,6 +91,23 @@
     private RaceHistoryStore.RaceHistoryStats _stats = new(0, 0, 0);
     private string _query = "";
     private string _status = "";
+    private int _page = 1;
+    private int _pageSize = 20;
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_entries.Count / (double)_pageSize));
+    private IEnumerable<RaceHistoryStore.RaceReleaseSummary> PagedEntries => _entries.Skip((_page - 1) * _pageSize).Take(_pageSize);
+
+    private string PageLabel
+    {
+        get
+        {
+            if (_entries.Count == 0) return "0 shown";
+
+            var first = ((_page - 1) * _pageSize) + 1;
+            var last = Math.Min(_entries.Count, _page * _pageSize);
+            return $"{first}-{last} of {_entries.Count}";
+        }
+    }
 
     protected override void OnInitialized()
     {
@@ -76,6 +121,49 @@
     {
         _stats = HistoryStore.GetStats();
         _entries = HistoryStore.LatestReleases(500, _query, _status);
+        ClampPage();
+    }
+
+    private void FilterChanged()
+    {
+        _page = 1;
+        Refresh();
+    }
+
+    private void PageSizeChanged()
+    {
+        _page = 1;
+        Refresh();
+    }
+
+    private void NewestPage()
+    {
+        _page = 1;
+        Refresh();
+    }
+
+    private void PreviousPage()
+    {
+        _page = Math.Max(1, _page - 1);
+        Refresh();
+    }
+
+    private void NextPage()
+    {
+        _page = Math.Min(TotalPages, _page + 1);
+        Refresh();
+    }
+
+    private void OldestPage()
+    {
+        _page = TotalPages;
+        Refresh();
+    }
+
+    private void ClampPage()
+    {
+        if (_page < 1) _page = 1;
+        if (_page > TotalPages) _page = TotalPages;
     }
 
     private static string StatusClass(string status) => $"pill race-{status.ToLowerInvariant()}";

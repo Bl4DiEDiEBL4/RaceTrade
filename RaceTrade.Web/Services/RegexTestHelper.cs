@@ -161,6 +161,66 @@ public static class RegexTestHelper
         }
     }
 
+    public static RegexTestResult TestIncompleteAnnounce(
+        string? input,
+        string? markerRegex,
+        string? ignoreWordsText,
+        string? sectionRegex,
+        string? releaseRegex,
+        string? sectionPrefix,
+        string? sectionSuffix)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return Fail("Enter an incomplete warning line to test.");
+
+        if (string.IsNullOrWhiteSpace(markerRegex))
+            return Fail("Incomplete marker regex is required.");
+
+        if (string.IsNullOrWhiteSpace(sectionRegex) || string.IsNullOrWhiteSpace(releaseRegex))
+            return Fail("Section regex and release regex are required for a useful test.");
+
+        try
+        {
+            var markerOk = IsMatch(input, markerRegex);
+            var section = Match(input, sectionRegex);
+            var release = Match(input, releaseRegex);
+            var ignoredWord = FirstIgnoredWord(input, ignoreWordsText);
+            var trimmedSection = TrimPrefixSuffix(section.Group1, sectionPrefix, sectionSuffix);
+
+            var lines = new List<RegexTestLine>
+            {
+                new("Incomplete marker", markerOk ? "matched" : "no match", markerOk ? "ok" : "bad"),
+                new("Section match", section.Success ? "matched" : "no match", section.Success ? "ok" : "bad"),
+                new("Section full match", section.FullMatch),
+                new("Section group 1", section.Group1),
+                new("Final section", trimmedSection),
+                new("Release match", release.Success ? "matched" : "no match", release.Success ? "ok" : "bad"),
+                new("Release full match", release.FullMatch),
+                new("Release group 1", release.Group1),
+                new("Ignored word", string.IsNullOrEmpty(ignoredWord) ? "None" : ignoredWord, string.IsNullOrEmpty(ignoredWord) ? "ok" : "bad")
+            };
+
+            var ok = markerOk && section.Success && release.Success && string.IsNullOrEmpty(ignoredWord);
+            var title = ok
+                ? "Incomplete warning parsed"
+                : !markerOk
+                    ? "Line is not an incomplete warning"
+                    : !string.IsNullOrEmpty(ignoredWord)
+                        ? "Line would be ignored"
+                        : "Incomplete warning did not parse";
+
+            return new RegexTestResult(ok, title, lines);
+        }
+        catch (ArgumentException ex)
+        {
+            return Fail($"Invalid regex: {ex.Message}");
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return Fail("Regex timed out. Make the pattern more specific.");
+        }
+    }
+
     private static RegexTestResult Fail(string message) =>
         new(false, message, new[] { new RegexTestLine("Status", message, "bad") });
 

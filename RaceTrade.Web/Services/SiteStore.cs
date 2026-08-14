@@ -47,7 +47,17 @@ public sealed class SiteStore
     public static SiteConfig NewSite(string name = "") => new()
     {
         Server = new ServerSettings { Port = 6697 },
-        SiteSettings = new SiteSettings { Sitename = name },
+        SiteSettings = new SiteSettings
+        {
+            Sitename = name,
+            IncompleteMarkerRegex = @"WARN:\s+AUTONUKE\s+INCOMPLETE",
+            IncompleteSectionRegex = @"INCOMPLETE\s+\[([^\]]+)\]",
+            IncompleteReleaseRegex = @"INCOMPLETE\s+\[[^\]]+\]\s+(\S+)",
+            IncompleteSectionPrefix = "[",
+            IncompleteSectionSuffix = "]",
+            IncompleteSearchCommandTemplate = "SITE SEARCH {release}",
+            IncompleteDstPathTemplate = "/{section}"
+        },
         Sections = new List<Section>(),
         RaceSectionsEnabled = new List<string>(),
         GlobalBlacklist = new List<string>(),
@@ -102,6 +112,29 @@ public sealed class SiteStore
         LogManager.Info($"Deleted site '{name}'.");
     }
 
+    public SiteConfig Duplicate(string sourceName, string newName)
+    {
+        var targetName = newName?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(sourceName))
+            throw new InvalidOperationException("Source site is required.");
+        if (string.IsNullOrWhiteSpace(targetName))
+            throw new InvalidOperationException("New site name is required.");
+        if (IsReservedConfigName(targetName))
+            throw new InvalidOperationException($"'{targetName}' is a reserved placeholder name and cannot be saved.");
+
+        Directory.CreateDirectory(Dir);
+        if (File.Exists(PathFor(targetName)))
+            throw new InvalidOperationException($"Site '{targetName}' already exists.");
+
+        var cfg = Load(sourceName);
+        cfg.SiteSettings ??= new SiteSettings();
+        cfg.SiteSettings.Sitename = targetName;
+
+        Save(cfg);
+        LogManager.Info($"Duplicated site '{sourceName}' as '{targetName}'.");
+        return cfg;
+    }
+
     public CbftpSiteImportSummary ImportFromCbftpSites(IEnumerable<CbftpSite> sites, bool overwriteExisting)
     {
         Directory.CreateDirectory(Dir);
@@ -150,7 +183,14 @@ public sealed class SiteStore
                         section_regex_pattern = @"\[(.*?)\]",
                         section_prefix = "[",
                         section_suffix = "]",
-                        ignore_words = ""
+                        ignore_words = "",
+                        incomplete_marker_regex = @"WARN:\s+AUTONUKE\s+INCOMPLETE",
+                        incomplete_section_regex = @"INCOMPLETE\s+\[([^\]]+)\]",
+                        incomplete_release_regex = @"INCOMPLETE\s+\[[^\]]+\]\s+(\S+)",
+                        incomplete_section_prefix = "[",
+                        incomplete_section_suffix = "]",
+                        incomplete_search_command_template = "SITE SEARCH {release}",
+                        incomplete_dst_path_template = "/{section}"
                     },
                     race_sections_enabled = site.Sections?.Select(s => s.Name).Where(s => !string.IsNullOrWhiteSpace(s)).ToList()
                                             ?? new List<string>(),

@@ -1,6 +1,7 @@
 @page "/sites"
 @inject SiteStore Store
 @inject SiteConnectionTestService SiteTester
+@inject CbftpSiteService CbftpSites
 
 <PageTitle>Sites - RaceTrade</PageTitle>
 
@@ -104,8 +105,16 @@
                                         @onclick="() => LoginSite(r.Name)">
                                     <Icon Name="play" Size="13" /><span>@ActionText(r.Name, "login", "Login")</span>
                                 </button>
-                                <a class="btn" href="@($"sites/edit/{r.Name}")"><Icon Name="edit" Size="13" /><span>Edit</span></a>
-                                <a class="btn" href="@($"cbftp-site/{r.Name}")"><Icon Name="servers" Size="13" /><span>Edit CBFTP Site</span></a>
+                                <button class="btn" title="Duplicate the RaceTrade site config" disabled="@IsBusy"
+                                        @onclick="() => OpenDuplicateSite(r.Name)">
+                                    <Icon Name="copy" Size="13" /><span>Duplicate</span>
+                                </button>
+                                <button class="btn" title="Duplicate the CBFTP site config" disabled="@IsBusy"
+                                        @onclick="() => OpenDuplicateCbftpSite(r.Name)">
+                                    <Icon Name="copy" Size="13" /><span>Copy CBFTP</span>
+                                </button>
+                                <a class="btn" href="@($"sites/edit/{Uri.EscapeDataString(r.Name)}")"><Icon Name="edit" Size="13" /><span>Edit</span></a>
+                                <a class="btn" href="@($"cbftp-site/{Uri.EscapeDataString(r.Name)}")"><Icon Name="servers" Size="13" /><span>Edit CBFTP Site</span></a>
                                 <button class="btn danger" disabled="@IsBusy" @onclick="() => Delete(r.Name)"><Icon Name="trash" Size="13" /><span>Delete</span></button>
                             </div>
                         </td>
@@ -116,17 +125,91 @@
     }
 </div>
 
+@if (_duplicateSiteSource is not null)
+{
+    <div class="modal-backdrop" @onclick="CloseDuplicateSite">
+        <div class="modal-card duplicate-modal" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2>Duplicate RaceTrade Site</h2>
+                <button class="btn icon-only" @onclick="CloseDuplicateSite" aria-label="Close"><Icon Name="close" Size="15" /></button>
+            </div>
+            <div class="modal-body duplicate-body">
+                <div class="selected-block">
+                    <span class="label">Source site</span>
+                    <strong>@_duplicateSiteSource</strong>
+                </div>
+                <label>New site name</label>
+                <input type="text" @bind="_duplicateSiteName" @bind:event="oninput" placeholder="NEW-SITE" />
+                <p class="hint">
+                    The RaceTrade site name and CBFTP site name should be the same. If you duplicate both,
+                    use this exact name in the CBFTP duplicate popup too.
+                </p>
+                <div class="modal-actions">
+                    <button class="btn" @onclick="CloseDuplicateSite" disabled="@IsBusy">Cancel</button>
+                    <button class="btn primary" @onclick="ConfirmDuplicateSite" disabled="@IsBusy">
+                        <Icon Name="copy" Size="13" /><span>Duplicate site</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_duplicateCbftpSource is not null)
+{
+    <div class="modal-backdrop" @onclick="CloseDuplicateCbftpSite">
+        <div class="modal-card duplicate-modal" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2>Duplicate CBFTP Site</h2>
+                <button class="btn icon-only" @onclick="CloseDuplicateCbftpSite" aria-label="Close"><Icon Name="close" Size="15" /></button>
+            </div>
+            <div class="modal-body duplicate-body">
+                <div class="selected-block">
+                    <span class="label">Source CBFTP site</span>
+                    <strong>@_duplicateCbftpSource</strong>
+                </div>
+                <label>CBFTP server</label>
+                <select @bind="_duplicateCbftpServerId" disabled="@IsBusy">
+                    @foreach (var server in _duplicateCbftpServers)
+                    {
+                        <option value="@server.Id">@DisplayCbftpServer(server)</option>
+                    }
+                </select>
+                <label>New CBFTP site name</label>
+                <input type="text" @bind="_duplicateCbftpName" @bind:event="oninput" placeholder="NEW-SITE" />
+                <p class="hint">
+                    Keep this identical to the RaceTrade site name. RaceTrade looks up CBFTP site configs by name,
+                    so mismatched names make testing, FXP and racing confusing.
+                </p>
+                <div class="modal-actions">
+                    <button class="btn" @onclick="CloseDuplicateCbftpSite" disabled="@IsBusy">Cancel</button>
+                    <button class="btn primary" @onclick="ConfirmDuplicateCbftpSite" disabled="@(IsBusy || !_duplicateCbftpServers.Any())">
+                        <Icon Name="copy" Size="13" /><span>Duplicate CBFTP site</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private sealed record Row(string Name, string Host, string Network,
                               int Channels, int Sections, bool Disabled, bool DlOnly);
 
     private List<Row> _rows = new();
+    private List<CbftpServer> _duplicateCbftpServers = new();
     private string? _error;
     private SiteConnectionTestResult? _siteTestResult;
     private string? _busySite;
     private string? _busyAction;
+    private string? _duplicateSiteSource;
+    private string _duplicateSiteName = "";
+    private string? _duplicateCbftpSource;
+    private string _duplicateCbftpName = "";
+    private string _duplicateCbftpServerId = "";
+    private bool _duplicating;
 
-    private bool IsBusy => _busySite is not null;
+    private bool IsBusy => _busySite is not null || _duplicating;
 
     protected override void OnInitialized() => Reload();
 
@@ -162,6 +245,100 @@
     {
         try { Store.Delete(name); Reload(); }
         catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void OpenDuplicateSite(string name)
+    {
+        _error = null;
+        _siteTestResult = null;
+        _duplicateSiteSource = name;
+        _duplicateSiteName = SuggestLocalCopyName(name);
+    }
+
+    private void CloseDuplicateSite()
+    {
+        _duplicateSiteSource = null;
+        _duplicateSiteName = "";
+    }
+
+    private void ConfirmDuplicateSite()
+    {
+        if (_duplicateSiteSource is null)
+            return;
+
+        try
+        {
+            _duplicating = true;
+            _error = null;
+            _siteTestResult = null;
+            Store.Duplicate(_duplicateSiteSource, _duplicateSiteName);
+            Reload();
+            _siteTestResult = new SiteConnectionTestResult(
+                true,
+                $"Duplicated RaceTrade site '{_duplicateSiteSource}' as '{_duplicateSiteName.Trim()}'.",
+                new[] { "Use the same name when duplicating the CBFTP site." });
+            CloseDuplicateSite();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _duplicating = false;
+        }
+    }
+
+    private void OpenDuplicateCbftpSite(string name)
+    {
+        _error = null;
+        _siteTestResult = null;
+        _duplicateCbftpSource = name;
+        _duplicateCbftpName = SuggestCbftpCopyName(name);
+        _duplicateCbftpServers = CbftpSites.LoadServers().ToList();
+        _duplicateCbftpServerId = _duplicateCbftpServers.FirstOrDefault()?.Id ?? "";
+    }
+
+    private void CloseDuplicateCbftpSite()
+    {
+        _duplicateCbftpSource = null;
+        _duplicateCbftpName = "";
+        _duplicateCbftpServerId = "";
+        _duplicateCbftpServers.Clear();
+    }
+
+    private async Task ConfirmDuplicateCbftpSite()
+    {
+        if (_duplicateCbftpSource is null)
+            return;
+
+        var server = _duplicateCbftpServers.FirstOrDefault(s => string.Equals(s.Id, _duplicateCbftpServerId, StringComparison.OrdinalIgnoreCase));
+        if (server is null)
+        {
+            _error = "Select a CBFTP server first.";
+            return;
+        }
+
+        try
+        {
+            _duplicating = true;
+            _error = null;
+            _siteTestResult = null;
+            await CbftpSites.DuplicateSiteAsync(server, _duplicateCbftpSource, _duplicateCbftpName);
+            _siteTestResult = new SiteConnectionTestResult(
+                true,
+                $"Duplicated CBFTP site '{_duplicateCbftpSource}' as '{_duplicateCbftpName.Trim()}'.",
+                new[] { "Keep the RaceTrade site name and CBFTP site name identical." });
+            CloseDuplicateCbftpSite();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _duplicating = false;
+        }
     }
 
     private async Task TestSite(string name)
@@ -226,4 +403,31 @@
             _error = ex.Message;
         }
     }
+
+    private string SuggestLocalCopyName(string source)
+    {
+        var names = Store.ListNames();
+        return SuggestCopyName(source, candidate => names.Contains(candidate, StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static string SuggestCbftpCopyName(string source) => $"{source}-copy";
+
+    private static string SuggestCopyName(string source, Func<string, bool> exists)
+    {
+        var baseName = $"{source}-copy";
+        if (!exists(baseName))
+            return baseName;
+
+        for (var i = 2; i < 1000; i++)
+        {
+            var candidate = $"{baseName}-{i}";
+            if (!exists(candidate))
+                return candidate;
+        }
+
+        return $"{baseName}-{DateTime.Now:HHmmss}";
+    }
+
+    private static string DisplayCbftpServer(CbftpServer server) =>
+        $"{server.Name ?? server.Id} - {server.Host}:{server.Port}";
 }

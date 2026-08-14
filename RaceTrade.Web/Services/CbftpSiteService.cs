@@ -185,6 +185,29 @@ public sealed class CbftpSiteService
             throw new InvalidOperationException($"HTTP {(int)response.StatusCode}: {response.ReasonPhrase} {text}");
     }
 
+    public async Task<CbftpSiteEditModel> DuplicateSiteAsync(CbftpServer server, string sourceName, string newName)
+    {
+        var source = sourceName?.Trim() ?? "";
+        var target = newName?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(source))
+            throw new InvalidOperationException("Source CBFTP site is required.");
+        if (string.IsNullOrWhiteSpace(target))
+            throw new InvalidOperationException("New CBFTP site name is required.");
+        if (string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The new CBFTP site name must be different from the source.");
+
+        var existing = await LoadSiteNamesAsync(server);
+        if (existing.Contains(target, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"CBFTP site '{target}' already exists.");
+
+        var copy = await LoadSiteAsync(server, source);
+        copy.OriginalName = null;
+        copy.Name = target;
+        await SaveSiteAsync(server, copy);
+        copy.OriginalName = target;
+        return copy;
+    }
+
     public async Task<string> GetSiteRulesAsync(CbftpServer server, string siteName)
     {
         using var client = CreateClient(server);

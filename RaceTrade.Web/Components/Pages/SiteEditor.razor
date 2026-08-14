@@ -1,6 +1,7 @@
 ﻿@page "/sites/edit/{Name}"
 @page "/sites/new"
 @using Newtonsoft.Json.Linq
+@using RaceTrader
 @inject SiteStore Store
 @inject PreBotStore PreBots
 @inject NavigationManager Nav
@@ -340,6 +341,134 @@
             <p class="fh">
                 Ignore words from this Announce tab still apply. If the test says an ignore word matched,
                 the announce will be skipped before racing.
+            </p>
+        </aside>
+    </div>
+}
+
+@if (_tab == "Incomplete")
+{
+    <div class="editor-with-aside announce-editor">
+        <div class="editor-main">
+            <div class="callout">
+                <strong>Incomplete auto FXP repairs missing releases.</strong> RaceTrade watches this
+                sitebot's incomplete warnings, searches sites marked as source, then queues an FXP
+                back to this site.
+            </div>
+
+            <h2>AUTO FXP</h2>
+            <div class="form-grid wide">
+                <label>Auto FXP incomplete</label>
+                <div>
+                    <input type="checkbox" @bind="S.IncompleteAutoFxpEnabled" />
+                    <span class="fh inline">Monitor this site's incomplete warnings and repair them automatically.</span>
+                </div>
+
+                <label>Use as search source</label>
+                <div>
+                    <input type="checkbox" @bind="S.IncompleteSearchSource" />
+                    <span class="fh inline">Other sites may search this site when repairing incomplete releases.</span>
+                </div>
+
+                <label>Search command</label>
+                <div>
+                    <input type="text" @bind="S.IncompleteSearchCommandTemplate" placeholder="SITE SEARCH {release}" @bind:event="oninput" />
+                    <div class="fh">Raw CBFTP command sent to each source site. Supported placeholders: <code>{release}</code>, <code>{section}</code>, <code>{site}</code>, <code>{source}</code>.</div>
+                </div>
+
+                <label>Dst path template</label>
+                <div>
+                    <input type="text" @bind="S.IncompleteDstPathTemplate" placeholder="/{section}" @bind:event="oninput" />
+                    <div class="fh">Target path on this incomplete site. Supported placeholders: <code>{release}</code>, <code>{section}</code>, <code>{site}</code>, <code>{source}</code>.</div>
+                </div>
+            </div>
+
+            <h2>INCOMPLETE ANNOUNCE</h2>
+            <div class="form-grid wide">
+                <label>Marker regex</label>
+                <div>
+                    <input type="text" @bind="S.IncompleteMarkerRegex" placeholder="@IncompleteAutoFxpManager.DefaultMarkerRegex" @bind:event="oninput" />
+                    <div class="fh">Line must match this before RaceTrade tries an incomplete repair.</div>
+                </div>
+
+                <label>Section regex</label>
+                <div>
+                    <input type="text" @bind="S.IncompleteSectionRegex" placeholder="@IncompleteAutoFxpManager.DefaultSectionRegex" @bind:event="oninput" />
+                    <div class="fh">Captures the section from the incomplete warning.</div>
+                </div>
+
+                <label>Release regex</label>
+                <div>
+                    <input type="text" @bind="S.IncompleteReleaseRegex" placeholder="@IncompleteAutoFxpManager.DefaultReleaseRegex" @bind:event="oninput" />
+                    <div class="fh">Captures the incomplete release name.</div>
+                </div>
+
+                <label>Section prefix</label>
+                <div><input type="text" @bind="S.IncompleteSectionPrefix" placeholder="[" @bind:event="oninput" /></div>
+
+                <label>Section suffix</label>
+                <div><input type="text" @bind="S.IncompleteSectionSuffix" placeholder="]" @bind:event="oninput" /></div>
+
+                <label>Ignore words</label>
+                <div>
+                    <input type="text" @bind="S.IncompleteIgnoreWords" placeholder="NUKED, REQUEST" @bind:event="oninput" />
+                    <div class="fh">Comma separated. Only applies to incomplete auto FXP, not normal racing.</div>
+                </div>
+            </div>
+
+            <h2>TEST INCOMPLETE</h2>
+            <div class="regex-test-row">
+                <input type="text" @bind="_incompleteTestInput" placeholder="Paste an incomplete warning line here" @bind:event="oninput" />
+                <button type="button" class="btn primary" @onclick="TestIncompleteRegex"><Icon Name="test" Size="13" /><span>Test</span></button>
+            </div>
+
+            @if (_incompleteTestResult is not null)
+            {
+                <div class="@($"regex-result {(_incompleteTestResult.Success ? "ok" : "err")}")">
+                    <strong>@_incompleteTestResult.Title</strong>
+                    @foreach (var line in _incompleteTestResult.Lines)
+                    {
+                        <div class="@($"regex-result-row {line.Status}")">
+                            <span>@line.Label</span>
+                            <code>@(string.IsNullOrEmpty(line.Value) ? "-" : line.Value)</code>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <aside class="regex-help-panel">
+            <h2>INCOMPLETE EXAMPLES</h2>
+            <p class="fh">Use this when a sitebot announces incomplete releases and you want RaceTrade to repair them from other sites.</p>
+            <div class="regex-example-list">
+                <div>
+                    <span>Incomplete line</span>
+                    <code>&lt;SiteBot&gt; WARN: AUTONUKE INCOMPLETE [TV-DE] Example.Show.S01E06.GERMAN.WEBRiP.x264-GROUP owner=Uploader warned after 60 minutes, nukes after 240 minutes</code>
+                </div>
+                <div>
+                    <span>Marker regex</span>
+                    <code>@IncompleteAutoFxpManager.DefaultMarkerRegex</code>
+                </div>
+                <div>
+                    <span>Section regex</span>
+                    <code>@IncompleteAutoFxpManager.DefaultSectionRegex</code>
+                </div>
+                <div>
+                    <span>Release regex</span>
+                    <code>@IncompleteAutoFxpManager.DefaultReleaseRegex</code>
+                </div>
+                <div>
+                    <span>Destination path</span>
+                    <code>@IncompleteAutoFxpManager.DefaultDstPathTemplate</code>
+                </div>
+            </div>
+            <p class="fh">
+                Enable <strong>Auto FXP incomplete</strong> on the site that receives the incomplete warning.
+                Enable <strong>Use as search source</strong> on sites RaceTrade may search for a complete copy.
+            </p>
+            <p class="fh">
+                The repair uses CBFTP <code>/raw</code> for <code>SITE SEARCH</code> and starts a transferjob
+                when the release is found.
             </p>
         </aside>
     </div>
@@ -1333,7 +1462,7 @@
     [Parameter] public string? Name { get; set; }
 
     private static readonly string[] Tabs =
-        { "General", "ZNC", "Channels", "Announce", "Sections", "Affils", "Blacklist", "Requests", "CBFTP Site" };
+        { "General", "ZNC", "Channels", "Announce", "Incomplete", "Sections", "Affils", "Blacklist", "Requests", "CBFTP Site" };
 
     private static readonly string[] ImdbGenres =
     {
@@ -1399,8 +1528,10 @@
     private int _dragRuleIndex = -1;
     private string _announceTestInput = "";
     private string _preAnnounceTestInput = "";
+    private string _incompleteTestInput = "";
     private RegexTestResult? _announceTestResult;
     private RegexTestResult? _preAnnounceTestResult;
+    private RegexTestResult? _incompleteTestResult;
 
     protected override void OnParametersSet()
     {
@@ -1436,6 +1567,7 @@
             }
         }
         NormalizeSelectedSection();
+        EnsureIncompleteDefaults();
 
         _maxPreTime = S.MaxPreTime ?? 0;
 
@@ -1447,8 +1579,10 @@
             .ToList();
         _announceTestInput = "";
         _preAnnounceTestInput = "";
+        _incompleteTestInput = "";
         _announceTestResult = null;
         _preAnnounceTestResult = null;
+        _incompleteTestResult = null;
     }
 
     private static string GlobalPreBotMode(string name) => $"Global PreBot ({name})";
@@ -1484,6 +1618,33 @@
             string.IsNullOrWhiteSpace(S.PreSectionPrefix) ? S.SectionPrefix : S.PreSectionPrefix,
             string.IsNullOrWhiteSpace(S.PreSectionSuffix) ? S.SectionSuffix : S.PreSectionSuffix);
     }
+
+    private void TestIncompleteRegex()
+    {
+        EnsureIncompleteDefaults();
+        _incompleteTestResult = RegexTestHelper.TestIncompleteAnnounce(
+            _incompleteTestInput,
+            S.IncompleteMarkerRegex,
+            S.IncompleteIgnoreWords,
+            S.IncompleteSectionRegex,
+            S.IncompleteReleaseRegex,
+            S.IncompleteSectionPrefix,
+            S.IncompleteSectionSuffix);
+    }
+
+    private void EnsureIncompleteDefaults()
+    {
+        S.IncompleteMarkerRegex = DefaultIfEmpty(S.IncompleteMarkerRegex, IncompleteAutoFxpManager.DefaultMarkerRegex);
+        S.IncompleteSectionRegex = DefaultIfEmpty(S.IncompleteSectionRegex, IncompleteAutoFxpManager.DefaultSectionRegex);
+        S.IncompleteReleaseRegex = DefaultIfEmpty(S.IncompleteReleaseRegex, IncompleteAutoFxpManager.DefaultReleaseRegex);
+        S.IncompleteSectionPrefix = DefaultIfEmpty(S.IncompleteSectionPrefix, "[");
+        S.IncompleteSectionSuffix = DefaultIfEmpty(S.IncompleteSectionSuffix, "]");
+        S.IncompleteSearchCommandTemplate = DefaultIfEmpty(S.IncompleteSearchCommandTemplate, IncompleteAutoFxpManager.DefaultSearchCommandTemplate);
+        S.IncompleteDstPathTemplate = DefaultIfEmpty(S.IncompleteDstPathTemplate, IncompleteAutoFxpManager.DefaultDstPathTemplate);
+    }
+
+    private static string DefaultIfEmpty(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value;
 
     private bool HasStoredKey(int i)
     {
@@ -1904,6 +2065,8 @@
 
             if (!string.IsNullOrEmpty(_password))
                 Sv.Password = _password;
+
+            EnsureIncompleteDefaults();
 
             // Empty key box = keep whatever was stored, rather than wiping it - except
             // for rows the user explicitly cleared.

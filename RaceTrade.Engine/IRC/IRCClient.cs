@@ -984,6 +984,16 @@ public class IRCClient
                 AppendOutput($"[DEBUG] Cleaned message: {cleanMessage}", Color.Cyan);
             }
 
+            if (IncompleteAutoFxpManager.IsIncompleteLine(siteConfig, cleanMessage))
+            {
+                _ = Task.Run(() => IncompleteAutoFxpManager.TryRepairFromLineAsync(
+                    siteConfig,
+                    cleanMessage,
+                    channelName,
+                    cancellationToken));
+                return;
+            }
+
             if (ShouldSkipMessage(cleanMessage))
             {
                 if (EngineSettings.DebugEnabled)

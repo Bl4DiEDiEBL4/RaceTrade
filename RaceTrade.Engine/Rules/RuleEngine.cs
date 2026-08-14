@@ -344,14 +344,33 @@ public class RulesEngine
         value ??= string.Empty;
         var ruleValue = rule.Value ?? string.Empty;
 
-        bool match = rule.Operator.ToLowerInvariant() switch
+        // TRD.js-style negation: any operator except == / != can be prefixed with '!'
+        // (e.g. "!isin", "!contains", "!iswm", "!matches").
+        var op = rule.Operator.ToLowerInvariant();
+        bool negate = false;
+        if (op.Length > 1 && op[0] == '!' && op != "!=")
+        {
+            negate = true;
+            op = op.Substring(1);
+        }
+
+        bool match = op switch
         {
             "==" => string.Equals(value, ruleValue, StringComparison.OrdinalIgnoreCase),
             "!=" => !string.Equals(value, ruleValue, StringComparison.OrdinalIgnoreCase),
             "contains" => value.IndexOf(ruleValue, StringComparison.OrdinalIgnoreCase) >= 0,
+            // Any entry of a comma/pipe list is contained in the value (TRD.js containsany).
+            "containsany" => ContainsAny(value, ruleValue),
             "startswith" => value.StartsWith(ruleValue, StringComparison.OrdinalIgnoreCase),
             "endswith" => value.EndsWith(ruleValue, StringComparison.OrdinalIgnoreCase),
             "isin" => IsInList(value, ruleValue),
+
+            // Numeric comparisons (TRD.js parity, e.g. "[year] >= 2020 ALLOW").
+            // A non-numeric side simply doesn't match.
+            ">=" => CompareNumeric(value, ruleValue) is int c1 && c1 >= 0,
+            "<=" => CompareNumeric(value, ruleValue) is int c2 && c2 <= 0,
+            ">" => CompareNumeric(value, ruleValue) is int c3 && c3 > 0,
+            "<" => CompareNumeric(value, ruleValue) is int c4 && c4 < 0,
 
             // keep patterns intact
             "iswm" => IsWildcardMatch(value, ruleValue),
@@ -360,10 +379,42 @@ public class RulesEngine
             _ => false
         };
 
+        if (negate)
+            match = !match;
+
         if (match)
             LogManager.Debug($"[✓] Rule matched: {rule.Key} {rule.Operator} {rule.Value}, Input='{value}'");
 
         return match;
+    }
+
+    /// <summary>
+    /// Numerically compares value to ruleValue. Returns null (no match on any
+    /// comparison operator) when either side is not a number.
+    /// </summary>
+    private static int? CompareNumeric(string value, string ruleValue)
+    {
+        if (!double.TryParse(value, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var left))
+            return null;
+        if (!double.TryParse(ruleValue, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var right))
+            return null;
+
+        return left.CompareTo(right);
+    }
+
+    /// <summary>
+    /// True when ANY entry of the comma/pipe-separated list appears in the value
+    /// (substring, case-insensitive). TRD.js' containsany.
+    /// </summary>
+    private static bool ContainsAny(string value, string listString)
+    {
+        return listString
+            .Split(new[] { ',', '|' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(item => item.Trim())
+            .Where(item => item.Length > 0)
+            .Any(item => value.IndexOf(item, StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     /// <summary>
