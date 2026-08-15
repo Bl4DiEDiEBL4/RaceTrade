@@ -10,7 +10,7 @@
     <section class="doc-hero">
         <div>
             <span class="doc-kicker">Current branch</span>
-            <h2>v2.1.2</h2>
+            <h2>v2.1.3</h2>
             <p>
                 This page tracks user-facing RaceTrade changes for the new web build.
             </p>
@@ -19,6 +19,17 @@
 
     <section class="timeline">
         <article class="timeline-item current">
+            <div class="timeline-version">v2.1.3</div>
+            <div class="timeline-date">August 2026</div>
+            <ul>
+                <li>Fixed SQLite startup on Linux by initializing the bundled SQLite runtime before any pretime, processed-release, IMDB or TVMaze database access.</li>
+                <li>Improved SQLite error logging so Linux/native-library failures show the real inner error instead of only a generic type-initializer message.</li>
+                <li>Added a Databases page under Tools to inspect and search Pretimes, processed releases, IMDB cache and TVMaze cache entries.</li>
+                <li>Added database summary counters so users can quickly verify what RaceTrade has stored locally.</li>
+            </ul>
+        </article>
+
+        <article class="timeline-item">
             <div class="timeline-version">v2.1.2</div>
             <div class="timeline-date">August 2026</div>
             <ul>

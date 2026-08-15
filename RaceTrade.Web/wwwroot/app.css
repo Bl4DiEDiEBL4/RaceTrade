@@ -708,6 +708,84 @@ table.grid tbody tr:hover td { background: #262d3b; }
     word-break: break-word;
 }
 
+.database-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.database-summary .stat-card {
+    min-height: 66px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--card);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+}
+
+.database-summary .stat-card span {
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.database-summary .stat-card strong {
+    color: var(--accent);
+    font-size: 24px;
+    line-height: 1;
+}
+
+.compact-tabs {
+    display: flex;
+    gap: 2px;
+    margin: 0;
+    flex-wrap: wrap;
+}
+
+.compact-tabs .tab {
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    padding: 6px 12px;
+}
+
+.database-search {
+    flex: 1 1 320px;
+}
+
+.database-table td {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 12px;
+}
+
+.database-table .release-name {
+    color: #36b8ff;
+    word-break: break-word;
+}
+
+.database-table .site,
+.database-table .section {
+    color: var(--accent);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.database-table .ts {
+    color: var(--dim);
+    white-space: nowrap;
+    width: 1%;
+}
+
+.empty-cell {
+    padding: 16px 13px !important;
+    color: var(--muted);
+}
+
 tr.lvl-error .msg { color: var(--err); }
 tr.lvl-warning .msg { color: var(--warn); }
 tr.lvl-success .msg { color: var(--ok); }
@@ -5924,6 +6002,7 @@ html[data-theme="light"] .chat-notice.err {
 
     .dashboard-stats,
     .dashboard-shortcuts,
+    .database-summary,
     .settings-grid,
     .card-grid,
     .cbftp-edit-grid,

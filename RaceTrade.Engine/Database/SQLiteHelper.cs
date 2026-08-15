@@ -15,6 +15,21 @@ public static class SQLiteHelper
     private static readonly string RacelogConnectionString = $"Data Source={RacelogDbFile};";
     private static readonly string PredbConnectionString = $"Data Source={PredbDbFile};"; 
 
+    public sealed record ProcessedReleaseEntry(
+        int Id,
+        string ReleaseName,
+        string Category,
+        string SiteName,
+        long DateProcessed,
+        long? Pretime);
+
+    public sealed record PretimeEntry(
+        int Id,
+        string ReleaseName,
+        string Section,
+        long PreTimestamp,
+        long CreatedAt);
+
     /// <summary>
     /// Initializes both SQLite databases and creates necessary tables.
     /// </summary>
@@ -22,6 +37,8 @@ public static class SQLiteHelper
     {
         try
         {
+            SqliteRuntime.EnsureInitialized();
+
             // Ensure the directory exists
             var directory = Path.GetDirectoryName(RacelogDbFile);
             if (!Directory.Exists(directory))
@@ -39,13 +56,14 @@ public static class SQLiteHelper
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error initializing databases: {ex.Message}");
+            Console.WriteLine($"Error initializing databases: {SqliteRuntime.DescribeException(ex)}");
             Console.WriteLine($"Stack Trace: {ex.StackTrace}");
         }
     }
 
     private static void InitializeRacelogDatabase()
     {
+        SqliteRuntime.EnsureInitialized();
         using var connection = new SqliteConnection(RacelogConnectionString);
         connection.Open();
 
@@ -65,6 +83,7 @@ public static class SQLiteHelper
 
     private static void InitializePredbDatabase()
     {
+        SqliteRuntime.EnsureInitialized();
         using var connection = new SqliteConnection(PredbConnectionString);
         connection.Open();
 
@@ -108,6 +127,7 @@ public static class SQLiteHelper
     {
         try
         {
+            SqliteRuntime.EnsureInitialized();
             using var connection = new SqliteConnection(connectionString);
             connection.Open();
 
@@ -125,6 +145,7 @@ public static class SQLiteHelper
 
     private static int DeleteAll(string connectionString, string table)
     {
+        SqliteRuntime.EnsureInitialized();
         using var connection = new SqliteConnection(connectionString);
         connection.Open();
 
@@ -159,6 +180,7 @@ public static class SQLiteHelper
 
         try
         {
+            SqliteRuntime.EnsureInitialized();
             using var connection = new SqliteConnection(RacelogConnectionString);
             connection.Open();
 
@@ -179,7 +201,7 @@ public static class SQLiteHelper
         }
         catch (Exception ex)
         {
-            logEntries.Add($"Error loading logs from database: {ex.Message}");
+            logEntries.Add($"Error loading logs from database: {SqliteRuntime.DescribeException(ex)}");
         }
 
         return logEntries;
@@ -189,6 +211,7 @@ public static class SQLiteHelper
     {
         try
         {
+            SqliteRuntime.EnsureInitialized();
             using var connection = new SqliteConnection(RacelogConnectionString);
             connection.Open();
 
@@ -207,14 +230,60 @@ public static class SQLiteHelper
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error logging processed release: {ex.Message}");
+            Console.WriteLine($"Error logging processed release: {SqliteRuntime.DescribeException(ex)}");
         }
+    }
+
+    public static List<ProcessedReleaseEntry> SearchProcessedReleases(string query, int limit = 200)
+    {
+        var rows = new List<ProcessedReleaseEntry>();
+
+        try
+        {
+            SqliteRuntime.EnsureInitialized();
+            using var connection = new SqliteConnection(RacelogConnectionString);
+            connection.Open();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT Id, ReleaseName, Category, SiteName, DateProcessed, Pretime
+                FROM ProcessedReleases
+                WHERE @query = ''
+                   OR ReleaseName LIKE @like
+                   OR Category LIKE @like
+                   OR SiteName LIKE @like
+                ORDER BY Id DESC
+                LIMIT @limit;
+            ";
+            command.Parameters.AddWithValue("@query", query?.Trim() ?? "");
+            command.Parameters.AddWithValue("@like", $"%{query?.Trim() ?? ""}%");
+            command.Parameters.AddWithValue("@limit", Math.Clamp(limit, 1, 1000));
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add(new ProcessedReleaseEntry(
+                    reader.GetInt32(0),
+                    reader.IsDBNull(1) ? "" : reader.GetString(1),
+                    reader.IsDBNull(2) ? "" : reader.GetString(2),
+                    reader.IsDBNull(3) ? "" : reader.GetString(3),
+                    reader.IsDBNull(4) ? 0 : reader.GetInt64(4),
+                    reader.IsDBNull(5) ? null : reader.GetInt64(5)));
+            }
+        }
+        catch (Exception ex)
+        {
+            LogManager.Error($"Error reading processed releases: {SqliteRuntime.DescribeException(ex)}");
+        }
+
+        return rows;
     }
 
     public static async Task<bool> IsReleaseProcessedAsync(string releaseName)
     {
         try
         {
+            SqliteRuntime.EnsureInitialized();
             using var connection = new SqliteConnection(RacelogConnectionString);
             await connection.OpenAsync();
 
@@ -227,7 +296,7 @@ public static class SQLiteHelper
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error checking processed release: {ex.Message}");
+            Console.WriteLine($"Error checking processed release: {SqliteRuntime.DescribeException(ex)}");
             return false;
         }
     }
@@ -244,6 +313,7 @@ public static class SQLiteHelper
     {
         try
         {
+            SqliteRuntime.EnsureInitialized();
             using var connection = new SqliteConnection(PredbConnectionString);
             await connection.OpenAsync();
 
@@ -271,8 +341,51 @@ public static class SQLiteHelper
         }
         catch (Exception ex)
         {
-            LogManager.Error($"Error storing pretime for {releaseName}: {ex.Message}");
+            LogManager.Error($"Error storing pretime for {releaseName}: {SqliteRuntime.DescribeException(ex)}");
         }
+    }
+
+    public static List<PretimeEntry> SearchPretimes(string query, int limit = 200)
+    {
+        var rows = new List<PretimeEntry>();
+
+        try
+        {
+            SqliteRuntime.EnsureInitialized();
+            using var connection = new SqliteConnection(PredbConnectionString);
+            connection.Open();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT id, release_name, section, pre_timestamp, created_at
+                FROM pretime
+                WHERE @query = ''
+                   OR release_name LIKE @like
+                   OR section LIKE @like
+                ORDER BY pre_timestamp DESC
+                LIMIT @limit;
+            ";
+            command.Parameters.AddWithValue("@query", query?.Trim() ?? "");
+            command.Parameters.AddWithValue("@like", $"%{query?.Trim() ?? ""}%");
+            command.Parameters.AddWithValue("@limit", Math.Clamp(limit, 1, 1000));
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add(new PretimeEntry(
+                    reader.GetInt32(0),
+                    reader.IsDBNull(1) ? "" : reader.GetString(1),
+                    reader.IsDBNull(2) ? "" : reader.GetString(2),
+                    reader.IsDBNull(3) ? 0 : reader.GetInt64(3),
+                    reader.IsDBNull(4) ? 0 : reader.GetInt64(4)));
+            }
+        }
+        catch (Exception ex)
+        {
+            LogManager.Error($"Error reading pretimes: {SqliteRuntime.DescribeException(ex)}");
+        }
+
+        return rows;
     }
 
     /// <summary>
@@ -282,6 +395,7 @@ public static class SQLiteHelper
     {
         try
         {
+            SqliteRuntime.EnsureInitialized();
             using var connection = new SqliteConnection(PredbConnectionString);
             await connection.OpenAsync();
 
@@ -299,7 +413,7 @@ public static class SQLiteHelper
         }
         catch (Exception ex)
         {
-            LogManager.Error($"Error getting pretime for {releaseName}: {ex.Message}");
+            LogManager.Error($"Error getting pretime for {releaseName}: {SqliteRuntime.DescribeException(ex)}");
         }
 
         return null;

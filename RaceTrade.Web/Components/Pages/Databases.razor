@@ -1,0 +1,218 @@
+@page "/databases"
+
+<PageTitle>Databases - RaceTrade</PageTitle>
+
+<div class="databases-page paged-page">
+    <div class="page-head">
+        <h1><Icon Name="database" Size="18" />Databases</h1>
+        <button type="button" class="btn" @onclick="Refresh"><Icon Name="refresh" Size="13" /><span>Reload</span></button>
+    </div>
+
+    <div class="database-summary">
+        <div class="stat-card"><span>Pretimes</span><strong>@_summary.Pretimes</strong></div>
+        <div class="stat-card"><span>Processed</span><strong>@_summary.ProcessedReleases</strong></div>
+        <div class="stat-card"><span>IMDB</span><strong>@_summary.ImdbMovies</strong></div>
+        <div class="stat-card"><span>TVMaze</span><strong>@_summary.TvMazeShows</strong></div>
+    </div>
+
+    <div class="panel fill-panel paged-panel database-panel">
+        <div class="toolbar">
+            <div class="tab-strip compact-tabs">
+                <button type="button" class="@TabClass(DbTab.Pretimes)" @onclick="() => SelectTab(DbTab.Pretimes)">Pretimes</button>
+                <button type="button" class="@TabClass(DbTab.Processed)" @onclick="() => SelectTab(DbTab.Processed)">Processed</button>
+                <button type="button" class="@TabClass(DbTab.Imdb)" @onclick="() => SelectTab(DbTab.Imdb)">IMDB</button>
+                <button type="button" class="@TabClass(DbTab.TvMaze)" @onclick="() => SelectTab(DbTab.TvMaze)">TVMaze</button>
+            </div>
+            <input type="text" class="database-search" placeholder="Search release, section, title, site..." @bind="_query" @bind:event="oninput" @bind:after="SearchChanged" />
+            <select class="page-size" @bind="_limit" @bind:after="Refresh">
+                <option value="50">50 rows</option>
+                <option value="100">100 rows</option>
+                <option value="200">200 rows</option>
+                <option value="500">500 rows</option>
+            </select>
+            <span class="spacer"></span>
+            <span class="hint">@ShownCount shown</span>
+        </div>
+
+        <div class="paged-table-wrap">
+            @switch (_tab)
+            {
+                case DbTab.Pretimes:
+                    <table class="grid database-table">
+                        <thead>
+                            <tr>
+                                <th>PRETIME</th>
+                                <th>SECTION</th>
+                                <th>RELEASE</th>
+                                <th>STORED</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_pretimes.Count == 0)
+                            {
+                                <tr><td colspan="4" class="empty-cell">No pretimes found.</td></tr>
+                            }
+                            @foreach (var row in _pretimes)
+                            {
+                                <tr>
+                                    <td class="ts">@FromUnixMs(row.PreTimestamp)</td>
+                                    <td class="section">@row.Section</td>
+                                    <td class="release-name">@row.ReleaseName</td>
+                                    <td class="ts">@FromUnixMs(row.CreatedAt)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    break;
+                case DbTab.Processed:
+                    <table class="grid database-table">
+                        <thead>
+                            <tr>
+                                <th>PROCESSED</th>
+                                <th>SITE(S)</th>
+                                <th>SECTION</th>
+                                <th>RELEASE</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_processed.Count == 0)
+                            {
+                                <tr><td colspan="4" class="empty-cell">No processed releases found.</td></tr>
+                            }
+                            @foreach (var row in _processed)
+                            {
+                                <tr>
+                                    <td class="ts">@FromUnixSeconds(row.DateProcessed)</td>
+                                    <td class="site">@row.SiteName</td>
+                                    <td class="section">@row.Category</td>
+                                    <td class="release-name">@row.ReleaseName</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    break;
+                case DbTab.Imdb:
+                    <table class="grid database-table">
+                        <thead>
+                            <tr>
+                                <th>UPDATED</th>
+                                <th>IMDB</th>
+                                <th>TITLE</th>
+                                <th>YEAR</th>
+                                <th>RATING</th>
+                                <th>VOTES</th>
+                                <th>GENRES</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_imdb.Count == 0)
+                            {
+                                <tr><td colspan="7" class="empty-cell">No IMDB cache entries found.</td></tr>
+                            }
+                            @foreach (var row in _imdb)
+                            {
+                                <tr>
+                                    <td class="ts">@row.LastUpdated</td>
+                                    <td class="site">@row.ImdbId</td>
+                                    <td class="release-name">@row.Title</td>
+                                    <td>@row.Year</td>
+                                    <td>@Rating(row.Rating)</td>
+                                    <td>@Votes(row.Votes)</td>
+                                    <td class="dim">@row.Genre</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    break;
+                case DbTab.TvMaze:
+                    <table class="grid database-table">
+                        <thead>
+                            <tr>
+                                <th>UPDATED</th>
+                                <th>ID</th>
+                                <th>SHOW</th>
+                                <th>TYPE</th>
+                                <th>LANGUAGE</th>
+                                <th>RATING</th>
+                                <th>NETWORK</th>
+                                <th>GENRES</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_tvmaze.Count == 0)
+                            {
+                                <tr><td colspan="8" class="empty-cell">No TVMaze cache entries found.</td></tr>
+                            }
+                            @foreach (var row in _tvmaze)
+                            {
+                                <tr>
+                                    <td class="ts">@row.LastUpdated</td>
+                                    <td class="site">@row.TvMazeId</td>
+                                    <td class="release-name">@row.Name</td>
+                                    <td>@row.Type</td>
+                                    <td>@row.Language</td>
+                                    <td>@Rating(row.Rating)</td>
+                                    <td>@row.Network</td>
+                                    <td class="dim">@row.Genres</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    break;
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private enum DbTab { Pretimes, Processed, Imdb, TvMaze }
+
+    private DbTab _tab = DbTab.Pretimes;
+    private string _query = "";
+    private int _limit = 100;
+    private DatabaseBrowser.DatabaseSummary _summary = new(0, 0, 0, 0, 0, 0, 0);
+    private List<SQLiteHelper.PretimeEntry> _pretimes = new();
+    private List<SQLiteHelper.ProcessedReleaseEntry> _processed = new();
+    private List<DatabaseBrowser.ImdbCacheEntry> _imdb = new();
+    private List<DatabaseBrowser.TvMazeCacheEntry> _tvmaze = new();
+
+    private int ShownCount => _tab switch
+    {
+        DbTab.Pretimes => _pretimes.Count,
+        DbTab.Processed => _processed.Count,
+        DbTab.Imdb => _imdb.Count,
+        DbTab.TvMaze => _tvmaze.Count,
+        _ => 0
+    };
+
+    protected override void OnInitialized() => Refresh();
+
+    private void SelectTab(DbTab tab)
+    {
+        _tab = tab;
+        Refresh();
+    }
+
+    private void SearchChanged() => Refresh();
+
+    private void Refresh()
+    {
+        _summary = DatabaseBrowser.GetSummary();
+
+        _pretimes = _tab == DbTab.Pretimes ? SQLiteHelper.SearchPretimes(_query, _limit) : new();
+        _processed = _tab == DbTab.Processed ? SQLiteHelper.SearchProcessedReleases(_query, _limit) : new();
+        _imdb = _tab == DbTab.Imdb ? DatabaseBrowser.SearchImdbMovies(_query, _limit) : new();
+        _tvmaze = _tab == DbTab.TvMaze ? DatabaseBrowser.SearchTvMazeShows(_query, _limit) : new();
+    }
+
+    private string TabClass(DbTab tab) => _tab == tab ? "tab active" : "tab";
+
+    private static string FromUnixMs(long value) =>
+        value <= 0 ? "" : DateTimeOffset.FromUnixTimeMilliseconds(value).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+    private static string FromUnixSeconds(long value) =>
+        value <= 0 ? "" : DateTimeOffset.FromUnixTimeSeconds(value).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
+
+    private static string Rating(double? value) => value is null or <= 0 ? "" : value.Value.ToString("0.0");
+    private static string Votes(int? value) => value is null or <= 0 ? "" : value.Value.ToString("N0");
+}

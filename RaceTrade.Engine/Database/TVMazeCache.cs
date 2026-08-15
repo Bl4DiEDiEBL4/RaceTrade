@@ -38,6 +38,8 @@ namespace RaceTrader
         {
             try
             {
+                SqliteRuntime.EnsureInitialized();
+
                 // Create db folder if it doesn't exist
                 if (!Directory.Exists(dbFolder))
                 {
@@ -122,7 +124,7 @@ namespace RaceTrader
             }
             catch (Exception ex)
             {
-                LogManager.Error($"Error initializing TVMaze database: {ex.Message}");
+                LogManager.Error($"Error initializing TVMaze database: {SqliteRuntime.DescribeException(ex)}");
             }
         }
 

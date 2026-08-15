@@ -41,6 +41,7 @@ foreach (var sub in new[] { "sites", "cbftp", "pre_bots", "sections", "settings"
     Directory.CreateDirectory(sub);
 
 LoadEngineSettings();
+InitializeDatabases();
 
 Console.WriteLine($"Data directory: {dataRoot}");
 
@@ -572,6 +573,21 @@ static string ReadEmbeddedText(string name)
         ?? throw new InvalidOperationException($"Embedded asset '{name}' was not found.");
     using var reader = new StreamReader(stream);
     return reader.ReadToEnd();
+}
+
+static void InitializeDatabases()
+{
+    try
+    {
+        SqliteRuntime.EnsureInitialized();
+        SQLiteHelper.InitializeDatabase();
+        RaceTrader.IMDBCache.Initialize();
+        RaceTrader.TVMazeCache.Initialize();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"SQLite startup check failed: {SqliteRuntime.DescribeException(ex)}");
+    }
 }
 
 static byte[] ReadEmbeddedBytes(string name)
