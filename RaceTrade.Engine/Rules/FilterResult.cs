@@ -36,9 +36,9 @@ namespace RaceTrade
         public string Message { get; set; }
 
         /// <summary>
-        /// The CBFTP section that was evaluated.
+        /// The FXP backend section that was evaluated.
         /// </summary>
-        public string CbftpSection { get; set; }
+        public string FxpBackendSection { get; set; }
 
         /// <summary>
         /// The release name that was evaluated.
@@ -57,7 +57,7 @@ namespace RaceTrade
         /// <summary>
         /// Creates a successful result.
         /// </summary>
-        public static FilterResult Success(string releaseName, string cbftpSection, List<string> allowedSites, List<string> dlOnlySites = null)
+        public static FilterResult Success(string releaseName, string fxpBackendSection, List<string> allowedSites, List<string> dlOnlySites = null)
         {
             return new FilterResult
             {
@@ -65,7 +65,7 @@ namespace RaceTrade
                 AllowedSites = allowedSites,
                 DlOnlySites = dlOnlySites ?? new List<string>(),
                 ReleaseName = releaseName,
-                CbftpSection = cbftpSection,
+                FxpBackendSection = fxpBackendSection,
                 Message = $"Found [{allowedSites.Count}] allowed site(s)"
             };
         }
@@ -87,22 +87,22 @@ namespace RaceTrade
         /// <summary>
         /// Creates a no-sites result.
         /// </summary>
-        public static FilterResult NoSites(string releaseName, string cbftpSection, string reason)
+        public static FilterResult NoSites(string releaseName, string fxpBackendSection, string reason)
         {
             return new FilterResult
             {
                 Status = FilterStatus.NoSites,
                 AllowedSites = new List<string>(),
                 ReleaseName = releaseName,
-                CbftpSection = cbftpSection,
-                Message = $"No allowed sites in section [{cbftpSection}]: [{reason}]"
+                FxpBackendSection = fxpBackendSection,
+                Message = $"No allowed sites in section [{fxpBackendSection}]: [{reason}]"
             };
         }
 
         /// <summary>
         /// Creates an insufficient sites result.
         /// </summary>
-        public static FilterResult InsufficientSites(string releaseName, string cbftpSection, int siteCount, List<string> allowedSites = null)
+        public static FilterResult InsufficientSites(string releaseName, string fxpBackendSection, int siteCount, List<string> allowedSites = null)
         {
             string message;
 
@@ -120,7 +120,7 @@ namespace RaceTrade
                 Status = FilterStatus.InsufficientSites,
                 AllowedSites = allowedSites ?? new List<string>(),
                 ReleaseName = releaseName,
-                CbftpSection = cbftpSection,
+                FxpBackendSection = fxpBackendSection,
                 Message = message
             };
         }

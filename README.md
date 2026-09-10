@@ -1,6 +1,6 @@
 # RaceTrade v2 WebUI
 
-RaceTrade is an IRC race manager with CBFTP integration and a local browser UI.
+RaceTrade is an IRC race manager with FXP backend integration and a local browser UI.
 
 ## Screenshots
 Dashboard
@@ -12,7 +12,7 @@ Sites
 Site Editor
 <img width="1700" height="882" alt="image" src="https://github.com/user-attachments/assets/51e23355-2676-463a-b5e6-69081a4832d3" />
 
-CBFTP servers
+FXP Backends
 <img width="1912" height="914" alt="image" src="https://github.com/user-attachments/assets/25c885c2-2a46-4d04-9b80-e4209dab05b1" />
 
 Pre
@@ -60,7 +60,7 @@ http://127.0.0.1:8420
 ```
 
 On first start RaceTrade creates a `data` folder next to the executable. That is
-normal. It contains your sites, CBFTP settings, prebots, logs and databases.
+normal. It contains your sites, FXP backend settings, prebots, logs and databases.
 
 On Linux/Raspberry Pi, make the binary executable and set a WebUI password before
 exposing it to another machine:
@@ -100,7 +100,7 @@ Copy your old folders into the v2 data folder:
 
 ```text
 sites\
-cbftp\
+fxp_backend\
 pre_bots\
 sections\
 settings\
@@ -139,7 +139,7 @@ RaceTrade uses these folders inside the data folder:
 
 ```text
 sites\
-cbftp\
+fxp_backend\
 pre_bots\
 sections\
 settings\
@@ -152,8 +152,8 @@ logs\
 
 - Dashboard with trader status and quick actions.
 - Site editor for ZNC, channels, announce parsing, sections, rules, affils,
-  blacklist, requests and CBFTP site settings.
-- CBFTP server import and CBFTP-side site editor.
+  blacklist, requests and FXP backend site settings.
+- FXP backend import and FXP backend site editor.
 - Dual-pane FXP browser.
 - PreBots and Pre / Affil Spread manager.
 - Test Release page for checking mappings, rules, IMDB/Tiffara/TMDb and TVMaze.

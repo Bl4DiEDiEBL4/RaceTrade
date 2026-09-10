@@ -16,19 +16,19 @@ public sealed class ReleaseSearchService
         @"(?<![:/])(?<path>/[^\s\|]+)",
         RegexOptions.Compiled);
 
-    private readonly CbftpStore _store;
+    private readonly FxpBackendStore _store;
 
-    public ReleaseSearchService(CbftpStore store)
+    public ReleaseSearchService(FxpBackendStore store)
     {
         _store = store;
     }
 
-    public IReadOnlyList<CbftpServer> LoadServers() => _store.Load().CbftpServers;
+    public IReadOnlyList<FxpBackend> LoadServers() => _store.LoadActiveServers();
 
-    public async Task<IReadOnlyList<ReleaseSearchSite>> FetchSitesAsync(CbftpServer server)
+    public async Task<IReadOnlyList<ReleaseSearchSite>> FetchSitesAsync(FxpBackend server)
     {
         var password = DecryptPassword(server);
-        var result = await CbftpSync.FetchSitesFromCbftp(server.Host ?? "", server.Port ?? "", password);
+        var result = await FxpBackendSync.FetchSitesFromFxpBackend(server.Host ?? "", server.Port ?? "", password);
         if (!result.IsSuccess)
             throw new InvalidOperationException(result.ErrorMessage);
 
@@ -36,7 +36,7 @@ public sealed class ReleaseSearchService
             .Where(s => !string.IsNullOrWhiteSpace(s.Name))
             .Select(s => new ReleaseSearchSite(
                 s.Name,
-                (s.Sections ?? new List<CbftpSection>())
+                (s.Sections ?? new List<FxpBackendSection>())
                     .Select(ToSuggestion)
                     .Where(section => !string.IsNullOrWhiteSpace(section.Name) || !string.IsNullOrWhiteSpace(section.Path))
                     .GroupBy(section => section.Path, StringComparer.OrdinalIgnoreCase)
@@ -48,7 +48,7 @@ public sealed class ReleaseSearchService
     }
 
     public async Task<ReleaseSearchResponse> SearchAsync(
-        CbftpServer server,
+        FxpBackend server,
         string query,
         IReadOnlyList<string> sites)
     {
@@ -65,34 +65,44 @@ public sealed class ReleaseSearchService
         if (selectedSites.Count == 0)
             throw new InvalidOperationException("Select at least one site to search.");
 
+        var fxpBackendQueries = BuildFxpBackendSearchQueries(query);
+
         using var client = CreateClient(server, 90);
         var endpoint = FxpClientService.BuildEndpoint(server);
-        var payload = new { command = $"SITE SEARCH {query}", sites = selectedSites };
-        using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-
-        var response = await client.PostAsync($"{endpoint}/raw", content);
-        var text = await response.Content.ReadAsStringAsync();
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"HTTP {(int)response.StatusCode}: {response.ReasonPhrase} {text}");
 
         var logs = new List<string>();
         var results = new List<ReleaseSearchResult>();
-        var outputs = ExtractSiteOutputs(text, selectedSites).ToList();
+        if (fxpBackendQueries.Count > 1 || !string.Equals(fxpBackendQueries[0], query, StringComparison.Ordinal))
+            logs.Add($"Wildcard search: trying {string.Join(", ", fxpBackendQueries.Select(q => $"'{q}'"))}; filtering locally with '{query}'.");
 
-        if (outputs.Count == 0)
-            outputs.Add(new SearchSiteOutput("CBFTP", text, true));
-
-        foreach (var output in outputs)
+        foreach (var fxpBackendQuery in fxpBackendQueries)
         {
-            var parsed = ParseOutput(output.Site, output.Text, query).ToList();
-            if (!output.Success)
-                logs.Add($"{output.Site}: {TrimLine(output.Text, 180)}");
-            else if (parsed.Count == 0)
-                logs.Add($"{output.Site}: no matches");
-            else
-                logs.Add($"{output.Site}: {parsed.Count} match(es)");
+            var payload = new { command = $"SITE SEARCH {fxpBackendQuery}", sites = selectedSites };
+            using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
-            results.AddRange(parsed);
+            var response = await client.PostAsync($"{endpoint}/raw", content);
+            var text = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"HTTP {(int)response.StatusCode}: {response.ReasonPhrase} {text}");
+
+            var outputs = ExtractSiteOutputs(text, selectedSites).ToList();
+
+            if (outputs.Count == 0)
+                outputs.Add(new SearchSiteOutput("FXP backend", text, true));
+
+            foreach (var output in outputs)
+            {
+                var parsed = ParseOutput(output.Site, output.Text, query).ToList();
+                var prefix = fxpBackendQueries.Count > 1 ? $"{output.Site} [{fxpBackendQuery}]" : output.Site;
+                if (!output.Success)
+                    logs.Add($"{prefix}: {TrimLine(output.Text, 180)}");
+                else if (parsed.Count == 0)
+                    logs.Add($"{prefix}: no matches");
+                else
+                    logs.Add($"{prefix}: {parsed.Count} match(es)");
+
+                results.AddRange(parsed);
+            }
         }
 
         var deduped = results
@@ -107,7 +117,7 @@ public sealed class ReleaseSearchService
     }
 
     public async Task<FxpOperationResult> QueueFxpAsync(
-        CbftpServer server,
+        FxpBackend server,
         ReleaseSearchResult result,
         string destinationSite,
         string destinationPath)
@@ -135,7 +145,7 @@ public sealed class ReleaseSearchService
         destinationPath = FxpClientService.NormalizePath(destinationPath);
         var password = DecryptPassword(server);
 
-        var transfer = await CbftpRacer.StartTransferJobFxp(
+        var transfer = await FxpBackendRacer.StartTransferJobFxp(
             srcSite: result.Site,
             srcSectionOrPath: parentPath,
             srcIsSection: sourceIsSection,
@@ -145,7 +155,7 @@ public sealed class ReleaseSearchService
             host: server.Host ?? "",
             port: server.Port ?? "",
             password: password,
-            serverName: server.Name ?? server.Id ?? "cbftp");
+            serverName: server.Name ?? server.Id ?? "FXP backend");
 
         var logs = new List<string>();
         if (transfer.Success)
@@ -205,7 +215,7 @@ public sealed class ReleaseSearchService
             yield break;
         }
 
-        yield return new SearchSiteOutput("CBFTP", text, true);
+        yield return new SearchSiteOutput("FXP backend", text, true);
     }
 
     private static IEnumerable<SearchSiteOutput> ExtractJsonOutputs(JToken root)
@@ -214,21 +224,21 @@ public sealed class ReleaseSearchService
         {
             foreach (var failure in AsArray(obj["failures"]))
             {
-                var site = Value(failure, "name", "site", "sitename") ?? "CBFTP";
+                var site = Value(failure, "name", "site", "sitename") ?? "FXP backend";
                 var result = Value(failure, "result", "response", "output", "message", "error") ?? failure.ToString(Formatting.None);
                 yield return new SearchSiteOutput(site, result, false);
             }
 
             foreach (var success in AsArray(obj["successes"]))
             {
-                var site = Value(success, "name", "site", "sitename") ?? "CBFTP";
+                var site = Value(success, "name", "site", "sitename") ?? "FXP backend";
                 var result = Value(success, "result", "response", "output", "message") ?? success.ToString(Formatting.None);
                 yield return new SearchSiteOutput(site, result, true);
             }
 
             if (obj["result"] is not null || obj["output"] is not null || obj["response"] is not null)
             {
-                var site = Value(obj, "name", "site", "sitename") ?? "CBFTP";
+                var site = Value(obj, "name", "site", "sitename") ?? "FXP backend";
                 var result = Value(obj, "result", "response", "output", "message") ?? obj.ToString(Formatting.None);
                 yield return new SearchSiteOutput(site, result, true);
             }
@@ -240,7 +250,7 @@ public sealed class ReleaseSearchService
         {
             foreach (var item in array)
             {
-                var site = Value(item, "name", "site", "sitename") ?? "CBFTP";
+                var site = Value(item, "name", "site", "sitename") ?? "FXP backend";
                 var result = Value(item, "result", "response", "output", "message") ?? item.ToString(Formatting.None);
                 yield return new SearchSiteOutput(site, result, true);
             }
@@ -376,19 +386,51 @@ public sealed class ReleaseSearchService
 
         if (query.Contains('*', StringComparison.Ordinal) || query.Contains('?', StringComparison.Ordinal))
         {
-            var pattern = "^" + Regex.Escape(query)
+            var pattern = Regex.Escape(query)
                 .Replace("\\*", ".*", StringComparison.Ordinal)
-                .Replace("\\?", ".", StringComparison.Ordinal) + "$";
+                .Replace("\\?", ".", StringComparison.Ordinal);
             return Regex.IsMatch(candidate, pattern, RegexOptions.IgnoreCase);
         }
 
         return candidate.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static IReadOnlyList<string> BuildFxpBackendSearchQueries(string query)
+    {
+        query = NormalizeSearchText(query);
+        if (string.IsNullOrWhiteSpace(query))
+            return Array.Empty<string>();
+
+        if (!query.Contains('*', StringComparison.Ordinal) && !query.Contains('?', StringComparison.Ordinal))
+            return new[] { query };
+
+        var literals = Regex.Split(query, @"[\*\?]+")
+            .Select(part => part.Trim())
+            .Where(part => part.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (literals.Count == 0)
+            throw new InvalidOperationException("Wildcard search needs at least one normal character.");
+
+        var searchable = literals
+            .Where(part => part.Length >= 2)
+            .OrderByDescending(part => part.Length)
+            .ToList();
+        if (searchable.Count == 0)
+            searchable.Add(literals.OrderByDescending(part => part.Length).First());
+
+        return searchable
+            .Where(q => !string.IsNullOrWhiteSpace(q))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(4)
+            .ToList();
+    }
+
     private static string NormalizeSearchText(string text) =>
         (text ?? "").Trim().Trim('\'', '"');
 
-    private static ReleaseSearchSection ToSuggestion(CbftpSection section)
+    private static ReleaseSearchSection ToSuggestion(FxpBackendSection section)
     {
         var name = (section.Name ?? "").Trim();
         var path = FxpClientService.NormalizePath(string.IsNullOrWhiteSpace(section.Path) ? name : section.Path);
@@ -417,10 +459,10 @@ public sealed class ReleaseSearchService
         return text.Length <= max ? text : text[..max] + "...";
     }
 
-    private static string DecryptPassword(CbftpServer server) =>
+    private static string DecryptPassword(FxpBackend server) =>
         string.IsNullOrWhiteSpace(server.Password) ? "" : SecureConfig.Decrypt(server.Password);
 
-    private static HttpClient CreateClient(CbftpServer server, int timeoutSeconds)
+    private static HttpClient CreateClient(FxpBackend server, int timeoutSeconds)
     {
         var handler = new HttpClientHandler
         {

@@ -70,7 +70,7 @@ namespace RaceTrade
             if (SecretProtector.IsLegacyDpapi(encryptedText))
             {
                 // Fail loudly: returning the ciphertext would resurface much later as a
-                // confusing login failure against a site or cbftp.
+                // confusing login failure against a site or FXP backend.
                 LogManager.Error(
                     "A secret is still in the old Windows DPAPI format (ENC:). Convert it on the " +
                     "Windows machine that created it before using this config here.");

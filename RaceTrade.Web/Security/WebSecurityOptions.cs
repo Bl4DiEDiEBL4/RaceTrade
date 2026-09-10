@@ -1,11 +1,11 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 
 namespace RaceTrade.Web.Security;
 
 /// <summary>
 /// Controls who can reach the UI.
 ///
-/// This app holds site logins, cbftp passwords and Blowfish keys, so the default is
+/// This app holds site logins, FXP backend passwords and Blowfish keys, so the default is
 /// deliberately closed: listen on loopback only, where the OS itself is the access
 /// control. Opening it up is an explicit decision, and doing so REQUIRES a password -
 /// see <see cref="Validate"/>, which refuses to start an unauthenticated listener on
@@ -51,7 +51,7 @@ public sealed class WebSecurityOptions
             throw new InvalidOperationException(
                 $"Refusing to start: BindAddress is '{BindAddress}' (reachable from other machines) " +
                 "but no admin password is set. Either bind to 127.0.0.1, or set a password first " +
-                "(run with --set-password). This app stores FTP and cbftp credentials.");
+                "(run with --set-password). This app stores FTP and FXP backend credentials.");
         }
     }
 

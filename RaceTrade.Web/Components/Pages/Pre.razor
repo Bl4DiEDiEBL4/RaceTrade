@@ -1,5 +1,5 @@
 @page "/pre"
-@using PreCbftpServer = RaceTrade.Web.Services.PreCbftpServer
+@using PreFxpBackend = RaceTrade.Web.Services.PreFxpBackend
 @using PreSiteConfig = RaceTrade.Web.Services.PreSiteConfig
 @inject PreSpreadService PreSpread
 
@@ -25,10 +25,10 @@
             <span class="step">1</span>
             <h2>PRE SITES</h2>
             <span class="spacer"></span>
-            <button class="btn sm" @onclick="ImportServers" disabled="@Busy" title="Copy the cbftp servers from the CBFTP servers page">
+            <button class="btn sm" @onclick="ImportServers" disabled="@Busy" title="Copy the FXP backends from the FXP Backends page">
                 <Icon Name="download" Size="12" /><span>Import servers</span>
             </button>
-            <button class="btn sm" @onclick="FetchSites" disabled="@(!_servers.Any() || Busy)" title="Ask each cbftp instance which sites it knows">
+            <button class="btn sm" @onclick="FetchSites" disabled="@(!_servers.Any() || Busy)" title="Ask each FXP backend instance which sites it knows">
                 <Icon Name="refresh" Size="12" /><span>Fetch sites</span>
             </button>
         </div>
@@ -36,8 +36,8 @@
         @if (_servers.Count == 0)
         {
             <div class="callout warn-callout">
-                No cbftp servers yet. Press <strong>Import servers</strong> to copy them
-                from the CBFTP servers page.
+                No FXP backends yet. Press <strong>Import servers</strong> to copy them
+                from the FXP Backends page.
             </div>
         }
         else
@@ -45,7 +45,7 @@
             <div class="pre-servers">
                 @foreach (var server in _servers)
                 {
-                    var count = _sites.Count(s => string.Equals(s.CbftpServerId, server.Id, StringComparison.OrdinalIgnoreCase));
+                    var count = _sites.Count(s => string.Equals(s.FxpBackendId, server.Id, StringComparison.OrdinalIgnoreCase));
 
                     <div class="pre-server">
                         <span class="pre-server-name">@server.Name</span>
@@ -116,19 +116,19 @@
                     <label>Site name</label>
                     <div>
                         <input type="text" @bind="_selectedSite.Name" @bind:event="oninput" />
-                        <div class="fh">Must match the site name inside cbftp exactly.</div>
+                        <div class="fh">Must match the site name inside FXP backend exactly.</div>
                     </div>
 
-                    <label>CBFTP server</label>
+                    <label>FXP backend</label>
                     <div>
-                        <select @bind="_selectedSite.CbftpServerId">
+                        <select @bind="_selectedSite.FxpBackendId">
                             <option value="">- none -</option>
                             @foreach (var server in _servers)
                             {
                                 <option value="@server.Id">@server.Name (@server.Host:@server.Port)</option>
                             }
                         </select>
-                        <div class="fh">Which cbftp instance reaches this site.</div>
+                        <div class="fh">Which FXP backend reaches this site.</div>
                     </div>
 
                     <label>Affil directory</label>
@@ -293,7 +293,7 @@
 </div>
 
 @code {
-    private List<PreCbftpServer> _servers = new();
+    private List<PreFxpBackend> _servers = new();
     private List<PreSiteConfig> _sites = new();
     private PreSiteConfig? _selectedSite;
     private string _sourceSiteName = "";
@@ -341,8 +341,8 @@
 
     private void SelectSite(PreSiteConfig site) => _selectedSite = site;
 
-    private PreCbftpServer? ServerFor(PreSiteConfig site) =>
-        _servers.FirstOrDefault(s => string.Equals(s.Id, site.CbftpServerId, StringComparison.OrdinalIgnoreCase));
+    private PreFxpBackend? ServerFor(PreSiteConfig site) =>
+        _servers.FirstOrDefault(s => string.Equals(s.Id, site.FxpBackendId, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Flips the pill and persists immediately — a toggle that needs a separate Save is
@@ -390,7 +390,7 @@
             // changes are silently lost on save.
             RebindSelection();
 
-            AddLog($"{_servers.Count} cbftp server(s) available.");
+            AddLog($"{_servers.Count} FXP backend server(s) available.");
         }
         catch (Exception ex)
         {
@@ -398,7 +398,7 @@
         }
     }
 
-    private void RemoveServer(PreCbftpServer server)
+    private void RemoveServer(PreFxpBackend server)
     {
         try
         {
@@ -423,11 +423,11 @@
     private void RebindSelection()
     {
         var name = _selectedSite?.Name;
-        var serverId = _selectedSite?.CbftpServerId;
+        var serverId = _selectedSite?.FxpBackendId;
 
         _selectedSite = _sites.FirstOrDefault(s =>
                             string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase) &&
-                            string.Equals(s.CbftpServerId, serverId, StringComparison.OrdinalIgnoreCase))
+                            string.Equals(s.FxpBackendId, serverId, StringComparison.OrdinalIgnoreCase))
                         ?? _sites.FirstOrDefault();
     }
 
@@ -471,7 +471,7 @@
         var server = ServerFor(source);
         if (server is null)
         {
-            AddLog($"'{source.Name}' has no cbftp server bound. Select one under CBFTP server and press Save config.", isError: true);
+            AddLog($"'{source.Name}' has no FXP backend bound. Select one under FXP backend and press Save config.", isError: true);
             return;
         }
 

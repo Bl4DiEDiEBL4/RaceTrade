@@ -1,8 +1,8 @@
-﻿using System;
+using System;
 namespace RaceTrade
 {
     /// <summary>
-    /// Represents the result of a CBFTP transfer operation.
+    /// Represents the result of a FXP backend transfer operation.
     /// Provides clear success/failure status instead of void returns.
     /// </summary>
     public class TransferResult
@@ -17,11 +17,11 @@ namespace RaceTrade
         /// </summary>
         public string ErrorMessage { get; set; }
         /// <summary>
-        /// HTTP status code from CBFTP API.
+        /// HTTP status code from FXP backend API.
         /// </summary>
         public int? StatusCode { get; set; }
         /// <summary>
-        /// Raw response from CBFTP API.
+        /// Raw response from FXP backend API.
         /// </summary>
         public string RawResponse { get; set; }
         /// <summary>

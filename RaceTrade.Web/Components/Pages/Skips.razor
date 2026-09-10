@@ -37,6 +37,13 @@
 
     <div class="panel fill-panel paged-panel">
         <div class="toolbar">
+        <input type="text"
+               class="paged-search"
+               placeholder="Search release, site, section, reason..."
+               @bind="_search"
+               @bind:event="oninput"
+               @bind:after="FilterChanged" />
+
         <select @bind="_site" @bind:after="FilterChanged">
             <option value="">All sites</option>
             @foreach (var s in _sites)
@@ -52,9 +59,6 @@
                 <option value="@s">@s</option>
             }
         </select>
-
-        <input class="search" @bind="_search" @bind:event="oninput" @bind:after="FilterChanged"
-               placeholder="Filter on release or reason" />
 
         <span class="spacer"></span>
         <label class="chk">
@@ -266,7 +270,7 @@
         SkipReason.NoSectionMapping => "no mapping",
         SkipReason.SiteDisabled => "site off",
         SkipReason.SectionDisabled => "section off",
-        SkipReason.NoCbftpMapping => "no cbftp map",
+        SkipReason.NoFxpBackendMapping => "no FXP backend map",
         SkipReason.Skiplist => "skiplist",
         SkipReason.Blacklist => "blacklist",
         SkipReason.GlobalBlacklist => "global blacklist",
@@ -285,7 +289,7 @@
     private static string ReasonClass(SkipReason reason) => reason switch
     {
         SkipReason.Error => "r-error",
-        SkipReason.NoSectionMapping or SkipReason.NoCbftpMapping or
+        SkipReason.NoSectionMapping or SkipReason.NoFxpBackendMapping or
         SkipReason.SectionDisabled or SkipReason.SiteDisabled or
         SkipReason.InsufficientSites or SkipReason.NoSites => "r-config",
         SkipReason.Duplicate => "r-dupe",

@@ -10,7 +10,7 @@
 
     <div class="panel search-shell">
         <div class="toolbar search-toolbar">
-            <label>CBFTP</label>
+            <label>FXP backend</label>
             <select value="@_serverId" @onchange="OnServerChanged" disabled="@_busy">
                 @foreach (var server in _servers)
                 {
@@ -37,7 +37,7 @@
             <div class="search-section-head">
                 <div>
                     <div class="card-title">Sites</div>
-                    <div class="muted small">Uses raw CBFTP command <code>SITE SEARCH</code> on the selected sites.</div>
+                    <div class="muted small">Uses FXP backend <code>SITE SEARCH</code> on the selected sites. Wildcards <code>*</code> and <code>?</code> are filtered by RaceTrade.</div>
                 </div>
                 <div class="row-actions">
                     <button class="btn compact" @onclick="SelectAllSites" disabled="@(_busy || _sites.Count == 0)">All</button>
@@ -196,7 +196,7 @@
 }
 
 @code {
-    private readonly List<CbftpServer> _servers = new();
+    private readonly List<FxpBackend> _servers = new();
     private readonly List<string> _sites = new();
     private readonly Dictionary<string, List<ReleaseSearchSection>> _siteSections = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _selectedSites = new(StringComparer.OrdinalIgnoreCase);
@@ -390,15 +390,15 @@
             _selectedSites.Remove(site);
     }
 
-    private CbftpServer? SelectedServer() =>
+    private FxpBackend? SelectedServer() =>
         _servers.FirstOrDefault(s => string.Equals(ServerKey(s), _serverId, StringComparison.OrdinalIgnoreCase));
 
-    private static string ServerKey(CbftpServer server) =>
+    private static string ServerKey(FxpBackend server) =>
         server.Id ?? server.Name ?? $"{server.Host}:{server.Port}";
 
-    private static string ServerLabel(CbftpServer server)
+    private static string ServerLabel(FxpBackend server)
     {
-        var name = server.Name ?? server.Id ?? "cbftp";
+        var name = server.Name ?? server.Id ?? "FXP backend";
         var host = server.Host ?? "";
         var port = server.Port ?? "";
         return string.IsNullOrWhiteSpace(host) ? name : $"{name} - {host}:{port}";

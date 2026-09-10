@@ -59,6 +59,9 @@ namespace RaceTrade
 
     public class SiteSettings
     {
+        [JsonIgnore]
+        public string ConfigKey { get; set; }
+
         [JsonProperty("chat_keys")]
         public Dictionary<string, string> ChatKeys { get; set; } = new();
 
@@ -67,6 +70,20 @@ namespace RaceTrade
 
         [JsonProperty("sitename")]
         public string Sitename { get; set; }
+
+        [JsonProperty("fxp_backend_id")]
+        public string FxpBackendId { get; set; }
+
+        [JsonProperty(global::FxpBackendJsonKeys.LegacyBackendId, NullValueHandling = NullValueHandling.Ignore)]
+        private string LegacyFxpBackendId
+        {
+            get => null;
+            set
+            {
+                if (!string.IsNullOrWhiteSpace(value) && string.IsNullOrWhiteSpace(FxpBackendId))
+                    FxpBackendId = value;
+            }
+        }
 
         [JsonProperty("bot_name")]
         public string BotName { get; set; }
@@ -340,8 +357,19 @@ namespace RaceTrade
 
     public class Tag
     {
-        [JsonProperty("map_cbftp_section")]
-        public string MapCbftpSection { get; set; }
+        [JsonProperty("map_fxp_backend_section")]
+        public string MapFxpBackendSection { get; set; }
+
+        [JsonProperty(global::FxpBackendJsonKeys.LegacySectionMap, NullValueHandling = NullValueHandling.Ignore)]
+        private string LegacyMapFxpBackendSection
+        {
+            get => null;
+            set
+            {
+                if (!string.IsNullOrWhiteSpace(value) && string.IsNullOrWhiteSpace(MapFxpBackendSection))
+                    MapFxpBackendSection = value;
+            }
+        }
 
         [JsonProperty("trigger_regex")]
         public string TriggerRegex { get; set; }
@@ -361,7 +389,7 @@ namespace RaceTrade
 
     public class Mapping
     {
-        public string MapCbftpSection { get; set; }
+        public string MapFxpBackendSection { get; set; }
         public string TriggerRegex { get; set; }
         public List<string> Rules { get; set; } = new List<string>();
 }

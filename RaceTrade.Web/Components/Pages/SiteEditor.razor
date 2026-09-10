@@ -1,9 +1,12 @@
-﻿@page "/sites/edit/{Name}"
+@page "/sites/edit/{Name}"
 @page "/sites/new"
 @using Newtonsoft.Json.Linq
+@using Newtonsoft.Json
 @using RaceTrader
 @inject SiteStore Store
 @inject PreBotStore PreBots
+@inject FxpBackendStore FxpBackendStore
+@inject FxpBackendSiteService FxpBackendSites
 @inject NavigationManager Nav
 @inject EngineHost Engine
 
@@ -43,7 +46,7 @@
         <label>Site name</label>
         <div>
             <input type="text" @bind="S.Sitename" placeholder="MYSITE" @bind:event="oninput" />
-            <div class="fh">Also the filename under <code>sites\</code>. Must match the site name used in cbftp.</div>
+            <div class="fh">Also the filename under <code>sites\</code>. Must match the site name used in FXP backend.</div>
         </div>
 
         <label>Bot name</label>
@@ -65,7 +68,7 @@
             <div class="fh">
                 With a <strong>Global PreBot</strong>, this site uses the selected PreBot feed from
                 <code>pre_bots</code>. The PreBot parser lives on the PreBots page; this site still
-                controls which IRC sections race and how they map to CBFTP.
+                controls which IRC sections race and how they map to FXP backend.
             </div>
         </div>
 
@@ -373,7 +376,7 @@
                 <label>Search command</label>
                 <div>
                     <input type="text" @bind="S.IncompleteSearchCommandTemplate" placeholder="SITE SEARCH {release}" @bind:event="oninput" />
-                    <div class="fh">Raw CBFTP command sent to each source site. Supported placeholders: <code>{release}</code>, <code>{section}</code>, <code>{site}</code>, <code>{source}</code>.</div>
+                    <div class="fh">Raw FXP backend command sent to each source site. Supported placeholders: <code>{release}</code>, <code>{section}</code>, <code>{site}</code>, <code>{source}</code>.</div>
                 </div>
 
                 <label>Dst path template</label>
@@ -467,7 +470,7 @@
                 Enable <strong>Use as search source</strong> on sites RaceTrade may search for a complete copy.
             </p>
             <p class="fh">
-                The repair uses CBFTP <code>/raw</code> for <code>SITE SEARCH</code> and starts a transferjob
+                The repair uses FXP backend <code>/raw</code> for <code>SITE SEARCH</code> and starts a transferjob
                 when the release is found.
             </p>
         </aside>
@@ -478,7 +481,7 @@
 {
     <div class="sections-topbar">
         <h2>SECTION ROUTING</h2>
-        <span class="fh">Pick an IRC section, then map it to CBFTP sections.</span>
+        <span class="fh">Pick an IRC section, then map it to FXP backend sections.</span>
         <button class="btn primary sm" @onclick="AddSection"><Icon Name="plus" Size="12" /><span>Add section</span></button>
     </div>
 
@@ -595,7 +598,7 @@
                                     <strong>@(sectionRacing ? "Racing enabled" : "Racing disabled")</strong>
                                     <em>
                                         @(sectionRacing
-                                            ? "Announces in this IRC section can create CBFTP jobs."
+                                            ? "Announces in this IRC section can create FXP backend jobs."
                                             : "Announces in this IRC section are ignored.")
                                     </em>
                                 </span>
@@ -863,8 +866,8 @@
                     <div class="section-block">
                         <div class="section-block-head">
                             <div>
-                                <h2>CBFTP mappings <span class="count-badge">@mappingCount</span></h2>
-                                <p class="fh">Use more than one mapping when one IRC section needs different CBFTP targets.</p>
+                                <h2>FXP backend mappings <span class="count-badge">@mappingCount</span></h2>
+                                <p class="fh">Use more than one mapping when one IRC section needs different FXP backend targets.</p>
                             </div>
                             <button class="btn" @onclick="() => AddTag(selected)"><Icon Name="plus" Size="13" /><span>Add mapping</span></button>
                         </div>
@@ -885,7 +888,7 @@
                                         <div class="mapping-card-head">
                                             <span class="mapping-index">@(tagIndex + 1)</span>
                                             <span class="mapping-title">
-                                                @(string.IsNullOrWhiteSpace(tag.MapCbftpSection) ? "unnamed target" : tag.MapCbftpSection)
+                                                @(string.IsNullOrWhiteSpace(tag.MapFxpBackendSection) ? "unnamed target" : tag.MapFxpBackendSection)
                                             </span>
                                             <span class="mini-pill @(isFallback ? "" : "info")">
                                                 @(isFallback ? "fallback" : "conditional")
@@ -896,9 +899,30 @@
 
                                         <div class="mapping-card-grid">
                                             <label>
-                                                <span>CBFTP section</span>
-                                                <input type="text" value="@tag.MapCbftpSection"
-                                                       @oninput="e => tag.MapCbftpSection = e.Value?.ToString()" placeholder="TV" />
+                                                <span>FXP backend section</span>
+                                                <span class="section-picker-row">
+                                                    <span class="section-combo">
+                                                        <input type="text" value="@tag.MapFxpBackendSection"
+                                                               @oninput="e => tag.MapFxpBackendSection = e.Value?.ToString()" placeholder="TV" />
+                                                        <button type="button" class="section-combo-toggle"
+                                                                title="Show FXP backend sections"
+                                                                @onclick="() => ToggleFxpBackendSectionPicker(tag)">▾</button>
+                                                        @if (ReferenceEquals(_openFxpBackendSectionPicker, tag))
+                                                        {
+                                                            <span class="section-combo-menu">
+                                                                @foreach (var sectionName in KnownFxpBackendSectionsFor(tag.MapFxpBackendSection))
+                                                                {
+                                                                    <button type="button" @onclick="() => PickFxpBackendSection(tag, sectionName)">
+                                                                        @sectionName
+                                                                    </button>
+                                                                }
+                                                            </span>
+                                                        }
+                                                    </span>
+                                                    <button type="button" class="btn sm" @onclick="SyncFxpBackendSections" disabled="@_syncingFxpSections">
+                                                        <Icon Name="refresh" Size="12" /><span>@(_syncingFxpSections ? "Syncing" : "Sync")</span>
+                                                    </button>
+                                                </span>
                                             </label>
                                             <label>
                                                 <span>Trigger regex <em>on release name - empty = catch-all</em></span>
@@ -972,7 +996,7 @@
                         }
 
                         @* Matches the wording in Help > "Section routing and mappings".
-                           Everything here is what RaceHelper.GetMappedCbftpSection actually
+                           Everything here is what RaceHelper.GetMappedFxpBackendSection actually
                            does: unanchored Regex.IsMatch against the RELEASE NAME, case
                            sensitive unless written as /pattern/i, mappings walked in order. *@
                         <details class="trigger-help">
@@ -1001,15 +1025,15 @@
                             </div>
                             <div class="regex-example-list">
                                 <div>
-                                    <span>1. CBFTP TV-2160P</span>
+                                    <span>1. FXP backend TV-2160P</span>
                                     <code>2160p|UHD|HEVC</code>
                                 </div>
                                 <div>
-                                    <span>2. CBFTP TV-1080P</span>
+                                    <span>2. FXP backend TV-1080P</span>
                                     <code>/1080p|x264|h264/i</code>
                                 </div>
                                 <div>
-                                    <span>3. CBFTP TV</span>
+                                    <span>3. FXP backend TV</span>
                                     <code>(empty - everything else)</code>
                                 </div>
                             </div>
@@ -1346,7 +1370,7 @@
 @if (_tab == "Requests")
 {
     <div class="callout">
-        <strong>Request auto-fill uses CBFTP raw commands.</strong> The list command is sent to
+        <strong>Request auto-fill uses FXP backend raw commands.</strong> The list command is sent to
         the request site, each output line is parsed by the regex below, and RaceTrade fills
         matching releases from sites marked as source.
     </div>
@@ -1381,7 +1405,7 @@
         <label>List command</label>
         <div>
             <input type="text" @bind="S.RequestListCommand" placeholder="SITE REQUESTS" @bind:event="oninput" />
-            <div class="fh">Command sent through CBFTP <code>/raw</code> to list open requests.</div>
+            <div class="fh">Command sent through FXP backend <code>/raw</code> to list open requests.</div>
         </div>
 
         <label>Request line regex</label>
@@ -1422,18 +1446,35 @@
     </div>
 }
 
-@if (_tab == "CBFTP Site")
+@if (_tab == "FXP Backend Site")
 {
-    <div class="cbftp-site-tab">
+    <div class="fxp-backend-site-tab">
+        <div class="form-grid compact">
+            <label>FXP backend</label>
+            <div>
+                <select @bind="S.FxpBackendId">
+                    <option value="">Legacy / first configured server</option>
+                    @foreach (var server in _fxpBackendServers)
+                    {
+                        <option value="@server.Id">@DisplayFxpBackend(server)</option>
+                    }
+                </select>
+                <div class="fh">
+                    Race jobs, site login tests and FXP backend-site editing use this FXP backend.
+                    Keep the RaceTrade site name and FXP backend site name identical.
+                </div>
+            </div>
+        </div>
+
         <div class="callout">
-            <strong>This edits the site inside CBFTP itself.</strong> The other tabs edit
-            RaceTrade's local <code>sites\*.json</code>. Use this tab when you need CBFTP
+            <strong>This edits the site inside FXP backend itself.</strong> The other tabs edit
+            RaceTrade's local <code>sites\*.json</code>. Use this tab when you need FXP backend
             address, user, password, affils, section paths or skiplist settings.
         </div>
         <div class="head-actions">
-            <a class="btn primary" href="@($"cbftp-site/{Uri.EscapeDataString(S.Sitename ?? _originalName ?? "")}")">
+            <a class="btn primary" href="@($"fxp-backend-site/{Uri.EscapeDataString(S.Sitename ?? _originalName ?? "")}")">
                 <Icon Name="servers" Size="13" />
-                <span>Edit CBFTP Site</span>
+                <span>Edit FXP Backend Site</span>
             </a>
             <button class="btn" @onclick="ShowSiteRules" disabled="@_loadingRules">
                 <Icon Name="logs" Size="13" />
@@ -1462,7 +1503,7 @@
     [Parameter] public string? Name { get; set; }
 
     private static readonly string[] Tabs =
-        { "General", "ZNC", "Channels", "Announce", "Incomplete", "Sections", "Affils", "Blacklist", "Requests", "CBFTP Site" };
+        { "General", "ZNC", "Channels", "Announce", "Incomplete", "Sections", "Affils", "Blacklist", "Requests", "FXP Backend Site" };
 
     private static readonly string[] ImdbGenres =
     {
@@ -1512,6 +1553,10 @@
     private bool _showRules;
     private string _rulesText = "";
     private IReadOnlyList<string> _preBotNames = Array.Empty<string>();
+    private IReadOnlyList<FxpBackend> _fxpBackendServers = Array.Empty<FxpBackend>();
+    private IReadOnlyList<string> _knownFxpBackendSections = Array.Empty<string>();
+    private Tag? _openFxpBackendSectionPicker;
+    private bool _syncingFxpSections;
 
     private string _password = "";
     private bool _hasStoredPassword;
@@ -1533,9 +1578,34 @@
     private RegexTestResult? _preAnnounceTestResult;
     private RegexTestResult? _incompleteTestResult;
 
+    private IReadOnlyList<string> KnownFxpBackendSections
+    {
+        get
+        {
+            var sections = new HashSet<string>(_knownFxpBackendSections, StringComparer.OrdinalIgnoreCase);
+            foreach (var tag in (_cfg.Sections ?? new List<Section>()).SelectMany(s => s.Tags ?? new List<Tag>()))
+            {
+                if (!string.IsNullOrWhiteSpace(tag.MapFxpBackendSection))
+                    sections.Add(tag.MapFxpBackendSection.Trim());
+            }
+
+            return sections.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    private IReadOnlyList<string> KnownFxpBackendSectionsFor(string? current)
+    {
+        var sections = new HashSet<string>(KnownFxpBackendSections, StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(current))
+            sections.Add(current.Trim());
+        return sections.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
     protected override void OnParametersSet()
     {
         _preBotNames = PreBots.ListNames();
+        _fxpBackendServers = FxpBackendStore.Load().FxpBackends;
+        _knownFxpBackendSections = LoadKnownFxpBackendSections();
         _isNew = string.IsNullOrEmpty(Name);
 
         if (_isNew)
@@ -1731,7 +1801,7 @@
             return all
                 .Where(e => DisplaySectionName(e.Section).Contains(q, StringComparison.OrdinalIgnoreCase)
                          || (e.Section.Tags ?? new List<Tag>())
-                                .Any(t => (t.MapCbftpSection ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)))
+                                .Any(t => (t.MapFxpBackendSection ?? "").Contains(q, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
         }
     }
@@ -1777,13 +1847,13 @@
     private static string MappingSummary(Section sec)
     {
         var mapped = (sec.Tags ?? new List<Tag>())
-            .Select(t => t.MapCbftpSection)
+            .Select(t => t.MapFxpBackendSection)
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(3)
             .ToList();
 
-        if (mapped.Count == 0) return "No CBFTP mappings";
+        if (mapped.Count == 0) return "No FXP backend mappings";
 
         var suffix = (sec.Tags?.Count ?? 0) > mapped.Count ? $" +{(sec.Tags?.Count ?? 0) - mapped.Count}" : "";
         return string.Join(", ", mapped) + suffix;
@@ -1907,6 +1977,93 @@
             .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+    private static IReadOnlyList<string> LoadKnownFxpBackendSections()
+    {
+        var sections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in new[]
+                 {
+                     Path.Combine("sections", "fxp_backend_sections.json"),
+                     Path.Combine("sections", "cbftp_sections.json")
+                 })
+        {
+            if (!File.Exists(path))
+                continue;
+
+            try
+            {
+                var data = JsonConvert.DeserializeObject<SectionData>(File.ReadAllText(path));
+                foreach (var value in data?.FxpBackendSections?.Values ?? Enumerable.Empty<string>())
+                {
+                    if (!string.IsNullOrWhiteSpace(value))
+                        sections.Add(value.Trim());
+                }
+            }
+            catch
+            {
+                // Bad section metadata should not break editing a site. The user can still type.
+            }
+        }
+
+        return sections.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private async Task SyncFxpBackendSections()
+    {
+        var server = SelectedFxpBackendServer();
+        if (server is null)
+        {
+            _error = "Select or configure an FXP backend first.";
+            return;
+        }
+
+        try
+        {
+            _syncingFxpSections = true;
+            _error = null;
+
+            var siteName = (S.Sitename ?? _originalName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(siteName))
+            {
+                _error = "Enter the site name before syncing FXP backend sections.";
+                return;
+            }
+
+            var model = await FxpBackendSites.LoadSiteAsync(server, siteName);
+            var sections = model.Sections
+                .Select(s => s.Name)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _knownFxpBackendSections = sections.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+            _status = $"Synced {_knownFxpBackendSections.Count} FXP backend section(s) from backend site '{model.Name}'.";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not sync FXP backend sections: {ex.Message}";
+        }
+        finally
+        {
+            _syncingFxpSections = false;
+        }
+    }
+
+    private FxpBackend? SelectedFxpBackendServer()
+    {
+        if (!string.IsNullOrWhiteSpace(S.FxpBackendId))
+        {
+            var configured = _fxpBackendServers.FirstOrDefault(s =>
+                string.Equals(s.Id, S.FxpBackendId, StringComparison.OrdinalIgnoreCase));
+            if (configured is not null)
+                return configured;
+        }
+
+        return _fxpBackendServers.FirstOrDefault(s => !s.Disabled) ??
+               _fxpBackendServers.FirstOrDefault();
+    }
+
     private void AddSection()
     {
         _cfg.Sections.Add(new Section { Tags = new List<Tag>(), Rules = new List<string>() });
@@ -1917,6 +2074,18 @@
     {
         sec.Tags ??= new List<Tag>();
         sec.Tags.Add(new Tag { Rules = new List<string>() });
+    }
+
+    private void ToggleFxpBackendSectionPicker(Tag tag)
+    {
+        _openFxpBackendSectionPicker = ReferenceEquals(_openFxpBackendSectionPicker, tag) ? null : tag;
+    }
+
+    private void PickFxpBackendSection(Tag tag, string? sectionName)
+    {
+        if (!string.IsNullOrWhiteSpace(sectionName))
+            tag.MapFxpBackendSection = sectionName.Trim();
+        _openFxpBackendSectionPicker = null;
     }
 
     private static void RemoveTag(Section sec, Tag tag) => sec.Tags?.Remove(tag);
@@ -2009,6 +2178,14 @@
         rules.Insert(targetIndex, value);
     }
 
+    private static string DisplayFxpBackend(FxpBackend server)
+    {
+        var name = string.IsNullOrWhiteSpace(server.Name) ? server.Id : server.Name;
+        var host = string.IsNullOrWhiteSpace(server.Host) ? "no host" : server.Host;
+        var port = string.IsNullOrWhiteSpace(server.Port) ? "no port" : server.Port;
+        return $"{name} - {host}:{port}";
+    }
+
     private void AddAffil()
     {
         var v = _newAffil.Trim().ToUpperInvariant();
@@ -2034,14 +2211,14 @@
             var siteName = S.Sitename?.Trim();
             if (string.IsNullOrWhiteSpace(siteName))
             {
-                _error = "Enter a site name before loading CBFTP site rules.";
+                _error = "Enter a site name before loading FXP backend site rules.";
                 return;
             }
 
-            var rules = await CbftpRacer.GetSiteRulesTextAsync(siteName);
-            _rulesText = string.IsNullOrWhiteSpace(rules) ? "No rules returned from CBFTP." : rules;
+            var rules = await FxpBackendRacer.GetSiteRulesTextAsync(siteName, S.FxpBackendId);
+            _rulesText = string.IsNullOrWhiteSpace(rules) ? "No rules returned from FXP backend." : rules;
             _showRules = true;
-            _status = $"Loaded CBFTP site rules for {siteName}.";
+            _status = $"Loaded FXP backend site rules for {siteName}.";
         }
         catch (Exception ex)
         {
@@ -2083,14 +2260,19 @@
 
             SiteStore.WriteChannels(S, merged);
 
-            Store.Save(_cfg, _isNew ? null : _originalName);
+            var savedName = Store.Save(_cfg, _isNew ? null : _originalName);
+            _isNew = false;
+            _originalName = savedName;
+            S.ConfigKey = savedName;
+            _status = $"Saved site '{S.Sitename}' as '{savedName}'.";
 
             // Pick up request auto-fill changes immediately. The runner snapshots its
             // site list when it starts, so without this, ticking "Auto-fill enabled"
             // did nothing until the racer was stopped and started again.
             Engine.RefreshRequestAutoFill();
 
-            Nav.NavigateTo("sites");
+            if (!string.Equals(Name, savedName, StringComparison.OrdinalIgnoreCase))
+                Nav.NavigateTo($"sites/edit/{Uri.EscapeDataString(savedName)}", replace: true);
         }
         catch (Exception ex)
         {

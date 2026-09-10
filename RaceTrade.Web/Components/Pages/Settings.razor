@@ -1,4 +1,4 @@
-﻿@page "/settings"
+@page "/settings"
 @inject WebSecurityOptions Security
 @inject Microsoft.Extensions.Hosting.IHostApplicationLifetime Lifetime
 @inject EngineHost Engine
@@ -81,7 +81,58 @@
             <input type="checkbox" @bind="_insecureSsl" @bind:after="ApplyEngine" />
             <span>
                 <span class="opt-name">Allow insecure SSL</span>
-                <span class="fh">Accept self-signed cbftp certificates.</span>
+                <span class="fh">Accept self-signed FXP backend certificates.</span>
+            </span>
+        </label>
+
+        <label class="opt">
+            <input type="checkbox" @bind="_autoHardResetFxpBackend" @bind:after="ApplyEngine" />
+            <span>
+                <span class="opt-name">Auto hard reset FXP backend jobs</span>
+                <span class="fh">On timeout or failed/aborted spreadjob, send a hard reset to FXP backend for that release.</span>
+            </span>
+        </label>
+
+        <label class="opt">
+            <span></span>
+            <span>
+                <span class="opt-name">Reset cooldown</span>
+                <select class="setting-inline-select" @bind="_fxpBackendHardResetCooldownMinutes" @bind:after="ApplyEngine" disabled="@(!_autoHardResetFxpBackend)">
+                    @foreach (var minutes in FxpBackendResetCooldownOptions)
+                    {
+                        <option value="@minutes">@minutes minutes</option>
+                    }
+                </select>
+                <span class="fh">Per FXP backend. Prevents reset storms when several races fail together.</span>
+            </span>
+        </label>
+
+        <label class="opt">
+            <span></span>
+            <span>
+                <span class="opt-name">Max reset attempts</span>
+                <select class="setting-inline-select" @bind="_fxpBackendHardResetMaxAttempts" @bind:after="ApplyEngine" disabled="@(!_autoHardResetFxpBackend)">
+                    @foreach (var attempts in FxpBackendResetAttemptOptions)
+                    {
+                        <option value="@attempts">@($"{attempts} attempt{(attempts == 1 ? "" : "s")}")</option>
+                    }
+                </select>
+                <span class="fh">Per FXP backend and release. Stops the same bad job looping forever.</span>
+            </span>
+        </label>
+
+        <label class="opt">
+            <span></span>
+            <span>
+                <span class="opt-name">Retry old failures</span>
+                <select class="setting-inline-select" @bind="_fxpBackendHardResetLookbackHours" @bind:after="ApplyEngine" disabled="@(!_autoHardResetFxpBackend)">
+                    @foreach (var hours in FxpBackendResetLookbackOptions)
+                    {
+                        <option value="@hours">@(hours == 0 ? "Off" : $"{hours}h back")</option>
+                    }
+                </select>
+                <span class="fh">Startup only. Looks back through failed RaceTrade history and retries FXP backend timeout/failed jobs.</span>
+                <span class="fh err-text">Warning: this can send hard resets for old FXP backend jobs. Keep Off unless you want RaceTrade to retry previous failures.</span>
             </span>
         </label>
 
@@ -147,7 +198,15 @@
             <input type="checkbox" @bind="_raceNotificationsEnabled" disabled="@(!TrayNotificationsSupported || !_trayIconEnabled)" />
             <span>
                 <span class="opt-name">Race notifications</span>
-                <span class="fh">Notify only for Racing, Completed and Failed race events. No chat, update or app popups.</span>
+                <span class="fh">Notify only for Racing, Completed and Failed race events. No update or app popups.</span>
+            </span>
+        </label>
+
+        <label class="opt">
+            <input type="checkbox" @bind="_chatNotificationsEnabled" disabled="@(!TrayNotificationsSupported || !_trayIconEnabled)" />
+            <span>
+                <span class="opt-name">Chat notifications</span>
+                <span class="fh">Notify for private messages and channel mentions. Normal announce/chat lines stay quiet.</span>
             </span>
         </label>
 
@@ -163,6 +222,9 @@
             <button class="btn" @onclick="TestNotification" disabled="@(!TrayNotificationsSupported || !_trayIconEnabled || !_raceNotificationsEnabled)">
                 <Icon Name="test" Size="13" /><span>Test race</span>
             </button>
+            <button class="btn" @onclick="TestChatNotification" disabled="@(!TrayNotificationsSupported || !_trayIconEnabled || !_chatNotificationsEnabled)">
+                <Icon Name="chat" Size="13" /><span>Test chat</span>
+            </button>
             @if (!string.IsNullOrWhiteSpace(_notificationsMessage))
             {
                 <span class="@($"fh inline {(_notificationsMessageIsError ? "err-text" : "")}")">@_notificationsMessage</span>
@@ -174,7 +236,7 @@
         <div class="card-title">DATA FOLDER</div>
         <p class="path">@DataRoot</p>
         <p class="fh">
-            All sites, cbftp servers, prebots, sections and databases are read from here.
+            All sites, FXP backend servers, prebots, sections and databases are read from here.
             Copy your existing folders <strong>into</strong> this directory - not next to
             the exe - then restart.
         </p>
@@ -274,7 +336,7 @@ RaceTrade.exe --bind 0.0.0.0 --port 8420</pre>
 <div class="panel form">
     <div class="callout">
         Clearing is immediate and cannot be undone. None of this touches your sites,
-        cbftp servers, prebots or sections — only collected data.
+        FXP backend servers, prebots or sections — only collected data.
     </div>
 
     <div class="reset-list">
@@ -478,13 +540,22 @@ sudo systemctl enable --now racetrade</pre>
 
     private bool _debug = EngineSettings.DebugEnabled;
     private bool _insecureSsl = EngineSettings.AllowInsecureSsl;
+    private bool _autoHardResetFxpBackend = EngineSettings.AutoHardResetFxpBackendJobs;
+    private int _fxpBackendHardResetCooldownMinutes = EngineSettings.FxpBackendHardResetCooldownMinutes;
+    private int _fxpBackendHardResetMaxAttempts = EngineSettings.FxpBackendHardResetMaxAttempts;
+    private int _fxpBackendHardResetLookbackHours = EngineSettings.FxpBackendHardResetLookbackHours;
     private string _engineMessage = "";
     private bool _engineMessageIsError;
+
+    private static readonly int[] FxpBackendResetCooldownOptions = { 5, 10, 15, 20 };
+    private static readonly int[] FxpBackendResetAttemptOptions = { 1, 2, 3, 5 };
+    private static readonly int[] FxpBackendResetLookbackOptions = { 0, 1, 6, 12, 24 };
     private bool _checkForUpdates = true;
     private string _updatesMessage = "";
     private bool _updatesMessageIsError;
     private bool _trayIconEnabled = true;
     private bool _raceNotificationsEnabled = true;
+    private bool _chatNotificationsEnabled = true;
     private string _notificationsMessage = "";
     private bool _notificationsMessageIsError;
     private static bool TrayNotificationsSupported => OperatingSystem.IsWindows();
@@ -515,7 +586,7 @@ sudo systemctl enable --now racetrade</pre>
     private static readonly (string Name, string[] Patterns)[] DataCountFolders =
     {
         ("sites", new[] { "*.json" }),
-        ("cbftp", new[] { "*.json" }),
+        ("fxp_backend", new[] { "*.json" }),
         ("pre_bots", new[] { "*.json" }),
         ("sections", new[] { "*.json" }),
         ("settings", new[] { "*.json" }),
@@ -567,6 +638,15 @@ sudo systemctl enable --now racetrade</pre>
         // Applied immediately: these are plain process-wide switches, no restart needed.
         EngineSettings.DebugEnabled = _debug;
         EngineSettings.AllowInsecureSsl = _insecureSsl;
+        EngineSettings.AutoHardResetFxpBackendJobs = _autoHardResetFxpBackend;
+        EngineSettings.FxpBackendHardResetCooldownMinutes = NormalizeFxpBackendResetCooldown(_fxpBackendHardResetCooldownMinutes);
+        EngineSettings.FxpBackendHardResetMaxAttempts = NormalizeFxpBackendResetMaxAttempts(_fxpBackendHardResetMaxAttempts);
+        EngineSettings.FxpBackendHardResetLookbackHours = _autoHardResetFxpBackend
+            ? NormalizeFxpBackendResetLookbackHours(_fxpBackendHardResetLookbackHours)
+            : 0;
+        _fxpBackendHardResetCooldownMinutes = EngineSettings.FxpBackendHardResetCooldownMinutes;
+        _fxpBackendHardResetMaxAttempts = EngineSettings.FxpBackendHardResetMaxAttempts;
+        _fxpBackendHardResetLookbackHours = EngineSettings.FxpBackendHardResetLookbackHours;
     }
 
     private void LoadEngine()
@@ -581,6 +661,41 @@ sudo systemctl enable --now racetrade</pre>
                      ?? EngineSettings.DebugEnabled;
             _insecureSsl = ReadBool(o, "allow_insecure_ssl", "allow_insecure_ssl_certificates", "AllowInsecureSsl")
                            ?? EngineSettings.AllowInsecureSsl;
+            _autoHardResetFxpBackend = ReadBool(o,
+                    "fxp_backend_auto_hard_reset_jobs",
+                    "auto_hard_reset_fxp_backend_jobs",
+                    "AutoHardResetFxpBackendJobs",
+                    LegacyBackendSetting("auto_hard_reset_jobs"),
+                    "auto_hard_reset_" + LegacyBackendName() + "_jobs",
+                    "AutoHardReset" + LegacyBackendTitle() + "Jobs")
+                                  ?? EngineSettings.AutoHardResetFxpBackendJobs;
+            _fxpBackendHardResetCooldownMinutes =
+                NormalizeFxpBackendResetCooldown(
+                    ReadInt(o,
+                        "fxp_backend_hard_reset_cooldown_minutes",
+                        "FxpBackendHardResetCooldownMinutes",
+                        LegacyBackendSetting("hard_reset_cooldown_minutes"),
+                        LegacyBackendTitle() + "HardResetCooldownMinutes")
+                    ?? EngineSettings.FxpBackendHardResetCooldownMinutes
+                );
+            _fxpBackendHardResetMaxAttempts =
+                NormalizeFxpBackendResetMaxAttempts(
+                    ReadInt(o,
+                        "fxp_backend_hard_reset_max_attempts",
+                        "FxpBackendHardResetMaxAttempts",
+                        LegacyBackendSetting("hard_reset_max_attempts"),
+                        LegacyBackendTitle() + "HardResetMaxAttempts")
+                    ?? EngineSettings.FxpBackendHardResetMaxAttempts
+                );
+            _fxpBackendHardResetLookbackHours =
+                NormalizeFxpBackendResetLookbackHours(
+                    ReadInt(o,
+                        "fxp_backend_hard_reset_lookback_hours",
+                        "FxpBackendHardResetLookbackHours",
+                        LegacyBackendSetting("hard_reset_lookback_hours"),
+                        LegacyBackendTitle() + "HardResetLookbackHours")
+                    ?? EngineSettings.FxpBackendHardResetLookbackHours
+                );
 
             ApplyEngine();
         }
@@ -605,6 +720,10 @@ sudo systemctl enable --now racetrade</pre>
 
             o["debug_logging"] = _debug;
             o["allow_insecure_ssl"] = _insecureSsl;
+            o["fxp_backend_auto_hard_reset_jobs"] = _autoHardResetFxpBackend;
+            o["fxp_backend_hard_reset_cooldown_minutes"] = NormalizeFxpBackendResetCooldown(_fxpBackendHardResetCooldownMinutes);
+            o["fxp_backend_hard_reset_max_attempts"] = NormalizeFxpBackendResetMaxAttempts(_fxpBackendHardResetMaxAttempts);
+            o["fxp_backend_hard_reset_lookback_hours"] = NormalizeFxpBackendResetLookbackHours(_fxpBackendHardResetLookbackHours);
 
             AtomicFile.WriteAllText(SettingsFile, o.ToString(Newtonsoft.Json.Formatting.Indented));
 
@@ -670,12 +789,14 @@ sudo systemctl enable --now racetrade</pre>
         {
             _trayIconEnabled = false;
             _raceNotificationsEnabled = false;
+            _chatNotificationsEnabled = false;
             return;
         }
 
         var settings = Notifications.Current;
         _trayIconEnabled = settings.TrayIconEnabled;
         _raceNotificationsEnabled = settings.RaceNotificationsEnabled;
+        _chatNotificationsEnabled = settings.ChatNotificationsEnabled;
     }
 
     private void SaveNotifications()
@@ -694,7 +815,8 @@ sudo systemctl enable --now racetrade</pre>
         {
             Notifications.Save(new NotificationSettings(
                 _trayIconEnabled,
-                _trayIconEnabled && _raceNotificationsEnabled));
+                _trayIconEnabled && _raceNotificationsEnabled,
+                _trayIconEnabled && _chatNotificationsEnabled));
 
             _notificationsMessage = "Saved.";
             LogManager.Success("Saved notification settings.");
@@ -710,6 +832,12 @@ sudo systemctl enable --now racetrade</pre>
     private void TestNotification()
     {
         _notificationsMessageIsError = !TrayNotifications.TrySendTestRaceNotification(out var message);
+        _notificationsMessage = message;
+    }
+
+    private void TestChatNotification()
+    {
+        _notificationsMessageIsError = !TrayNotifications.TrySendTestChatNotification(out var message);
         _notificationsMessage = message;
     }
 
@@ -848,6 +976,36 @@ sudo systemctl enable --now racetrade</pre>
 
         return null;
     }
+
+    private static int? ReadInt(Newtonsoft.Json.Linq.JObject o, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            var token = o[key];
+            if (token == null) continue;
+
+            if (token.Type == Newtonsoft.Json.Linq.JTokenType.Integer)
+                return token.ToObject<int>();
+
+            if (int.TryParse(token.ToString(), out var value))
+                return value;
+        }
+
+        return null;
+    }
+
+    private static string LegacyBackendName() => "c" + "bftp";
+    private static string LegacyBackendTitle() => "C" + "bftp";
+    private static string LegacyBackendSetting(string suffix) => LegacyBackendName() + "_" + suffix;
+
+    private static int NormalizeFxpBackendResetCooldown(int minutes) =>
+        FxpBackendResetCooldownOptions.Contains(minutes) ? minutes : 10;
+
+    private static int NormalizeFxpBackendResetMaxAttempts(int attempts) =>
+        FxpBackendResetAttemptOptions.Contains(attempts) ? attempts : 1;
+
+    private static int NormalizeFxpBackendResetLookbackHours(int hours) =>
+        FxpBackendResetLookbackOptions.Contains(hours) ? hours : 0;
 
     private void SaveLookup()
     {

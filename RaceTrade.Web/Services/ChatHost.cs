@@ -103,6 +103,7 @@ public sealed class ChatHost : IAsyncDisposable
 
             var name = siteName;
             var config = cfg;
+            _output.SetOwnNick(name, NickOf(config));
 
             _siteTasks.Add(Task.Run(async () =>
             {
@@ -305,6 +306,11 @@ public sealed class ChatHost : IAsyncDisposable
 
     private string NickOf(string siteName) =>
         SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) && cfg?.Server?.Username is { } u
+            ? u.Split('/')[0]
+            : "me";
+
+    private static string NickOf(SiteConfig config) =>
+        config.Server?.Username is { } u
             ? u.Split('/')[0]
             : "me";
 

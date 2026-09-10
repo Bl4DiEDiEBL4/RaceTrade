@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -7,7 +7,7 @@ using RaceTrade;
 
 /// <summary>
 /// Rules engine for evaluating releases against site-specific rules.
-/// FIXED: Now properly handles CBFTP section lookups.
+/// FIXED: Now properly handles FXP backend section lookups.
 /// </summary>
 public class RulesEngine
 {
@@ -28,13 +28,16 @@ public class RulesEngine
         _tagRules = new Dictionary<string, List<Rule>>(StringComparer.OrdinalIgnoreCase);
     }
 
+    private static string ReadMappedFxpBackendSection(JToken tag) =>
+        (tag?[FxpBackendJsonKeys.SectionMap] ?? tag?[FxpBackendJsonKeys.LegacySectionMap])?.ToString();
+
     /// <summary>
-    /// Loads rules for a specific CBFTP section from the site configuration.
-    /// FIXED: Now correctly searches for CBFTP sections in tags instead of IRC names.
+    /// Loads rules for a specific FXP backend section from the site configuration.
+    /// FIXED: Now correctly searches for FXP backend sections in tags instead of IRC names.
     /// </summary>
     /// <param name="jsonConfig">Site configuration JSON</param>
-    /// <param name="cbftpSection">The CBFTP section to load rules for</param>
-    public void LoadRules(JObject jsonConfig, string cbftpSection)
+    /// <param name="fxpBackendSection">The FXP backend section to load rules for</param>
+    public void LoadRules(JObject jsonConfig, string fxpBackendSection)
     {
         _sectionRules.Clear();
         _tagRules.Clear();
@@ -45,13 +48,13 @@ public class RulesEngine
             return;
         }
 
-        if (string.IsNullOrEmpty(cbftpSection))
+        if (string.IsNullOrEmpty(fxpBackendSection))
         {
-            LogManager.Error("[ERROR] cbftpSection is null or empty in LoadRules");
+            LogManager.Error("[ERROR] fxpBackendSection is null or empty in LoadRules");
             return;
         }
 
-        // Find the section that contains a tag matching this CBFTP section
+        // Find the section that contains a tag matching this FXP backend section
         var sections = jsonConfig["sections"] as JArray;
         if (sections == null || !sections.Any())
         {
@@ -62,7 +65,7 @@ public class RulesEngine
         JToken matchedSection = null;
         string matchedIrcSection = null;
 
-        // Search for the IRC section that has a tag mapping to this CBFTP section
+        // Search for the IRC section that has a tag mapping to this FXP backend section
         foreach (var section in sections)
         {
             var sectionTags = section["tags"] as JArray;
@@ -70,8 +73,8 @@ public class RulesEngine
 
             foreach (var tag in sectionTags)
             {
-                var mappedCbftpSection = tag["map_cbftp_section"]?.ToString();
-                if (string.Equals(mappedCbftpSection, cbftpSection, StringComparison.OrdinalIgnoreCase))
+                var mappedFxpBackendSection = ReadMappedFxpBackendSection(tag);
+                if (string.Equals(mappedFxpBackendSection, fxpBackendSection, StringComparison.OrdinalIgnoreCase))
                 {
                     matchedIrcSection = section["irc_name"]?.ToString();
                     matchedSection = section;
@@ -89,7 +92,7 @@ public class RulesEngine
 
         if (EngineSettings.DebugEnabled)
         {
-            LogManager.Debug($"[DEBUG] Found IRC section '{matchedIrcSection}' for CBFTP section '{cbftpSection}'");
+            LogManager.Debug($"[DEBUG] Found IRC section '{matchedIrcSection}' for FXP backend section '{fxpBackendSection}'");
         }
 
         // Load global section rules (apply to all tags in this section)
@@ -114,7 +117,7 @@ public class RulesEngine
         {
             foreach (var tag in matchedTags)
             {
-                var mappedSection = tag["map_cbftp_section"]?.ToString();
+                var mappedSection = ReadMappedFxpBackendSection(tag);
                 if (string.IsNullOrEmpty(mappedSection)) continue;
 
                 var tagRules = tag["rules"]?.ToObject<List<string>>() ?? new List<string>();
@@ -129,7 +132,7 @@ public class RulesEngine
 
                     if (EngineSettings.DebugEnabled)
                     {
-                        LogManager.Debug($"[DEBUG] Loaded {parsedTagRules.Count} rule(s) for CBFTP section '{mappedSection}'");
+                        LogManager.Debug($"[DEBUG] Loaded {parsedTagRules.Count} rule(s) for FXP backend section '{mappedSection}'");
                     }
                 }
             }
@@ -139,7 +142,7 @@ public class RulesEngine
     /// <summary>
     /// Loads rules for a SPECIFIC IRC section (used when we know which IRC section to use).
     /// </summary>
-    public void LoadRulesForIrcSection(JObject jsonConfig, string ircSection, string cbftpSection)
+    public void LoadRulesForIrcSection(JObject jsonConfig, string ircSection, string fxpBackendSection)
     {
         _sectionRules.Clear();
         _tagRules.Clear();
@@ -159,7 +162,7 @@ public class RulesEngine
 
         if (EngineSettings.DebugEnabled)
         {
-            LogManager.Debug($"[DEBUG] Loading rules from IRC section '{ircSection}' (CBFTP: '{cbftpSection}')");
+            LogManager.Debug($"[DEBUG] Loading rules from IRC section '{ircSection}' (FXP backend: '{fxpBackendSection}')");
         }
 
         // Load section rules
@@ -179,7 +182,7 @@ public class RulesEngine
         {
             foreach (var tag in tags)
             {
-                var mappedSection = tag["map_cbftp_section"]?.ToString();
+                var mappedSection = ReadMappedFxpBackendSection(tag);
                 if (string.IsNullOrEmpty(mappedSection)) continue;
 
                 var tagRules = tag["rules"]?.ToObject<List<string>>() ?? new List<string>();
@@ -201,12 +204,12 @@ public class RulesEngine
 
 
     /// <summary>
-    /// Evaluates the input data against section and CBFTP tag rules.
+    /// Evaluates the input data against section and FXP backend tag rules.
     /// </summary>
     /// <param name="input">The input data to evaluate (key-value pairs)</param>
-    /// <param name="cbftpSection">The CBFTP section name to evaluate rules for</param>
+    /// <param name="fxpBackendSection">The FXP backend section name to evaluate rules for</param>
     /// <returns>"ALLOW" or "DROP" based on the evaluation</returns>
-    public string Evaluate(Dictionary<string, string> input, string cbftpSection = null)
+    public string Evaluate(Dictionary<string, string> input, string fxpBackendSection = null)
     {
         if (input == null)
         {
@@ -216,13 +219,13 @@ public class RulesEngine
 
         if (EngineSettings.DebugEnabled)
         {
-            LogManager.Debug($"[DEBUG] Evaluating rules for CBFTP section '{cbftpSection}'");
+            LogManager.Debug($"[DEBUG] Evaluating rules for FXP backend section '{fxpBackendSection}'");
         }
 
         // --------------------------------------------------------------------------------
         // 0) EXCEPT rules (highest priority): an explicit carve-out that forces ALLOW,
         //    overriding any DROP that would otherwise match. ("drop these, EXCEPT when...")
-        //    Evaluated global-first, then tag-specific for this CBFTP section.
+        //    Evaluated global-first, then tag-specific for this FXP backend section.
         // --------------------------------------------------------------------------------
         foreach (var rule in _sectionRules.Where(r =>
                      string.Equals(r.Action, ACTION_EXCEPT, StringComparison.OrdinalIgnoreCase)))
@@ -235,8 +238,8 @@ public class RulesEngine
             }
         }
 
-        if (!string.IsNullOrEmpty(cbftpSection) &&
-            _tagRules.TryGetValue(cbftpSection, out var exceptTagRules))
+        if (!string.IsNullOrEmpty(fxpBackendSection) &&
+            _tagRules.TryGetValue(fxpBackendSection, out var exceptTagRules))
         {
             foreach (var rule in exceptTagRules.Where(r =>
                          string.Equals(r.Action, ACTION_EXCEPT, StringComparison.OrdinalIgnoreCase)))
@@ -244,7 +247,7 @@ public class RulesEngine
                 if (EvaluateRule(input, rule))
                 {
                     if (EngineSettings.DebugEnabled)
-                        LogManager.Success($"[EXCEPT] CBFTP EXCEPT rule matched: {rule.Key} {rule.Operator} {rule.Value}. Forcing ALLOW.");
+                        LogManager.Success($"[EXCEPT] FXP backend EXCEPT rule matched: {rule.Key} {rule.Operator} {rule.Value}. Forcing ALLOW.");
                     return ACTION_ALLOW;
                 }
             }
@@ -268,12 +271,12 @@ public class RulesEngine
         }
 
         // --------------------------------------------------------------------------------
-        // 2) TAG-SPECIFIC RULES for this CBFTP section
+        // 2) TAG-SPECIFIC RULES for this FXP backend section
         //    2a) Tag DROP rules first
         //    2b) Then Tag ALLOW rules
         // --------------------------------------------------------------------------------
-        if (!string.IsNullOrEmpty(cbftpSection) &&
-            _tagRules.TryGetValue(cbftpSection, out var tagSpecificRules))
+        if (!string.IsNullOrEmpty(fxpBackendSection) &&
+            _tagRules.TryGetValue(fxpBackendSection, out var tagSpecificRules))
         {
             // 2a) Tag DROP rules
             foreach (var rule in tagSpecificRules.Where(r =>
@@ -281,7 +284,7 @@ public class RulesEngine
             {
                 if (EvaluateRule(input, rule))
                 {
-                    LogManager.Debug($"[DROP] CBFTP rule matched: {rule.Key} {rule.Operator} {rule.Value}");
+                    LogManager.Debug($"[DROP] FXP backend rule matched: {rule.Key} {rule.Operator} {rule.Value}");
                     return ACTION_DROP;
                 }
             }
@@ -292,7 +295,7 @@ public class RulesEngine
             {
                 if (EvaluateRule(input, rule))
                 {
-                    LogManager.Debug($"[ALLOW] CBFTP rule matched: {rule.Key} {rule.Operator} {rule.Value}");
+                    LogManager.Debug($"[ALLOW] FXP backend rule matched: {rule.Key} {rule.Operator} {rule.Value}");
                     return ACTION_ALLOW;
                 }
             }

@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 
 namespace RaceTrade.Web.Services;
 
@@ -15,7 +15,8 @@ public sealed class SiteStore
 {
     private const string Dir = "sites";
     private const string SectionsDir = "sections";
-    private const string SectionsFile = "sections/cbftp_sections.json";
+    private static readonly string SectionsFile = Path.Combine(SectionsDir, "fxp_backend_sections.json");
+    private static readonly string LegacySectionsFile = Path.Combine(SectionsDir, "c" + "bftp_sections.json");
 
     private static readonly string[] ReservedConfigNames = { "new_site", "template", "example" };
 
@@ -41,6 +42,8 @@ public sealed class SiteStore
         var cfg = JsonConvert.DeserializeObject<SiteConfig>(File.ReadAllText(path)) ?? NewSite(name);
         cfg.Server ??= new ServerSettings();
         cfg.SiteSettings ??= new SiteSettings();
+        cfg.SiteSettings.ConfigKey = name;
+        NormalizeRaceSectionsEnabled(cfg);
         return cfg;
     }
 
@@ -68,12 +71,13 @@ public sealed class SiteStore
     /// Saves the site. Passwords and Blowfish keys are encrypted here if they are still
     /// plaintext, so a value typed into the browser never lands on disk in the clear.
     /// </summary>
-    public void Save(SiteConfig cfg, string? originalName = null)
+    public string Save(SiteConfig cfg, string? originalName = null)
     {
         var server = cfg.Server ?? new ServerSettings();
         var siteSettings = cfg.SiteSettings ?? new SiteSettings();
         cfg.Server = server;
         cfg.SiteSettings = siteSettings;
+        NormalizeRaceSectionsEnabled(cfg);
 
         var name = siteSettings.Sitename?.Trim();
         if (string.IsNullOrWhiteSpace(name))
@@ -87,19 +91,24 @@ public sealed class SiteStore
 
         EncryptChannelKeys(siteSettings);
 
-        AtomicFile.WriteAllText(PathFor(name), JsonConvert.SerializeObject(cfg, Formatting.Indented));
+        var configKey = ResolveSaveKey(name, siteSettings.FxpBackendId, originalName);
+        siteSettings.ConfigKey = configKey;
+
+        AtomicFile.WriteAllText(PathFor(configKey), JsonConvert.SerializeObject(cfg, Formatting.Indented));
 
         // Renamed: drop the file under the old name so it does not linger as a duplicate.
         if (!string.IsNullOrWhiteSpace(originalName) &&
-            !string.Equals(originalName, name, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(originalName, configKey, StringComparison.OrdinalIgnoreCase))
         {
             var old = PathFor(originalName);
             if (File.Exists(old)) File.Delete(old);
         }
 
-        SiteConfigManager.Invalidate();
+        SiteConfigManager.Invalidate(originalName);
+        SiteConfigManager.Invalidate(configKey);
         RaceHelper.LoadAllSiteConfigs();
-        LogManager.Success($"Saved site '{name}'.");
+        LogManager.Success($"Saved site '{name}' as config '{configKey}'.");
+        return configKey;
     }
 
     public void Delete(string name)
@@ -135,7 +144,7 @@ public sealed class SiteStore
         return cfg;
     }
 
-    public CbftpSiteImportSummary ImportFromCbftpSites(IEnumerable<CbftpSite> sites, bool overwriteExisting)
+    public FxpBackendSiteImportSummary ImportFromFxpBackendSites(IEnumerable<FxpBackendSite> sites, bool overwriteExisting, string? fxpBackendServerId = null)
     {
         Directory.CreateDirectory(Dir);
 
@@ -162,11 +171,15 @@ public sealed class SiteStore
                     continue;
                 }
 
-                var path = PathFor(site.Name);
-                if (File.Exists(path) && !overwriteExisting)
+                var existingKey = FindConfigKey(site.Name, fxpBackendServerId);
+                var configKey = existingKey is null
+                    ? ResolveNewKey(site.Name, fxpBackendServerId)
+                    : ResolveSaveKey(site.Name, fxpBackendServerId, existingKey);
+                var path = PathFor(configKey);
+                if (existingKey is not null && !overwriteExisting)
                 {
                     skipped++;
-                    messages.Add($"Skipped existing site '{site.Name}'.");
+                    messages.Add($"Skipped existing site '{site.Name}' for FXP backend '{DisplayBackendId(fxpBackendServerId)}'.");
                     continue;
                 }
 
@@ -175,6 +188,7 @@ public sealed class SiteStore
                     site_settings = new
                     {
                         sitename = site.Name,
+                        fxp_backend_id = fxpBackendServerId ?? "",
                         bot_name = "",
                         disable_site = site.Disabled,
                         pre_announce = "Site",
@@ -192,9 +206,13 @@ public sealed class SiteStore
                         incomplete_search_command_template = "SITE SEARCH {release}",
                         incomplete_dst_path_template = "/{section}"
                     },
-                    race_sections_enabled = site.Sections?.Select(s => s.Name).Where(s => !string.IsNullOrWhiteSpace(s)).ToList()
+                    race_sections_enabled = site.Sections?
+                                            .Select(s => (s.Name ?? "").Trim())
+                                            .Where(s => !string.IsNullOrWhiteSpace(s))
+                                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                                            .ToList()
                                             ?? new List<string>(),
-                    sections = (site.Sections ?? new List<CbftpSection>())
+                    sections = (site.Sections ?? new List<FxpBackendSection>())
                         .Where(s => !string.IsNullOrWhiteSpace(s.Name))
                         .Select(s => new
                         {
@@ -203,7 +221,7 @@ public sealed class SiteStore
                             {
                                 new
                                 {
-                                    map_cbftp_section = s.Name,
+                                    map_fxp_backend_section = s.Name,
                                     trigger_regex = "",
                                     rules = Array.Empty<string>()
                                 }
@@ -214,15 +232,25 @@ public sealed class SiteStore
                 };
 
                 AtomicFile.WriteAllText(path, JsonConvert.SerializeObject(siteConfig, Formatting.Indented));
-                SiteConfigManager.Invalidate(site.Name);
+                if (!string.IsNullOrWhiteSpace(existingKey) &&
+                    !string.Equals(existingKey, configKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    var oldPath = PathFor(existingKey);
+                    if (File.Exists(oldPath))
+                        File.Delete(oldPath);
 
-                foreach (var section in site.Sections ?? new List<CbftpSection>())
+                    SiteConfigManager.Invalidate(existingKey);
+                }
+
+                SiteConfigManager.Invalidate(configKey);
+
+                foreach (var section in site.Sections ?? new List<FxpBackendSection>())
                 {
                     if (!string.IsNullOrWhiteSpace(section.Name))
                         allSections.Add(section.Name);
                 }
 
-                LogManager.Success($"Imported site: {site.Name}");
+                LogManager.Success($"Imported site: {site.Name} ({configKey})");
                 imported++;
             }
             catch (Exception ex)
@@ -233,7 +261,7 @@ public sealed class SiteStore
             }
         }
 
-        var sectionsAdded = allSections.Count > 0 ? UpdateCbftpSections(allSections) : 0;
+        var sectionsAdded = allSections.Count > 0 ? UpdateFxpBackendSections(allSections) : 0;
 
         if (imported > 0)
         {
@@ -241,7 +269,7 @@ public sealed class SiteStore
             RaceHelper.LoadAllSiteConfigs();
         }
 
-        return new CbftpSiteImportSummary(imported, skipped, errors, sectionsAdded, messages);
+        return new FxpBackendSiteImportSummary(imported, skipped, errors, sectionsAdded, messages);
     }
 
     /// <summary>Channel + key pairs (Chan1..Chan20 / BlowfishKey1..20) as an editable list.</summary>
@@ -278,21 +306,22 @@ public sealed class SiteStore
         }
     }
 
-    private static int UpdateCbftpSections(HashSet<string> newSections)
+    private static int UpdateFxpBackendSections(HashSet<string> newSections)
     {
         Directory.CreateDirectory(SectionsDir);
 
         SectionData sectionData;
-        if (File.Exists(SectionsFile))
+        var readableSectionsFile = File.Exists(SectionsFile) ? SectionsFile : LegacySectionsFile;
+        if (File.Exists(readableSectionsFile))
         {
             try
             {
-                sectionData = JsonConvert.DeserializeObject<SectionData>(File.ReadAllText(SectionsFile))
+                sectionData = JsonConvert.DeserializeObject<SectionData>(File.ReadAllText(readableSectionsFile))
                               ?? NewSectionData();
             }
             catch (Exception ex)
             {
-                LogManager.Warning($"Could not read existing cbftp_sections.json: {ex.Message}");
+                LogManager.Warning($"Could not read existing section mapping file: {ex.Message}");
                 sectionData = NewSectionData();
             }
         }
@@ -302,35 +331,35 @@ public sealed class SiteStore
         }
 
         sectionData.Sections ??= new Dictionary<string, string>();
-        sectionData.CbftpSections ??= new Dictionary<string, string>();
+        sectionData.FxpBackendSections ??= new Dictionary<string, string>();
 
         var added = 0;
         foreach (var section in newSections.OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
         {
-            if (sectionData.CbftpSections.Values.Contains(section, StringComparer.OrdinalIgnoreCase))
+            if (sectionData.FxpBackendSections.Values.Contains(section, StringComparer.OrdinalIgnoreCase))
                 continue;
 
-            var nextId = sectionData.CbftpSections.Count + 1;
-            var key = $"cbftp_section{nextId}";
-            while (sectionData.CbftpSections.ContainsKey(key))
+            var nextId = sectionData.FxpBackendSections.Count + 1;
+            var key = $"fxp_backend_section{nextId}";
+            while (sectionData.FxpBackendSections.ContainsKey(key))
             {
                 nextId++;
-                key = $"cbftp_section{nextId}";
+                key = $"fxp_backend_section{nextId}";
             }
 
-            sectionData.CbftpSections[key] = section;
+            sectionData.FxpBackendSections[key] = section;
             added++;
         }
 
         AtomicFile.WriteAllText(SectionsFile, JsonConvert.SerializeObject(sectionData, Formatting.Indented));
-        LogManager.Success($"Updated cbftp_sections.json: {added} new section(s) added, {sectionData.CbftpSections.Count} total");
+        LogManager.Success($"Updated fxp_backend_sections.json: {added} new section(s) added, {sectionData.FxpBackendSections.Count} total");
         return added;
     }
 
     private static SectionData NewSectionData() => new()
     {
         Sections = new Dictionary<string, string>(),
-        CbftpSections = new Dictionary<string, string>()
+        FxpBackendSections = new Dictionary<string, string>()
     };
 
     private static bool IsReservedConfigName(string? name) =>
@@ -338,9 +367,119 @@ public sealed class SiteStore
         ReservedConfigNames.Contains(name.Trim(), StringComparer.OrdinalIgnoreCase);
 
     private static string PathFor(string name) => Path.Combine(Dir, $"{name}.json");
+
+    private static string RemoteName(SiteConfig cfg, string fallbackKey) =>
+        cfg.SiteSettings?.Sitename?.Trim() is { Length: > 0 } name ? name : fallbackKey;
+
+    private static string BackendId(SiteConfig cfg) =>
+        cfg.SiteSettings?.FxpBackendId?.Trim() ?? "";
+
+    private static void NormalizeRaceSectionsEnabled(SiteConfig cfg)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var normalized = new List<string>();
+
+        foreach (var section in cfg.RaceSectionsEnabled ?? new List<string>())
+        {
+            var name = section?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            if (seen.Add(name))
+                normalized.Add(name);
+        }
+
+        cfg.RaceSectionsEnabled = normalized;
+    }
+
+    private static string DisplayBackendId(string? backendId) =>
+        string.IsNullOrWhiteSpace(backendId) ? "default" : backendId.Trim();
+
+    private static string ResolveSaveKey(string siteName, string? backendId, string? originalName)
+    {
+        var preferred = PreferredConfigKey(siteName, backendId);
+        if (string.IsNullOrWhiteSpace(originalName))
+            return ResolveAvailableKey(preferred, null);
+
+        var original = originalName.Trim();
+        if (string.Equals(original, preferred, StringComparison.OrdinalIgnoreCase))
+            return original;
+
+        return ResolveAvailableKey(preferred, original);
+    }
+
+    private static string ResolveNewKey(string siteName, string? backendId)
+    {
+        var preferred = PreferredConfigKey(siteName, backendId);
+        return ResolveAvailableKey(preferred, null);
+    }
+
+    private static string PreferredConfigKey(string siteName, string? backendId)
+    {
+        var sitePart = SafeFileName(siteName);
+        if (string.IsNullOrWhiteSpace(sitePart))
+            sitePart = "site";
+
+        var backendPart = SafeFileName(backendId);
+        return string.IsNullOrWhiteSpace(backendPart)
+            ? sitePart
+            : $"{backendPart}__{sitePart}";
+    }
+
+    private static string ResolveAvailableKey(string preferred, string? originalName)
+    {
+        if (!File.Exists(PathFor(preferred)) ||
+            string.Equals(preferred, originalName, StringComparison.OrdinalIgnoreCase))
+            return preferred;
+
+        for (var i = 2; ; i++)
+        {
+            var candidate = $"{preferred}_{i}";
+            if (!File.Exists(PathFor(candidate)) ||
+                string.Equals(candidate, originalName, StringComparison.OrdinalIgnoreCase))
+                return candidate;
+        }
+    }
+
+    private string? FindConfigKey(string siteName, string? backendId)
+    {
+        foreach (var key in ListNames())
+        {
+            SiteConfig cfg;
+            try
+            {
+                cfg = Load(key);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (!string.Equals(RemoteName(cfg, key), siteName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (string.Equals(BackendId(cfg), backendId?.Trim() ?? "", StringComparison.OrdinalIgnoreCase))
+                return key;
+        }
+
+        return null;
+    }
+
+    private static string SafeFileName(string? value)
+    {
+        var text = (value ?? "").Trim();
+        if (text.Length == 0)
+            return "";
+
+        var invalid = Path.GetInvalidFileNameChars().ToHashSet();
+        var chars = text
+            .Select(ch => invalid.Contains(ch) || char.IsWhiteSpace(ch) ? '_' : ch)
+            .ToArray();
+        return new string(chars).Trim('_');
+    }
 }
 
-public sealed record CbftpSiteImportSummary(
+public sealed record FxpBackendSiteImportSummary(
     int Imported,
     int Skipped,
     int Errors,

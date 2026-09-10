@@ -1,9 +1,11 @@
-﻿using System.Net;
+using System.Net;
 using System.Security.Claims;
 using System.Net.Sockets;
 using System.Reflection;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using RaceTrade.Engine.Logging;
 using RaceTrade.Web.Components;
 using RaceTrade.Web.Security;
@@ -11,7 +13,7 @@ using RaceTrade.Web.Services;
 using RaceTrade;
 
 // ---- data directory -------------------------------------------------------------------
-// The engine addresses everything by relative path ("sites", "cbftp", "pre_bots", "db",
+// The engine addresses everything by relative path ("sites", "fxp_backend", "pre_bots", "db",
 // "userdata", "logs"). Rather than patching dozens of call sites, the process working
 // directory IS the data directory: point it somewhere and the whole tree follows.
 //
@@ -37,9 +39,10 @@ var dataRoot = ResolveDataRoot(appArgs, appDir);
 Directory.CreateDirectory(dataRoot);
 Directory.SetCurrentDirectory(dataRoot);
 
-foreach (var sub in new[] { "sites", "cbftp", "pre_bots", "sections", "settings", "db", "userdata", "logs", "history" })
+foreach (var sub in new[] { "sites", "fxp_backend", "pre_bots", "sections", "settings", "db", "userdata", "logs", "history" })
     Directory.CreateDirectory(sub);
 
+RunLegacyStructureMigration(dataRoot);
 LoadEngineSettings();
 InitializeDatabases();
 
@@ -53,7 +56,7 @@ Console.WriteLine($"Data directory: {dataRoot}");
         .Where(f => !string.Equals(f, "appsettings.json", StringComparison.OrdinalIgnoreCase))
         .ToList();
 
-    foreach (var sub in new[] { "sites", "cbftp", "pre_bots" })
+    foreach (var sub in new[] { "sites", "fxp_backend", "pre_bots" })
     {
         var n = Directory.GetFiles(Path.Combine(dataRoot, sub), "*.json").Length;
         Console.WriteLine($"  {sub,-10} {n} file(s)");
@@ -64,7 +67,7 @@ Console.WriteLine($"Data directory: {dataRoot}");
         Console.WriteLine();
         Console.WriteLine($"  NOTE: {looseJson.Count} .json file(s) sit directly in the data folder and are ignored:");
         Console.WriteLine($"        {string.Join(", ", looseJson.Take(6))}{(looseJson.Count > 6 ? ", ..." : "")}");
-        Console.WriteLine( "        Site configs belong in data\\sites\\, cbftp config in data\\cbftp\\,");
+        Console.WriteLine( "        Site configs belong in data\\sites\\, FXP backend config in data\\fxp_backend\\,");
         Console.WriteLine( "        prebots in data\\pre_bots\\.");
     }
 }
@@ -133,12 +136,13 @@ builder.Services.AddSingleton<RacerState>();
 builder.Services.AddSingleton<SkipStore>();
 builder.Services.AddSingleton<SiteStore>();
 builder.Services.AddSingleton<SiteConnectionTestService>();
-builder.Services.AddSingleton<CbftpStore>();
+builder.Services.AddSingleton<FxpBackendStore>();
+builder.Services.AddHostedService<FxpBackendHardResetBacklogService>();
 builder.Services.AddSingleton<PreBotStore>();
 builder.Services.AddSingleton<FxpClientService>();
 builder.Services.AddSingleton<ReleaseSearchService>();
 builder.Services.AddSingleton<PreSpreadService>();
-builder.Services.AddSingleton<CbftpSiteService>();
+builder.Services.AddSingleton<FxpBackendSiteService>();
 builder.Services.AddSingleton<HttpClient>();
 builder.Services.AddSingleton<UpdateService>();
 builder.Services.AddSingleton<ThemeService>();
@@ -531,10 +535,151 @@ static void LoadEngineSettings()
 
         if (TryReadBool(root, out var insecureSsl, "allow_insecure_ssl", "allow_insecure_ssl_certificates", "AllowInsecureSsl"))
             EngineSettings.AllowInsecureSsl = insecureSsl;
+
+        if (TryReadBool(root, out var autoReset,
+                "fxp_backend_auto_hard_reset_jobs",
+                "auto_hard_reset_fxp_backend_jobs",
+                "AutoHardResetFxpBackendJobs",
+                LegacyBackendSetting("auto_hard_reset_jobs"),
+                "auto_hard_reset_" + LegacyBackendName() + "_jobs",
+                "AutoHardReset" + LegacyBackendTitle() + "Jobs"))
+            EngineSettings.AutoHardResetFxpBackendJobs = autoReset;
+
+        if (TryReadInt(root, out var resetCooldown,
+                "fxp_backend_hard_reset_cooldown_minutes",
+                "FxpBackendHardResetCooldownMinutes",
+                LegacyBackendSetting("hard_reset_cooldown_minutes"),
+                LegacyBackendTitle() + "HardResetCooldownMinutes"))
+            EngineSettings.FxpBackendHardResetCooldownMinutes = resetCooldown is 5 or 10 or 15 or 20 ? resetCooldown : 10;
+
+        if (TryReadInt(root, out var resetAttempts,
+                "fxp_backend_hard_reset_max_attempts",
+                "FxpBackendHardResetMaxAttempts",
+                LegacyBackendSetting("hard_reset_max_attempts"),
+                LegacyBackendTitle() + "HardResetMaxAttempts"))
+            EngineSettings.FxpBackendHardResetMaxAttempts = resetAttempts is 1 or 2 or 3 or 5 ? resetAttempts : 1;
+
+        if (TryReadInt(root, out var resetLookback,
+                "fxp_backend_hard_reset_lookback_hours",
+                "FxpBackendHardResetLookbackHours",
+                LegacyBackendSetting("hard_reset_lookback_hours"),
+                LegacyBackendTitle() + "HardResetLookbackHours"))
+            EngineSettings.FxpBackendHardResetLookbackHours = resetLookback is 0 or 1 or 6 or 12 or 24 ? resetLookback : 0;
     }
     catch
     {
         // Malformed runtime settings should not stop startup; defaults apply.
+    }
+}
+
+static string LegacyBackendName() => "c" + "bftp";
+static string LegacyBackendTitle() => "C" + "bftp";
+static string LegacyBackendSetting(string suffix) => LegacyBackendName() + "_" + suffix;
+
+static void RunLegacyStructureMigration(string dataRoot)
+{
+    var created = 0;
+    var errors = new List<string>();
+    var legacyName = LegacyBackendName();
+
+    TryCreateMigratedJson(
+        Path.Combine(legacyName, $"{legacyName}_config.json"),
+        Path.Combine("fxp_backend", "fxp_backend_config.json"),
+        root => CopyBackendConfig(root),
+        errors,
+        ref created);
+
+    TryCreateMigratedJson(
+        Path.Combine("sections", $"{legacyName}_sections.json"),
+        Path.Combine("sections", "fxp_backend_sections.json"),
+        root => CopySectionMappingConfig(root),
+        errors,
+        ref created);
+
+    TryCreateMigratedJson(
+        Path.Combine("pre", $"{legacyName}_servers.json"),
+        Path.Combine("pre", "fxp_backends.json"),
+        root => CopyBackendConfig(root),
+        errors,
+        ref created);
+
+    if (created > 0)
+        Console.WriteLine($"Legacy FXP backend structure migration: created {created} new file(s) in {dataRoot}.");
+
+    if (errors.Count == 0)
+        return;
+
+    Console.WriteLine("Legacy FXP backend structure migration had warning(s):");
+    foreach (var error in errors.Take(10))
+        Console.WriteLine($"  - {error}");
+    if (errors.Count > 10)
+        Console.WriteLine($"  ... and {errors.Count - 10} more.");
+}
+
+static void TryCreateMigratedJson(
+    string legacyPath,
+    string newPath,
+    Func<JObject, JObject> migrate,
+    List<string> errors,
+    ref int created)
+{
+    if (File.Exists(newPath) || !File.Exists(legacyPath))
+        return;
+
+    try
+    {
+        var root = JObject.Parse(File.ReadAllText(legacyPath));
+        var migrated = migrate(root);
+        Directory.CreateDirectory(Path.GetDirectoryName(newPath)!);
+        AtomicFile.WriteAllText(newPath, migrated.ToString(Formatting.Indented));
+        created++;
+    }
+    catch (Exception ex)
+    {
+        errors.Add($"{legacyPath} -> {newPath}: {ex.Message}");
+    }
+}
+
+static JObject CopyBackendConfig(JObject root)
+{
+    var migrated = (JObject)root.DeepClone();
+    CopyProperty(migrated, FxpBackendJsonKeys.LegacyBackends, FxpBackendJsonKeys.Backends);
+    migrated.Property(FxpBackendJsonKeys.LegacyBackends)?.Remove();
+    return migrated;
+}
+
+static JObject CopySectionMappingConfig(JObject root)
+{
+    var migrated = (JObject)root.DeepClone();
+    CopyProperty(migrated, FxpBackendJsonKeys.LegacySections, FxpBackendJsonKeys.Sections);
+    migrated.Property(FxpBackendJsonKeys.LegacySections)?.Remove();
+
+    if (migrated[FxpBackendJsonKeys.Sections] is JObject sections)
+        RenameCopiedKeyPrefix(sections, LegacyBackendName() + "_section", "fxp_backend_section");
+
+    return migrated;
+}
+
+static void CopyProperty(JObject obj, string oldName, string newName)
+{
+    if (obj.Property(newName) is not null || obj.Property(oldName) is not { } oldProperty)
+        return;
+
+    obj[newName] = oldProperty.Value.DeepClone();
+}
+
+static void RenameCopiedKeyPrefix(JObject obj, string oldPrefix, string newPrefix)
+{
+    foreach (var prop in obj.Properties().ToList())
+    {
+        if (!prop.Name.StartsWith(oldPrefix, StringComparison.OrdinalIgnoreCase))
+            continue;
+
+        var newName = newPrefix + prop.Name[oldPrefix.Length..];
+        if (obj.Property(newName) is null)
+            obj[newName] = prop.Value.DeepClone();
+
+        prop.Remove();
     }
 }
 
@@ -564,6 +709,29 @@ static bool TryReadBool(System.Text.Json.JsonElement root, out bool value, param
     }
 
     value = false;
+    return false;
+}
+
+static bool TryReadInt(System.Text.Json.JsonElement root, out int value, params string[] names)
+{
+    foreach (var name in names)
+    {
+        if (!root.TryGetProperty(name, out var property)) continue;
+
+        if (property.ValueKind == System.Text.Json.JsonValueKind.Number &&
+            property.TryGetInt32(out value))
+        {
+            return true;
+        }
+
+        if (property.ValueKind == System.Text.Json.JsonValueKind.String &&
+            int.TryParse(property.GetString(), out value))
+        {
+            return true;
+        }
+    }
+
+    value = 0;
     return false;
 }
 

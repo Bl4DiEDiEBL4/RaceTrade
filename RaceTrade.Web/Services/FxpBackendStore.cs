@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 
 using System.Diagnostics;
 using System.Net.Http.Headers;
@@ -8,23 +8,26 @@ using Newtonsoft.Json.Linq;
 namespace RaceTrade.Web.Services;
 
 /// <summary>
-/// Reads and writes cbftp/cbftp_config.json - the web equivalent of the WinForms
-/// AddCbftp form. Same file, same shape, so the WinForms build and this one stay
-/// interchangeable while both exist.
+/// Reads and writes the FXP backend config. The store writes the new file name and
+/// still reads the old one so existing installs are migrated on the next save.
 /// </summary>
-public sealed class CbftpStore
+public sealed class FxpBackendStore
 {
-    private const string Path_ = "cbftp/cbftp_config.json";
-
     public Config Load()
     {
-        if (!File.Exists(Path_)) return new Config();
+        if (!FxpBackendConfigFiles.TryGetReadablePath(out var path))
+            return new Config();
 
-        var cfg = JsonConvert.DeserializeObject<Config>(File.ReadAllText(Path_)) ?? new Config();
-        cfg.CbftpServers ??= new List<CbftpServer>();
+        var cfg = JsonConvert.DeserializeObject<Config>(File.ReadAllText(path)) ?? new Config();
+        cfg.FxpBackends ??= new List<FxpBackend>();
         cfg.Jobs ??= new JobSettings();
         return cfg;
     }
+
+    public IReadOnlyList<FxpBackend> LoadActiveServers() =>
+        Load().FxpBackends.Where(IsActive).ToList();
+
+    public static bool IsActive(FxpBackend? server) => server is not null && !server.Disabled;
 
     /// <summary>
     /// Saves the config, encrypting any password still held in plaintext so a value
@@ -32,28 +35,28 @@ public sealed class CbftpStore
     /// </summary>
     public void Save(Config cfg)
     {
-        Directory.CreateDirectory("cbftp");
+        Directory.CreateDirectory(FxpBackendConfigFiles.DirectoryName);
 
-        foreach (var s in cfg.CbftpServers ?? new List<CbftpServer>())
+        foreach (var s in cfg.FxpBackends ?? new List<FxpBackend>())
             s.Password = SecureConfig.EncryptIfNeeded(s.Password);
 
-        AtomicFile.WriteAllText(Path_, JsonConvert.SerializeObject(cfg, Formatting.Indented));
+        AtomicFile.WriteAllText(FxpBackendConfigFiles.Path, JsonConvert.SerializeObject(cfg, Formatting.Indented));
 
         // The racer caches server config at startup; reload so edits take effect now.
-        CbftpRacer.ReloadConfiguration();
-        LogManager.Success("Saved cbftp servers.");
+        FxpBackendRacer.ReloadConfiguration();
+        LogManager.Success("Saved FXP backend servers.");
     }
 
-    public async Task<CbftpTestResult> TestAsync(CbftpServer server)
+    public async Task<FxpBackendTestResult> TestAsync(FxpBackend server)
     {
         if (server is null)
-            return CbftpTestResult.Fail("Select a CBFTP server first.");
+            return FxpBackendTestResult.Fail("Select an FXP backend first.");
 
         if (string.IsNullOrWhiteSpace(server.Host))
-            return CbftpTestResult.Fail("Host is empty.");
+            return FxpBackendTestResult.Fail("Host is empty.");
 
         if (string.IsNullOrWhiteSpace(server.Port))
-            return CbftpTestResult.Fail("Port is empty.");
+            return FxpBackendTestResult.Fail("Port is empty.");
 
         var endpoint = FxpClientService.BuildEndpoint(server);
         var url = $"{endpoint}/sites";
@@ -79,7 +82,7 @@ public sealed class CbftpStore
             if (!response.IsSuccessStatusCode)
             {
                 var message = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase} after {sw.ElapsedMilliseconds} ms.";
-                return CbftpTestResult.Fail(message, endpoint, Preview(body));
+                return FxpBackendTestResult.Fail(message, endpoint, Preview(body));
             }
 
             JToken root;
@@ -89,7 +92,7 @@ public sealed class CbftpStore
             }
             catch (JsonException ex)
             {
-                return CbftpTestResult.Fail(
+                return FxpBackendTestResult.Fail(
                     $"Connected in {sw.ElapsedMilliseconds} ms, but /sites did not return valid JSON: {ex.Message}",
                     endpoint,
                     Preview(body));
@@ -98,13 +101,13 @@ public sealed class CbftpStore
             var siteCount = CountSites(root);
             if (siteCount < 0)
             {
-                return CbftpTestResult.Fail(
+                return FxpBackendTestResult.Fail(
                     $"Connected in {sw.ElapsedMilliseconds} ms, but /sites returned an unexpected JSON shape.",
                     endpoint,
                     Preview(body));
             }
 
-            return new CbftpTestResult(
+            return new FxpBackendTestResult(
                 true,
                 $"Connected in {sw.ElapsedMilliseconds} ms. Auth OK. /sites returned {siteCount} site(s).",
                 endpoint);
@@ -112,12 +115,12 @@ public sealed class CbftpStore
         catch (TaskCanceledException)
         {
             sw.Stop();
-            return CbftpTestResult.Fail($"Connection timed out after {sw.ElapsedMilliseconds} ms.", endpoint);
+            return FxpBackendTestResult.Fail($"Connection timed out after {sw.ElapsedMilliseconds} ms.", endpoint);
         }
         catch (Exception ex)
         {
             sw.Stop();
-            return CbftpTestResult.Fail($"{ex.GetType().Name}: {ex.Message}", endpoint);
+            return FxpBackendTestResult.Fail($"{ex.GetType().Name}: {ex.Message}", endpoint);
         }
     }
 
@@ -159,12 +162,12 @@ public sealed class CbftpStore
     }
 }
 
-public sealed record CbftpTestResult(
+public sealed record FxpBackendTestResult(
     bool Success,
     string Message,
     string? Endpoint = null,
     string? ResponsePreview = null)
 {
-    public static CbftpTestResult Fail(string message, string? endpoint = null, string? responsePreview = null) =>
+    public static FxpBackendTestResult Fail(string message, string? endpoint = null, string? responsePreview = null) =>
         new(false, message, endpoint, responsePreview);
 }

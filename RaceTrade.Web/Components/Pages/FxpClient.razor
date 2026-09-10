@@ -10,7 +10,7 @@
 
     <div class="panel fxp-shell">
         <div class="toolbar fxp-toolbar">
-            <label>CBFTP</label>
+            <label>FXP backend</label>
             <select value="@_serverId" @onchange="SelectServer" disabled="@Busy">
                 @foreach (var server in _servers)
                 {
@@ -41,7 +41,7 @@
             @Pane("right", "Right Site", _rightSite, SelectRightSite, _rightPath, v => _rightPath = v, _rightItems, _selectedRight, BrowseRight, UpRight, DeleteRight)
         </div>
 
-        @* Live job list. cbftp accepting the POST only means the job was created; whether it
+        @* Live job list. FXP backend accepting the POST only means the job was created; whether it
            actually moves bytes is a separate question, and this is where it gets answered. *@
         @if (_jobs.Count > 0)
         {
@@ -58,7 +58,7 @@
                                 <span class="job-meta">@JobDetail(j)</span>
                             </div>
 
-                            @* Indeterminate when cbftp reports no file counts: a bar parked at
+                            @* Indeterminate when FXP backend reports no file counts: a bar parked at
                                0% reads as "stuck", which is exactly the wrong impression. *@
                             <div class="job-bar @(j.Percent is null && !j.IsFinished ? "indet" : "")">
                                 <div class="job-fill" style="width:@(j.Percent ?? 100)%"></div>
@@ -134,7 +134,7 @@
 @code {
     private sealed record FxpContextMenu(string Side, FxpFileItem Item, double X, double Y);
 
-    private List<CbftpServer> _servers = new();
+    private List<FxpBackend> _servers = new();
     private List<string> _sites = new();
     private string _serverId = "";
     private string _leftSite = "";
@@ -274,7 +274,7 @@
         var server = SelectedServer();
         if (server is null)
         {
-            AddLine("Add a CBFTP server first.", isError: true);
+            AddLine("Add an FXP backend first.", isError: true);
             return;
         }
 
@@ -291,7 +291,7 @@
                 ClearPane(left: false);
 
             AddLine(_sites.Count == 0
-                ? "No sites returned by CBFTP."
+                ? "No sites returned by FXP backend."
                 : $"Loaded {_sites.Count} site(s). Pick a site in a pane to browse it.");
         });
     }
@@ -305,7 +305,7 @@
             _sites.Clear();
             ClearPane(left: true);
             ClearPane(left: false);
-            AddLine("Add a CBFTP server first.", isError: true);
+            AddLine("Add an FXP backend first.", isError: true);
             return;
         }
 
@@ -367,7 +367,7 @@
         var path = left ? _leftPath : _rightPath;
         if (server is null || string.IsNullOrWhiteSpace(site))
         {
-            AddLine("Select a CBFTP server and site first.", isError: true);
+            AddLine("Select an FXP backend and site first.", isError: true);
             return;
         }
 
@@ -454,14 +454,14 @@
     }
 
     /// <summary>
-    /// Polls cbftp until every queued job reaches DONE/FAILED/TIMEOUT, or five minutes
+    /// Polls FXP backend until every queued job reaches DONE/FAILED/TIMEOUT, or five minutes
     /// pass. Both panes are refreshed at the end so the moved files actually show up.
     /// </summary>
     private async Task MonitorJobsAsync(IReadOnlyList<string> names)
     {
         var pending = names.ToList();
 
-        // cbftp needs a moment before the job is queryable.
+        // FXP backend needs a moment before the job is queryable.
         await Task.Delay(2000);
 
         for (var i = 0; i < 60 && pending.Count > 0; i++)
@@ -472,12 +472,12 @@
 
                 if (progress is null)
                 {
-                    // Unknown to cbftp. Right after queueing that is normal; after a few
+                    // Unknown to FXP backend. Right after queueing that is normal; after a few
                     // rounds it means the job never materialised, which is worth saying.
                     if (i >= 3)
                     {
                         UpsertJob(new FxpJobProgress(name, "UNKNOWN", 0, 0, 0, 0, TimeSpan.Zero, false));
-                        AddLine($"cbftp does not know job '{name}' — it was accepted but never created.");
+                        AddLine($"FXP backend does not know job '{name}' — it was accepted but never created.");
                         pending.Remove(name);
                     }
                     continue;
@@ -544,7 +544,7 @@
     private static string JobDetail(FxpJobProgress j)
     {
         if (j.IsUnknown)
-            return "no such job in cbftp";
+            return "no such job in FXP backend";
 
         var parts = new List<string>();
 
@@ -654,7 +654,7 @@
 
         if (server is null || string.IsNullOrWhiteSpace(site))
         {
-            AddLine("Select a CBFTP server and site first.", isError: true);
+            AddLine("Select an FXP backend and site first.", isError: true);
             return;
         }
 
@@ -730,10 +730,10 @@
             _log.RemoveRange(200, _log.Count - 200);
     }
 
-    private CbftpServer? SelectedServer() =>
+    private FxpBackend? SelectedServer() =>
         _servers.FirstOrDefault(s => string.Equals(s.Id, _serverId, StringComparison.OrdinalIgnoreCase));
 
-    private static string DisplayServer(CbftpServer server) =>
+    private static string DisplayServer(FxpBackend server) =>
         $"{server.Name ?? server.Id} - {server.Host}:{server.Port}";
 
     private string KeepOrEmpty(string current) =>

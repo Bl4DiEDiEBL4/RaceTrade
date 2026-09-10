@@ -44,6 +44,7 @@ public sealed class NotificationSettingsService
 
         o["tray_icon_enabled"] = settings.TrayIconEnabled;
         o["race_notifications_enabled"] = settings.RaceNotificationsEnabled;
+        o["chat_notifications_enabled"] = settings.ChatNotificationsEnabled;
 
         AtomicFile.WriteAllText(SettingsFile, o.ToString(Newtonsoft.Json.Formatting.Indented));
 
@@ -62,7 +63,8 @@ public sealed class NotificationSettingsService
 
             return new NotificationSettings(
                 ReadBool(o, "tray_icon_enabled", "TrayIconEnabled") ?? true,
-                ReadBool(o, "race_notifications_enabled", "RaceNotificationsEnabled") ?? true);
+                ReadBool(o, "race_notifications_enabled", "RaceNotificationsEnabled") ?? true,
+                ReadBool(o, "chat_notifications_enabled", "ChatNotificationsEnabled") ?? true);
         }
         catch
         {
@@ -90,7 +92,8 @@ public sealed class NotificationSettingsService
 
 public sealed record NotificationSettings(
     bool TrayIconEnabled,
-    bool RaceNotificationsEnabled)
+    bool RaceNotificationsEnabled,
+    bool ChatNotificationsEnabled)
 {
-    public static NotificationSettings Default { get; } = new(true, true);
+    public static NotificationSettings Default { get; } = new(true, true, true);
 }

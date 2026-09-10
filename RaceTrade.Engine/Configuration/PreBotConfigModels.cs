@@ -6,7 +6,7 @@ namespace RaceTrade
     /// <summary>
     /// Models for the PreBot configs under pre_bots\*.json.
     ///
-    /// Like the cbftp models, these were declared inside a WinForms file (PreBot.cs) in
+    /// Like the FXP backend models, these were declared inside a WinForms file (PreBot.cs) in
     /// the old build, so they came out with it during the port. They are plain data
     /// contracts consumed by the engine's PreBot handling. Property names are unchanged,
     /// so existing pre_bots\*.json files deserialize exactly as before.
@@ -42,15 +42,24 @@ namespace RaceTrade
         public string NameRegex { get; set; }
     }
 
-    /// <summary>
-    /// Model for sections\cbftp_sections.json (was declared in the AddCbftpSections form).
-    /// </summary>
+    /// <summary>Model for section mapping data.</summary>
     public class SectionData
     {
         [JsonProperty("sections")]
         public Dictionary<string, string> Sections { get; set; }
 
-        [JsonProperty("cbftp_sections")]
-        public Dictionary<string, string> CbftpSections { get; set; }
+        [JsonProperty(global::FxpBackendJsonKeys.Sections)]
+        public Dictionary<string, string> FxpBackendSections { get; set; }
+
+        [JsonProperty(global::FxpBackendJsonKeys.LegacySections, NullValueHandling = NullValueHandling.Ignore)]
+        private Dictionary<string, string> LegacyFxpBackendSections
+        {
+            get => null;
+            set
+            {
+                if (value != null && value.Count > 0 && (FxpBackendSections == null || FxpBackendSections.Count == 0))
+                    FxpBackendSections = value;
+            }
+        }
     }
 }

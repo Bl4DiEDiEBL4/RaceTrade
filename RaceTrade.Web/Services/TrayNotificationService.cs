@@ -16,7 +16,9 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
     private const uint MenuStartStop = 1002;
     private const uint MenuToggleRaceNotifications = 1003;
     private const uint MenuTestRaceNotification = 1004;
-    private const uint MenuQuit = 1005;
+    private const uint MenuToggleChatNotifications = 1005;
+    private const uint MenuTestChatNotification = 1006;
+    private const uint MenuQuit = 1007;
 
     private readonly NotificationSettingsService _settings;
     private readonly WebSecurityOptions _security;
@@ -24,6 +26,7 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ConcurrentQueue<TrayNotification> _queue = new();
     private readonly Dictionary<string, DateTimeOffset> _recentRaceNotifications = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTimeOffset> _recentChatNotifications = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
 
     private CancellationTokenSource? _workerCts;
@@ -146,6 +149,65 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
         _queue.Enqueue(new TrayNotification(title, details, NotificationIconFor(status)));
     }
 
+    public void NotifyChat(string siteName, string channelName, string sender, string message, bool isPrivateMessage)
+    {
+        if (!IsSupported)
+            return;
+
+        var settings = _settings.Current;
+        if (!settings.TrayIconEnabled || !settings.ChatNotificationsEnabled)
+            return;
+
+        siteName = (siteName ?? "").Trim();
+        channelName = (channelName ?? "").Trim();
+        sender = (sender ?? "").Trim();
+        message = (message ?? "").Trim();
+
+        if (string.IsNullOrWhiteSpace(sender) || string.IsNullOrWhiteSpace(message))
+            return;
+
+        var key = $"{siteName}|{channelName}|{sender}|{message}";
+
+        lock (_gate)
+        {
+            var now = DateTimeOffset.Now;
+            if (_recentChatNotifications.TryGetValue(key, out var last) &&
+                now - last < TimeSpan.FromSeconds(DedupeSeconds))
+            {
+                return;
+            }
+
+            _recentChatNotifications[key] = now;
+
+            foreach (var old in _recentChatNotifications
+                         .Where(kv => now - kv.Value > TimeSpan.FromMinutes(5))
+                         .Select(kv => kv.Key)
+                         .ToList())
+            {
+                _recentChatNotifications.Remove(old);
+            }
+        }
+
+        EnsureTrayStarted();
+
+        var title = isPrivateMessage
+            ? $"Private message from {sender}"
+            : $"{sender} mentioned you";
+
+        var channel = PrettyChannel(channelName);
+        var where = string.IsNullOrWhiteSpace(siteName)
+            ? channel
+            : string.IsNullOrWhiteSpace(channel)
+                ? siteName
+                : $"{siteName} {channel}";
+
+        var body = string.IsNullOrWhiteSpace(where)
+            ? message
+            : $"{where}: {message}";
+
+        _queue.Enqueue(new TrayNotification(title, Truncate(body, 255), BalloonIconFlags.Info));
+    }
+
     public bool TrySendTestRaceNotification(out string message)
     {
         if (!IsSupported)
@@ -178,6 +240,33 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
         });
 
         message = "Test race notification queued.";
+        return true;
+    }
+
+    public bool TrySendTestChatNotification(out string message)
+    {
+        if (!IsSupported)
+        {
+            message = StatusText;
+            return false;
+        }
+
+        var settings = _settings.Current;
+        if (!settings.TrayIconEnabled)
+        {
+            message = "Tray icon is disabled.";
+            return false;
+        }
+
+        if (!settings.ChatNotificationsEnabled)
+        {
+            message = "Chat notifications are disabled.";
+            return false;
+        }
+
+        NotifyChat("SITE", "#chat", "Friend", "RaceTrade chat notification test.", isPrivateMessage: false);
+
+        message = "Test chat notification queued.";
         return true;
     }
 
@@ -387,7 +476,9 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
 
         try
         {
-            var notificationsEnabled = _settings.Current.RaceNotificationsEnabled;
+            var currentSettings = _settings.Current;
+            var raceNotificationsEnabled = currentSettings.RaceNotificationsEnabled;
+            var chatNotificationsEnabled = currentSettings.ChatNotificationsEnabled;
             var racer = GetRacer();
             var startStopFlags = MenuFlags.String;
             if (racer?.IsBusy == true)
@@ -396,8 +487,10 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
             NativeMethods.AppendMenu(menu, MenuFlags.String, new UIntPtr(MenuOpen), "Open RaceTrade");
             NativeMethods.AppendMenu(menu, MenuFlags.Separator, UIntPtr.Zero, null);
             NativeMethods.AppendMenu(menu, startStopFlags, new UIntPtr(MenuStartStop), racer?.IsRunning == true ? "Stop trader" : "Start trader");
-            NativeMethods.AppendMenu(menu, MenuFlags.String | (notificationsEnabled ? MenuFlags.Checked : MenuFlags.None), new UIntPtr(MenuToggleRaceNotifications), "Race notifications");
+            NativeMethods.AppendMenu(menu, MenuFlags.String | (raceNotificationsEnabled ? MenuFlags.Checked : MenuFlags.None), new UIntPtr(MenuToggleRaceNotifications), "Race notifications");
+            NativeMethods.AppendMenu(menu, MenuFlags.String | (chatNotificationsEnabled ? MenuFlags.Checked : MenuFlags.None), new UIntPtr(MenuToggleChatNotifications), "Chat notifications");
             NativeMethods.AppendMenu(menu, MenuFlags.String, new UIntPtr(MenuTestRaceNotification), "Test race notification");
+            NativeMethods.AppendMenu(menu, MenuFlags.String, new UIntPtr(MenuTestChatNotification), "Test chat notification");
             NativeMethods.AppendMenu(menu, MenuFlags.Separator, UIntPtr.Zero, null);
             NativeMethods.AppendMenu(menu, MenuFlags.String, new UIntPtr(MenuQuit), "Quit RaceTrade");
 
@@ -438,8 +531,14 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
             case MenuToggleRaceNotifications:
                 ToggleRaceNotifications();
                 break;
+            case MenuToggleChatNotifications:
+                ToggleChatNotifications();
+                break;
             case MenuTestRaceNotification:
                 TrySendTestRaceNotification(out _);
+                break;
+            case MenuTestChatNotification:
+                TrySendTestChatNotification(out _);
                 break;
             case MenuQuit:
                 _ = Task.Run(QuitFromTray);
@@ -470,6 +569,20 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
         {
             var current = _settings.Current;
             _settings.Save(current with { RaceNotificationsEnabled = !current.RaceNotificationsEnabled });
+            RefreshTrayIcon();
+        }
+        catch (Exception ex)
+        {
+            LogManager.Error($"Tray notification setting failed: {ex.Message}");
+        }
+    }
+
+    private void ToggleChatNotifications()
+    {
+        try
+        {
+            var current = _settings.Current;
+            _settings.Save(current with { ChatNotificationsEnabled = !current.ChatNotificationsEnabled });
             RefreshTrayIcon();
         }
         catch (Exception ex)
@@ -641,8 +754,10 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
         var version = typeof(TrayNotificationService).Assembly.GetName().Version?.ToString(3) ?? "";
         var racer = GetRacer();
         var trader = racer is null ? "Unknown" : racer.IsBusy ? "Working" : racer.IsRunning ? "Running" : "Stopped";
-        var notifications = _settings.Current.RaceNotificationsEnabled ? "On" : "Off";
-        return $"RaceTrade v{version} | Trader: {trader}\nRace notifications: {notifications}\nOpen: {BuildUrl()}";
+        var settings = _settings.Current;
+        var raceNotifications = settings.RaceNotificationsEnabled ? "On" : "Off";
+        var chatNotifications = settings.ChatNotificationsEnabled ? "On" : "Off";
+        return $"RaceTrade v{version} | Trader: {trader}\nRace notifications: {raceNotifications}\nChat notifications: {chatNotifications}\nOpen: {BuildUrl()}";
     }
 
     private RacerState? GetRacer()
@@ -688,6 +803,14 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
             parts.Add($"({entry.Reason})");
 
         return Truncate(string.Join(" ", parts.Where(p => !string.IsNullOrWhiteSpace(p))), 255);
+    }
+
+    private static string PrettyChannel(string channelName)
+    {
+        channelName = (channelName ?? "").Trim();
+        return channelName.StartsWith("PM:", StringComparison.OrdinalIgnoreCase)
+            ? $"PM {channelName[3..]}"
+            : channelName;
     }
 
     private static BalloonIconFlags NotificationIconFor(string status) =>

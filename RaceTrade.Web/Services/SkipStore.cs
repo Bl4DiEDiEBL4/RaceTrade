@@ -99,7 +99,10 @@ public sealed class SkipStore : IDisposable
         if (!string.IsNullOrWhiteSpace(search))
             q = q.Where(r =>
                 (r.Release ?? "").Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                (r.Detail ?? "").Contains(search, StringComparison.OrdinalIgnoreCase));
+                (r.Detail ?? "").Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                (r.Site ?? "").Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                (r.Section ?? "").Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                r.Reason.ToString().Contains(search, StringComparison.OrdinalIgnoreCase));
 
         return q;
     }

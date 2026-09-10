@@ -17,11 +17,12 @@ public static class RaceHelper
 {
     // Thread-safe caches
     private static readonly ConcurrentDictionary<string, Dictionary<string, (List<string> GeneralRules, List<MappedTag> MappedTags)>> SiteBasedCache = new();
-    private static readonly ConcurrentDictionary<string, Dictionary<string, string>> CbftpToIrcSectionCache = new();
+    private static readonly ConcurrentDictionary<string, Dictionary<string, string>> FxpBackendToIrcSectionCache = new();
     private static readonly ConcurrentDictionary<string, bool> InProgressReleases = new();
     private static readonly List<JObject> allSiteConfigs = new List<JObject>();
     private static readonly object configLock = new();
     private static readonly string[] ReservedSiteConfigNames = { "new_site", "template", "example" };
+    private const string ConfigKeyProperty = "_racetrade_config_key";
 
     /// <summary>
     /// Guard against catastrophic backtracking in user/config supplied patterns.
@@ -184,7 +185,7 @@ public static class RaceHelper
 
     /// <summary>
     /// Section release skiplist matching. This is intentionally about the announce
-    /// release name, not CBFTP file or directory names.
+    /// release name, not FXP backend file or directory names.
     /// </summary>
     private static bool MatchesReleaseSkiplist(string releaseName, IEnumerable<string> patterns, out string matchedPattern)
     {
@@ -267,6 +268,117 @@ public static class RaceHelper
         return match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value);
     }
 
+    private sealed class FxpBackendIndex
+    {
+        public bool ConfigLoaded { get; set; }
+        public HashSet<string> KnownRefs { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> ActiveRefs { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static FxpBackendIndex LoadFxpBackendIndex()
+    {
+        var index = new FxpBackendIndex();
+
+        if (!FxpBackendConfigFiles.TryGetReadablePath(out var configPath))
+            return index;
+
+        try
+        {
+            var config = JObject.Parse(File.ReadAllText(configPath));
+            var servers = ReadFxpBackendValue(config, FxpBackendJsonKeys.Backends, FxpBackendJsonKeys.LegacyBackends) as JArray;
+            index.ConfigLoaded = true;
+
+            if (servers == null)
+                return index;
+
+            foreach (var server in servers.OfType<JObject>())
+            {
+                var disabled = server["disabled"]?.Value<bool>() ?? false;
+                var id = server["id"]?.ToString();
+                var name = server["name"]?.ToString();
+
+                AddFxpBackendRef(index.KnownRefs, id);
+                AddFxpBackendRef(index.KnownRefs, name);
+
+                if (!disabled)
+                {
+                    AddFxpBackendRef(index.ActiveRefs, id);
+                    AddFxpBackendRef(index.ActiveRefs, name);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LogManager.Warning($"Could not read FXP backend server status from '{configPath}': {ex.Message}");
+        }
+
+        return index;
+    }
+
+    private static void AddFxpBackendRef(HashSet<string> refs, string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            refs.Add(value.Trim());
+    }
+
+    private static bool SiteUsesEnabledFxpBackend(JObject siteConfig, FxpBackendIndex fxpBackendServers, out string reason)
+    {
+        reason = null;
+
+        if (fxpBackendServers == null || !fxpBackendServers.ConfigLoaded)
+            return true;
+
+        if (fxpBackendServers.ActiveRefs.Count == 0)
+        {
+            reason = "no enabled FXP backend server is available";
+            return false;
+        }
+
+        var configured = ReadFxpBackendValue(siteConfig["site_settings"], FxpBackendJsonKeys.BackendId, FxpBackendJsonKeys.LegacyBackendId)
+            ?.ToString()
+            ?.Trim();
+        if (string.IsNullOrWhiteSpace(configured))
+            return true;
+
+        if (fxpBackendServers.ActiveRefs.Contains(configured))
+            return true;
+
+        reason = fxpBackendServers.KnownRefs.Contains(configured)
+            ? $"FXP backend server '{configured}' is disabled"
+            : $"FXP backend server '{configured}' is missing or disabled";
+
+        return false;
+    }
+
+    private static JToken ReadFxpBackendValue(JToken token, string key, string legacyKey) =>
+        token?[key] ?? token?[legacyKey];
+
+    private static string ReadMappedFxpBackendSection(JToken tag) =>
+        ReadFxpBackendValue(tag, FxpBackendJsonKeys.SectionMap, FxpBackendJsonKeys.LegacySectionMap)?.ToString();
+
+    private static string GetSiteConfigKey(JObject siteConfig)
+    {
+        var key = siteConfig?[ConfigKeyProperty]?.ToString()?.Trim();
+        if (!string.IsNullOrWhiteSpace(key))
+            return key;
+
+        return GetRemoteSiteName(siteConfig);
+    }
+
+    private static string GetRemoteSiteName(JObject siteConfig) =>
+        siteConfig?["site_settings"]?["sitename"]?.ToString()?.Trim() ?? "";
+
+    private static string GetSiteDisplayName(JObject siteConfig)
+    {
+        var key = GetSiteConfigKey(siteConfig);
+        var remote = GetRemoteSiteName(siteConfig);
+        if (string.IsNullOrWhiteSpace(remote))
+            return key;
+        if (string.IsNullOrWhiteSpace(key) || string.Equals(remote, key, StringComparison.OrdinalIgnoreCase))
+            return remote;
+        return $"{remote} ({key})";
+    }
+
     /// <summary>
     /// Loads all site configurations from disk.
     /// Now properly clears caches before reloading.
@@ -278,9 +390,10 @@ public static class RaceHelper
             // Clear all caches
             allSiteConfigs.Clear();
             SiteBasedCache.Clear();
-            CbftpToIrcSectionCache.Clear();
+            FxpBackendToIrcSectionCache.Clear();
 
             var directory = "sites";
+            var fxpBackendServers = LoadFxpBackendIndex();
 
             if (!Directory.Exists(directory))
             {
@@ -308,7 +421,9 @@ public static class RaceHelper
                     var json = File.ReadAllText(filePath);
                     var siteConfig = JObject.Parse(json);
 
-                    string siteName = siteConfig["site_settings"]?["sitename"]?.ToString() ?? "Unknown Site";
+                    siteConfig[ConfigKeyProperty] = siteConfigName;
+
+                    string siteName = GetSiteDisplayName(siteConfig);
                     bool disableSite = siteConfig["site_settings"]?["disable_site"]?.ToObject<bool>() ?? true;
 
                     if (disableSite)
@@ -317,10 +432,16 @@ public static class RaceHelper
                         continue;
                     }
 
+                    if (!SiteUsesEnabledFxpBackend(siteConfig, fxpBackendServers, out var fxpBackendSkipReason))
+                    {
+                        LogManager.Warning($"Site [{siteName}] is skipped: {fxpBackendSkipReason}.");
+                        continue;
+                    }
+
                     allSiteConfigs.Add(siteConfig);
 
                     // Build section cache for this site
-                    BuildSectionCache(siteConfig, siteName);
+                    BuildSectionCache(siteConfig, siteConfigName);
 
                     if (EngineSettings.DebugEnabled)
                     {
@@ -338,7 +459,7 @@ public static class RaceHelper
     }
 
     /// <summary>
-    /// Builds a fast O(1) lookup cache for CBFTP -> IRC section mappings.
+    /// Builds a fast O(1) lookup cache for FXP backend -> IRC section mappings.
     /// PERFORMANCE FIX: Eliminates O(n²) lookups.
     /// </summary>
     private static void BuildSectionCache(JObject siteConfig, string siteName)
@@ -358,18 +479,18 @@ public static class RaceHelper
                 {
                     foreach (var tag in tags)
                     {
-                        var cbftpSection = tag["map_cbftp_section"]?.ToString();
-                        if (!string.IsNullOrEmpty(cbftpSection))
+                        var fxpBackendSection = ReadMappedFxpBackendSection(tag);
+                        if (!string.IsNullOrEmpty(fxpBackendSection))
                         {
-                            // Map CBFTP section -> IRC section
-                            cache[cbftpSection] = ircName;
+                            // Map FXP backend section -> IRC section
+                            cache[fxpBackendSection] = ircName;
                         }
                     }
                 }
             }
         }
 
-        CbftpToIrcSectionCache[siteName] = cache;
+        FxpBackendToIrcSectionCache[siteName] = cache;
 
         if (EngineSettings.DebugEnabled)
         {
@@ -406,7 +527,7 @@ public static class RaceHelper
         Dictionary<string, string> raceSections,
         Dictionary<string, string> mappings,
         List<string> blacklist,
-        string cbftpSection,
+        string fxpBackendSection,
         string releaseName,
         string message,
         string sectionPrefix,
@@ -421,7 +542,7 @@ public static class RaceHelper
         SkipRecord Skip(string site, SkipReason reason, string detail, string section)
         {
             var record = RaceDiagnostics.Report(
-                releaseName, reason, detail, site, section ?? cbftpSection, currentSiteName);
+                releaseName, reason, detail, site, section ?? fxpBackendSection, currentSiteName);
             skips.Add(record);
             return record;
         }
@@ -467,14 +588,15 @@ public static class RaceHelper
 
             if (!siteConfigsSnapshot.Any())
             {
-                Skip(null, SkipReason.Error, "no site configurations are loaded", cbftpSection);
+                Skip(null, SkipReason.Error, "no site configurations are loaded", fxpBackendSection);
                 return WithSkips(FilterResult.Error(releaseName, "No site configurations loaded"));
             }
 
+            var fxpBackendServers = LoadFxpBackendIndex();
             var allowedSites = new List<string>();
 
             // Sites where the release group is affiliated: they still race but only
-            // as download-only (mirrors the racer's affil handling in CbftpRacer).
+            // as download-only (mirrors the racer's affil handling in FxpBackendRacer).
             var dlOnlySites = new List<string>();
             var releaseGroup = ExtractGroupFromRelease(releaseName);
 
@@ -549,14 +671,24 @@ public static class RaceHelper
 
             foreach (var siteConfig in siteConfigsSnapshot)
             {
-                string siteName = siteConfig["site_settings"]?["sitename"]?.ToString();
+                string siteName = GetSiteConfigKey(siteConfig);
+                string siteLogName = GetSiteDisplayName(siteConfig);
                 bool disableSite = siteConfig["site_settings"]?["disable_site"]?.ToObject<bool>() ?? true;
 
                 if (string.IsNullOrWhiteSpace(siteName) || disableSite)
                 {
-                    LogManager.Debug($"Skipping site [{siteName}]: disabled or unnamed.");
+                    LogManager.Debug($"Skipping site [{siteLogName}]: disabled or unnamed.");
                     Skip(siteName, SkipReason.SiteDisabled,
                         string.IsNullOrWhiteSpace(siteName) ? "site has no name" : "site is disabled", null);
+                    continue;
+                }
+
+                if (!SiteUsesEnabledFxpBackend(siteConfig, fxpBackendServers, out var fxpBackendSkipReason))
+                {
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Info,
+                        $"[{LogColors.Magenta(siteName)}] skipped: {fxpBackendSkipReason}");
+                    Skip(siteName, SkipReason.SiteDisabled, fxpBackendSkipReason, null);
                     continue;
                 }
 
@@ -583,22 +715,22 @@ public static class RaceHelper
                     {
                         // Global PreBot mode: check if site has the ORIGINAL IRC section enabled
                         ircSectionToCheck = originalIrcSection;
-                        LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}]: Global PreBot mode - checking original IRC section [{LogColors.Green(ircSectionToCheck)}] for release: [{LogColors.Orange(releaseName)}]");
+                        LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}]: Global PreBot mode - checking original IRC section [{LogColors.Green(ircSectionToCheck)}] for release: [{LogColors.Orange(releaseName)}]");
                     }
                     else
                     {
                         // Regular SiteBot mode: use cached reverse mapping
-                        if (CbftpToIrcSectionCache.TryGetValue(siteName, out var siteCache) &&
-                            siteCache.TryGetValue(cbftpSection, out string mappedIrcSection))
+                        if (FxpBackendToIrcSectionCache.TryGetValue(siteName, out var siteCache) &&
+                            siteCache.TryGetValue(fxpBackendSection, out string mappedIrcSection))
                         {
                             ircSectionToCheck = mappedIrcSection;
-                            LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}]: SiteBot mode - CBFTP [{LogColors.Green(cbftpSection)}] maps to IRC [{LogColors.Green(ircSectionToCheck)}] for release: [{LogColors.Orange(releaseName)}]");
+                            LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}]: SiteBot mode - FXP backend [{LogColors.Green(fxpBackendSection)}] maps to IRC [{LogColors.Green(ircSectionToCheck)}] for release: [{LogColors.Orange(releaseName)}]");
                         }
                         else
                         {
-                            LogManager.Debug($"[{siteName}]: No IRC section mapping found for CBFTP [{cbftpSection}], skipping");
-                            Skip(siteName, SkipReason.NoCbftpMapping,
-                                $"no IRC section on this site maps to cbftp section '{cbftpSection}'", cbftpSection);
+                            LogManager.Debug($"[{siteName}]: No IRC section mapping found for FXP backend [{fxpBackendSection}], skipping");
+                            Skip(siteName, SkipReason.NoFxpBackendMapping,
+                                $"no IRC section on this site maps to FXP backend section '{fxpBackendSection}'", fxpBackendSection);
                             continue;
                         }
                     }
@@ -614,13 +746,13 @@ public static class RaceHelper
 
                     if (!IsAllowedSection(ircSectionToCheck, siteConfig))
                     {
-                        LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}]: IRC section [{LogColors.Green(ircSectionToCheck)}] NOT enabled in Race Sections, skipping");
+                        LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}]: IRC section [{LogColors.Green(ircSectionToCheck)}] NOT enabled in Race Sections, skipping");
                         Skip(siteName, SkipReason.SectionDisabled,
                             $"section '{ircSectionToCheck}' is not in this site's enabled race sections", ircSectionToCheck);
                         continue;
                     }
 
-                    LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}]: IRC section [{LogColors.Green(ircSectionToCheck)}] is enabled ✓");
+                    LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}]: IRC section [{LogColors.Green(ircSectionToCheck)}] is enabled ✓");
 
 
                     // Check max pretime for THIS site
@@ -633,8 +765,8 @@ public static class RaceHelper
                     var releaseSkiplists = configSection?["skiplists"]?.ToObject<List<string>>() ?? new List<string>();
                     if (MatchesReleaseSkiplist(releaseName, releaseSkiplists, out var skipPattern))
                     {
-                        LogManager.LogCBFTP(
-                            CBFTPEventType.Info,
+                        LogManager.LogFxpBackend(
+                            FxpBackendEventType.Info,
                             $"[{LogColors.Magenta(siteName)}] Release skiplist matched [{LogColors.Yellow(skipPattern)}], skipping [{LogColors.Orange(releaseName)}]");
                         Skip(siteName, SkipReason.Skiplist,
                             $"section skiplist pattern '{skipPattern}'", ircSectionToCheck);
@@ -670,8 +802,8 @@ public static class RaceHelper
                         if (!allowed)
                         {
                             string pretimeSource = configSection?["pretime"]?.Value<int?>() is int ? $"section [{ircSectionToCheck}]" : "site";
-                            LogManager.LogCBFTP(
-                                CBFTPEventType.Info,
+                            LogManager.LogFxpBackend(
+                                FxpBackendEventType.Info,
                                 $"[{LogColors.Magenta(siteName)}] Pretime check: BLOCKED - {pretimeSeconds}s exceeds {pretimeSource} max {maxPretimeSeconds}s");
                             Skip(siteName, SkipReason.Pretime,
                                 $"{pretimeSeconds}s old, {pretimeSource} allows {maxPretimeSeconds}s", ircSectionToCheck);
@@ -681,14 +813,14 @@ public static class RaceHelper
                         if (pretimeSeconds >= 0)
                         {
                             string pretimeSource = configSection?["pretime"]?.Value<int?>() is int ? $"section [{ircSectionToCheck}]" : "site";
-                            LogManager.LogCBFTP(
-                                CBFTPEventType.Info,
+                            LogManager.LogFxpBackend(
+                                FxpBackendEventType.Info,
                                 $"[{LogColors.Magenta(siteName)}] Pretime check: PASSED - {pretimeSeconds}s < {pretimeSource} max {maxPretimeSeconds}s");
                         }
                         else
                         {
-                            LogManager.LogCBFTP(
-                                CBFTPEventType.Info,
+                            LogManager.LogFxpBackend(
+                                FxpBackendEventType.Info,
                                 $"[{LogColors.Magenta(siteName)}] Pretime check: No pretime found, ALLOWING");
                         }
                     }
@@ -701,39 +833,39 @@ public static class RaceHelper
                         var imdb = configSection["imdb"] as JObject;
                         if (imdb?["enabled"]?.Value<bool>() == true)
                         {
-                            LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Checking filters");
+                            LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Checking filters");
 
                             var imdbBlock = await ValidateIMDB(releaseName, imdb, siteName);
                             if (imdbBlock != null)
                             {
-                                LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Filtered");
+                                LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Filtered");
                                 Skip(siteName, SkipReason.Imdb, imdbBlock, ircSectionToCheck);
                                 continue;
                             }
 
-                            LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Passed ✓");
+                            LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Passed ✓");
                         }
 
                         // TVMaze Check
                         var tvmaze = configSection["tvmaze"] as JObject;
                         if (tvmaze?["enabled"]?.Value<bool>() == true)
                         {
-                            LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Checking filters");
+                            LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Checking filters");
 
                             var tvmazeBlock = await ValidateTVMaze(releaseName, tvmaze, siteName);
                             if (tvmazeBlock != null)
                             {
-                                LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Filtered");
+                                LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Filtered");
                                 Skip(siteName, SkipReason.TvMaze, tvmazeBlock, ircSectionToCheck);
                                 continue;
                             }
 
-                            LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Passed ✓");
+                            LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Passed ✓");
                         }
                     }
 
-                    // load rules for THIS site using the CBFTP section
-                    rulesEngine.LoadRulesForIrcSection(siteConfig, ircSectionToCheck, cbftpSection);
+                    // load rules for THIS site using the FXP backend section
+                    rulesEngine.LoadRulesForIrcSection(siteConfig, ircSectionToCheck, fxpBackendSection);
 
                     // Metadata was parsed once before the loop; only the section
                     // differs per site.
@@ -742,9 +874,9 @@ public static class RaceHelper
                         ["section"] = ircSectionToCheck
                     };
 
-                    var evaluationResult = rulesEngine.Evaluate(input, cbftpSection);
+                    var evaluationResult = rulesEngine.Evaluate(input, fxpBackendSection);
 
-                    LogManager.LogCBFTP(CBFTPEventType.Info, $"[{LogColors.Magenta(siteName)}] Rule evaluation: [{LogColors.Yellow(evaluationResult)}] for release: [{LogColors.Orange(releaseName)}]");
+                    LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] Rule evaluation: [{LogColors.Yellow(evaluationResult)}] for release: [{LogColors.Orange(releaseName)}]");
 
                     if (string.Equals(evaluationResult, "DROP", StringComparison.OrdinalIgnoreCase))
                     {
@@ -799,31 +931,31 @@ public static class RaceHelper
                     skips.Count > 0
                         ? $"every site was filtered out ({skips.Count} reason(s) above)"
                         : "no site is configured for this section",
-                    cbftpSection);
+                    fxpBackendSection);
 
-                return WithSkips(FilterResult.NoSites(releaseName, cbftpSection, "All sites were filtered out"));
+                return WithSkips(FilterResult.NoSites(releaseName, fxpBackendSection, "All sites were filtered out"));
             }
 
             if (allowedSites.Count < 2)
             {
                 Skip(null, SkipReason.InsufficientSites,
                     $"only {allowedSites.Count} site ({string.Join(", ", allowedSites)}) passed; a race needs 2",
-                    cbftpSection);
+                    fxpBackendSection);
 
                 return WithSkips(
-                    FilterResult.InsufficientSites(releaseName, cbftpSection, allowedSites.Count, allowedSites));
+                    FilterResult.InsufficientSites(releaseName, fxpBackendSection, allowedSites.Count, allowedSites));
             }
 
-            LogManager.LogCBFTP(CBFTPEventType.Info, $"{allowedSites.Count} site(s) allowed for release [{LogColors.Orange(releaseName)}]: [{LogColors.Magenta(string.Join(", ", allowedSites))}]");
+            LogManager.LogFxpBackend(FxpBackendEventType.Info, $"{allowedSites.Count} site(s) allowed for release [{LogColors.Orange(releaseName)}]: [{LogColors.Magenta(string.Join(", ", allowedSites))}]");
 
             // Carried on success too: a race that ran on 2 of 6 sites still raises the
             // question of what happened to the other four.
-            return WithSkips(FilterResult.Success(releaseName, cbftpSection, allowedSites, dlOnlySites));
+            return WithSkips(FilterResult.Success(releaseName, fxpBackendSection, allowedSites, dlOnlySites));
         }
         catch (Exception ex)
         {
             LogManager.Error($"Exception in FilterAllowedSites: {ex.Message}");
-            Skip(null, SkipReason.Error, ex.Message, cbftpSection);
+            Skip(null, SkipReason.Error, ex.Message, fxpBackendSection);
             return WithSkips(FilterResult.Error(releaseName, ex.Message));
         }
         finally
@@ -834,9 +966,9 @@ public static class RaceHelper
 
 
     /// <summary>
-    /// Maps an IRC section to a CBFTP section based on triggers and rules.
+    /// Maps an IRC section to a FXP backend section based on triggers and rules.
     /// </summary>
-    public static string GetMappedCbftpSection(
+    public static string GetMappedFxpBackendSection(
         string ircSection,
         string releaseName,
         JObject siteConfig,
@@ -878,7 +1010,7 @@ public static class RaceHelper
                 {
                     // Evaluate each tag's trigger_regex (same as the regular-site path
                     // below) — unconditionally taking tags[0] sent e.g. x265 releases
-                    // to the x264 CBFTP section whenever a section had multiple tags.
+                    // to the x264 FXP backend section whenever a section had multiple tags.
                     var tags = section["tags"] as JArray;
                     if (tags != null && tags.Any())
                     {
@@ -886,8 +1018,8 @@ public static class RaceHelper
 
                         foreach (var tag in tags)
                         {
-                            string cbftpSection = tag["map_cbftp_section"]?.ToString();
-                            if (string.IsNullOrEmpty(cbftpSection))
+                            string fxpBackendSection = ReadMappedFxpBackendSection(tag);
+                            if (string.IsNullOrEmpty(fxpBackendSection))
                                 continue;
 
                             string triggerRegex = tag["trigger_regex"]?.ToString();
@@ -896,7 +1028,7 @@ public static class RaceHelper
                             {
                                 // tag without trigger = fallback if nothing matches
                                 if (fallback == null)
-                                    fallback = cbftpSection;
+                                    fallback = fxpBackendSection;
                                 continue;
                             }
 
@@ -917,9 +1049,9 @@ public static class RaceHelper
                                 {
                                     if (EngineSettings.DebugEnabled)
                                     {
-                                        LogManager.Debug($"PreBot: Mapped IRC [{strippedSection}] → CBFTP [{cbftpSection}] (trigger '{regexPattern}')");
+                                        LogManager.Debug($"PreBot: Mapped IRC [{strippedSection}] → FXP backend [{fxpBackendSection}] (trigger '{regexPattern}')");
                                     }
-                                    return cbftpSection;
+                                    return fxpBackendSection;
                                 }
                             }
                             catch (Exception ex)
@@ -932,7 +1064,7 @@ public static class RaceHelper
                         {
                             if (EngineSettings.DebugEnabled)
                             {
-                                LogManager.Debug($"PreBot: Mapped IRC [{strippedSection}] → CBFTP [{fallback}] (fallback tag)");
+                                LogManager.Debug($"PreBot: Mapped IRC [{strippedSection}] → FXP backend [{fallback}] (fallback tag)");
                             }
                             return fallback;
                         }
@@ -966,12 +1098,12 @@ public static class RaceHelper
             {
                 if (EngineSettings.DebugEnabled)
                 {
-                    LogManager.Info($"No tags found, using IRC section [{strippedSection}] as CBFTP section");
+                    LogManager.Info($"No tags found, using IRC section [{strippedSection}] as FXP backend section");
                 }
                 return strippedSection;
             }
 
-            string fallbackCbftpSection = null;
+            string fallbackFxpBackendSection = null;
 
             // Per-call engine, loaded for THIS site's IRC section so the rule-based
             // tag disambiguation below evaluates against the correct (fresh) rules.
@@ -985,9 +1117,9 @@ public static class RaceHelper
             foreach (var tag in regularTags)
             {
                 string triggerRegex = tag["trigger_regex"]?.ToString();
-                string cbftpSection = tag["map_cbftp_section"]?.ToString();
+                string fxpBackendSection = ReadMappedFxpBackendSection(tag);
 
-                if (string.IsNullOrEmpty(cbftpSection))
+                if (string.IsNullOrEmpty(fxpBackendSection))
                 {
                     continue;
                 }
@@ -1016,14 +1148,14 @@ public static class RaceHelper
                         {
                             if (EngineSettings.DebugEnabled)
                             {
-                                LogManager.Debug($"Trigger '{regexPattern}' did NOT match, skipping [{cbftpSection}]");
+                                LogManager.Debug($"Trigger '{regexPattern}' did NOT match, skipping [{fxpBackendSection}]");
                             }
                             continue;
                         }
 
                         if (EngineSettings.DebugEnabled)
                         {
-                            LogManager.Success($"Trigger '{regexPattern}' matched! Using CBFTP section [{cbftpSection}]");
+                            LogManager.Success($"Trigger '{regexPattern}' matched! Using FXP backend section [{fxpBackendSection}]");
                         }
                     }
                     catch (Exception ex)
@@ -1034,13 +1166,13 @@ public static class RaceHelper
                 }
 
                 // Strict match check
-                if (string.Equals(cbftpSection, strippedSection, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(fxpBackendSection, strippedSection, StringComparison.OrdinalIgnoreCase))
                 {
                     if (EngineSettings.DebugEnabled)
                     {
-                        LogManager.Success($"Strict section match: [{strippedSection}] -> [{cbftpSection}]");
+                        LogManager.Success($"Strict section match: [{strippedSection}] -> [{fxpBackendSection}]");
                     }
-                    return cbftpSection;
+                    return fxpBackendSection;
                 }
 
                 // Evaluate rules with README keys
@@ -1063,42 +1195,42 @@ public static class RaceHelper
                 if (parsedAttributes.TryGetValue("source", out var source))
                     input["source"] = source;
 
-                var evaluationResult = rulesEngine.Evaluate(input, cbftpSection);
+                var evaluationResult = rulesEngine.Evaluate(input, fxpBackendSection);
 
                 if (string.Equals(evaluationResult, "ALLOW", StringComparison.OrdinalIgnoreCase))
                 {
                     if (EngineSettings.DebugEnabled)
                     {
-                        LogManager.Success($"CBFTP section [{cbftpSection}] allowed by rules");
+                        LogManager.Success($"FXP backend section [{fxpBackendSection}] allowed by rules");
                     }
-                    return cbftpSection;
+                    return fxpBackendSection;
                 }
 
-                if (!string.Equals(evaluationResult, "DROP", StringComparison.OrdinalIgnoreCase) && fallbackCbftpSection == null)
+                if (!string.Equals(evaluationResult, "DROP", StringComparison.OrdinalIgnoreCase) && fallbackFxpBackendSection == null)
                 {
-                    fallbackCbftpSection = cbftpSection;
+                    fallbackFxpBackendSection = fxpBackendSection;
                 }
             }
 
             // Use fallback if available
-            //if (!string.IsNullOrEmpty(fallbackCbftpSection))
+            //if (!string.IsNullOrEmpty(fallbackFxpBackendSection))
             //{
             //    if (EngineSettings.DebugEnabled)
             //    {
-            //        LogManager.Success($"Using fallback CBFTP section [{fallbackCbftpSection}]");
+            //        LogManager.Success($"Using fallback FXP backend section [{fallbackFxpBackendSection}]");
             //    }
-            //    return fallbackCbftpSection;
+            //    return fallbackFxpBackendSection;
             //}
 
             if (EngineSettings.DebugEnabled)
             {
-                LogManager.Warning($"No valid CBFTP section found for [{releaseName}]");
+                LogManager.Warning($"No valid FXP backend section found for [{releaseName}]");
             }
             return null;
         }
         catch (Exception ex)
         {
-            LogManager.Error($"Exception in GetMappedCbftpSection: {ex.Message}");
+            LogManager.Error($"Exception in GetMappedFxpBackendSection: {ex.Message}");
             return null;
         }
     }
@@ -1280,27 +1412,31 @@ public static class RaceHelper
     }
 
     /// <summary>
-    /// Gets detailed site information for a CBFTP section (for logging purposes).
+    /// Gets detailed site information for a FXP backend section (for logging purposes).
     /// Uses cached data, no file I/O.
     /// </summary>
-    public static (List<string> AllowedSites, List<string> SkippedSites) GetSiteDetailsForSection(string cbftpSection)
+    public static (List<string> AllowedSites, List<string> SkippedSites) GetSiteDetailsForSection(string fxpBackendSection)
     {
         var allowedSites = new List<string>();
         var allSites = new List<string>();
+        var fxpBackendServers = LoadFxpBackendIndex();
 
         lock (configLock)
         {
             foreach (var siteConfig in allSiteConfigs)
             {
-                string siteName = siteConfig["site_settings"]?["sitename"]?.ToString();
+                string siteName = GetSiteConfigKey(siteConfig);
                 if (string.IsNullOrEmpty(siteName))
                     continue;
 
                 allSites.Add(siteName);
 
+                if (!SiteUsesEnabledFxpBackend(siteConfig, fxpBackendServers, out _))
+                    continue;
+
                 // Use cached lookup
-                if (CbftpToIrcSectionCache.TryGetValue(siteName, out var cache) &&
-                    cache.TryGetValue(cbftpSection, out string ircSection))
+                if (FxpBackendToIrcSectionCache.TryGetValue(siteName, out var cache) &&
+                    cache.TryGetValue(fxpBackendSection, out string ircSection))
                 {
                     // Check if enabled
                     var raceSectionsEnabled = siteConfig["race_sections_enabled"]?.ToObject<List<string>>() ?? new List<string>();
@@ -1605,7 +1741,7 @@ public static class RaceHelper
         {
             allSiteConfigs.Clear();
             SiteBasedCache.Clear();
-            CbftpToIrcSectionCache.Clear();
+            FxpBackendToIrcSectionCache.Clear();
             InProgressReleases.Clear();
         }
 
@@ -1624,7 +1760,7 @@ public static class RaceHelper
 /// </summary>
 public class MappedTag
 {
-    public string CbftpSection { get; set; }
+    public string FxpBackendSection { get; set; }
     public Regex CompiledRegex { get; set; }
-    public List<string> CbftpRules { get; set; }
+    public List<string> FxpBackendRules { get; set; }
 }

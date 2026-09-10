@@ -14,7 +14,7 @@
             <p>
                 RaceTrade is now one executable: the racing engine runs inside the same
                 process as this local web UI. You configure it in the browser, but your
-                sites, cbftp servers, prebots, sections and databases are still normal files
+                sites, FXP backends, prebots, sections and databases are still normal files
                 in the data folder shown under Settings.
             </p>
         </div>
@@ -25,12 +25,12 @@
         <article class="doc-card">
             <div class="card-title">QUICK START</div>
             <ol class="doc-steps">
-                <li>Add a CBFTP server under <a href="servers">CBFTP servers</a> and press Save.</li>
-                <li>Use <strong>Import sites from CBFTP</strong> to fetch site names and section mappings.</li>
+                <li>Add an FXP backend under <a href="servers">FXP Backends</a> and press Save.</li>
+                <li>Use <strong>Import sites from FXP backend</strong> to fetch site names and section mappings.</li>
                 <li>Open each imported site under <a href="sites">Sites</a> and fill ZNC, bot and channel details.</li>
                 <li>In the Sections tab, enable the IRC sections that should race.</li>
                 <li>Use <a href="test">Test release</a> before starting the trader.</li>
-                <li>Use <a href="fxp">FXP Client</a> for manual CBFTP browsing and FXP jobs.</li>
+                <li>Use <a href="fxp">FXP Client</a> for manual FXP backend browsing and FXP jobs.</li>
                 <li>Press Start on the left when the configuration validates.</li>
             </ol>
         </article>
@@ -38,7 +38,7 @@
         <article class="doc-card">
             <div class="card-title">DATA FOLDER</div>
             <p>
-                The engine reads relative folders such as <code>sites</code>, <code>cbftp</code>,
+                The engine reads relative folders such as <code>sites</code>, <code>fxp_backend</code>,
                 <code>pre_bots</code>, <code>sections</code>, <code>settings</code> and <code>db</code>
                 from the configured data folder.
             </p>
@@ -90,16 +90,16 @@
     </section>
 
     <section class="doc-section">
-        <h2>CBFTP servers and site import</h2>
+        <h2>FXP Backends and site import</h2>
         <p>
-            The CBFTP servers page writes <code>cbftp/cbftp_config.json</code>. Passwords typed in
+            The FXP Backends page writes <code>fxp_backend/fxp_backend_config.json</code>. Passwords typed in
             the browser are encrypted before they reach disk.
         </p>
         <ul class="doc-list">
-            <li><strong>Add server</strong> creates a new CBFTP API endpoint.</li>
-            <li><strong>Save</strong> stores the server list and reloads the racer configuration.</li>
-            <li><strong>Import sites from CBFTP</strong> fetches sites and sections from CBFTP.</li>
-            <li>Imported sites include IRC section names, CBFTP mappings and enabled race sections.</li>
+            <li><strong>Add server</strong> creates a new FXP backend endpoint.</li>
+            <li><strong>Save</strong> stores the backend list and reloads the racer configuration.</li>
+            <li><strong>Import sites from FXP backend</strong> fetches sites and sections from the selected backend.</li>
+            <li>Imported sites include IRC section names, FXP backend mappings and enabled race sections.</li>
             <li>You still need to configure each site's ZNC host, network, channel and announce bot.</li>
         </ul>
     </section>
@@ -125,15 +125,15 @@
             </article>
             <article class="doc-card">
                 <h3>Sections</h3>
-                <p>Master-detail editor for routing IRC sections to CBFTP sections and filters.</p>
+                <p>Master-detail editor for routing IRC sections to FXP backend sections and filters.</p>
             </article>
             <article class="doc-card">
                 <h3>Affils, Blacklist, Requests</h3>
                 <p>Group download-only rules, wildcard skip patterns and request auto-fill settings.</p>
             </article>
             <article class="doc-card">
-                <h3>CBFTP Site</h3>
-                <p>Direct link to the CBFTP-side site editor and SITE RULES modal for the same sitename.</p>
+                <h3>FXP Backend Site</h3>
+                <p>Direct link to the FXP backend site editor and SITE RULES modal for the same sitename.</p>
             </article>
         </div>
     </section>
@@ -154,14 +154,14 @@
     </section>
 
     <section class="doc-section">
-        <h2>CBFTP Site editor</h2>
+        <h2>FXP Backend Site editor</h2>
         <p>
-            RaceTrade site configs and CBFTP site configs are different things. The <strong>Sites</strong>
-            list has <strong>Edit CBFTP Site</strong>, and each site editor has a <strong>CBFTP Site</strong>
-            tab. Use it for CBFTP addresses, login, base path, transfer flags, affils, section paths and skiplist.
+            RaceTrade site configs and FXP backend site configs are different things. The <strong>Sites</strong>
+            list has <strong>Edit FXP Backend Site</strong>, and each site editor has a <strong>FXP Backend Site</strong>
+            tab. Use it for FXP backend addresses, login, base path, transfer flags, affils, section paths and skiplist.
         </p>
         <p>
-            <strong>Get Site Rules</strong> sends <code>SITE RULES</code> to CBFTP and shows the result in a modal.
+            <strong>Get Site Rules</strong> sends <code>SITE RULES</code> to FXP backend and shows the result in a modal.
         </p>
     </section>
 
@@ -174,16 +174,16 @@
         <ol class="doc-steps">
             <li>Select the IRC section on the left.</li>
             <li>Tick <strong>Enabled for racing</strong>, or click the <strong>Racing/Off</strong> label in the left list.</li>
-            <li>Add one or more CBFTP mappings. Empty trigger regex means fallback/default.</li>
-            <li>Add <strong>CBFTP Mapping Rules</strong> under a mapping when only that CBFTP target needs extra filtering.</li>
+            <li>Add one or more FXP backend mappings. Empty trigger regex means fallback/default.</li>
+            <li>Add <strong>FXP backend Mapping Rules</strong> under a mapping when only that FXP backend target needs extra filtering.</li>
             <li>Add <strong>Section Rules</strong> when every mapping in this IRC section should use the same filter.</li>
             <li>Enable IMDB or TVMaze filters only when that section needs lookup checks; their genre, network and show type lists are under <strong>Lookup filters</strong>.</li>
             <li>Save the site after changing routing or filters.</li>
         </ol>
         <p>
             Core terms: <strong>IRC section</strong> is what the announce says, for example
-            <code>TV-DE</code> or <code>X264-HD</code>. <strong>CBFTP section</strong> is the shared
-            section name sent to CBFTP. <strong>Mapping</strong> is the link between them plus an
+            <code>TV-DE</code> or <code>X264-HD</code>. <strong>FXP backend section</strong> is the shared
+            section name sent to FXP backend. <strong>Mapping</strong> is the link between them plus an
             optional trigger regex and mapping rules.
         </p>
     </section>
@@ -192,7 +192,7 @@
         <h2>Section routing and mappings</h2>
         <p>
             When an announce arrives, RaceTrade parses the release name and IRC section,
-            checks that the IRC section is enabled, then picks a CBFTP mapping from the
+            checks that the IRC section is enabled, then picks a FXP backend mapping from the
             selected site's Sections tab.
         </p>
         <ol class="doc-steps">
@@ -201,7 +201,7 @@
             <li>It walks the mappings for that IRC section in order.</li>
             <li>A mapping with a trigger regex is only considered when the regex matches the release name.</li>
             <li>A mapping with an empty trigger acts as the default/catch-all mapping; keep it after more specific mappings.</li>
-            <li>The first mapping that is allowed by its trigger and rules becomes the CBFTP section for the race.</li>
+            <li>The first mapping that is allowed by its trigger and rules becomes the FXP backend section for the race.</li>
         </ol>
         <h3>Trigger regex</h3>
         <ul class="doc-list">
@@ -238,9 +238,9 @@
 <pre class="code">Release: Some.Show.S01E01.2160p.WEB.DV.HEVC-GRP
 IRC section: TV
 
-Mapping 1: CBFTP TV-2160P  Trigger: 2160p|UHD|HEVC   -> matches, race goes here
-Mapping 2: CBFTP TV-1080P  Trigger: /1080p|x264/i    -> not reached
-Mapping 3: CBFTP TV        Trigger: (empty)          -> not reached
+Mapping 1: FXP backend TV-2160P  Trigger: 2160p|UHD|HEVC   -> matches, race goes here
+Mapping 2: FXP backend TV-1080P  Trigger: /1080p|x264/i    -> not reached
+Mapping 3: FXP backend TV        Trigger: (empty)          -> not reached
 
 Useful patterns
 2160p|UHD|HEVC        one of these words appears
@@ -253,7 +253,7 @@ FRENCH|GERMAN|ITA     foreign language releases</pre>
     <section class="doc-section">
         <h2>Rule format</h2>
         <p>
-            Section Rules and CBFTP Mapping Rules use the same syntax:
+            Section Rules and FXP backend Mapping Rules use the same syntax:
         </p>
 <pre class="code">[key] operator value ACTION</pre>
         <ul class="doc-list">
@@ -341,15 +341,15 @@ FRENCH|GERMAN|ITA     foreign language releases</pre>
             <code>DROP</code>. Use <code>EXCEPT</code> when you need a whitelist carve-out.
         </p>
 <pre class="code">1. Section EXCEPT rules
-2. Mapping EXCEPT rules for the selected CBFTP mapping
+2. Mapping EXCEPT rules for the selected FXP backend mapping
 3. Section DROP rules
-4. Mapping DROP rules for the selected CBFTP mapping
-5. Mapping ALLOW rules for the selected CBFTP mapping
+4. Mapping DROP rules for the selected FXP backend mapping
+5. Mapping ALLOW rules for the selected FXP backend mapping
 6. Section ALLOW rules
 7. Default: ALLOW</pre>
         <p>
             Section rules apply to every mapping under that IRC section. Mapping rules apply
-            only to one CBFTP mapping.
+            only to one FXP backend mapping.
         </p>
     </section>
 
@@ -359,7 +359,7 @@ FRENCH|GERMAN|ITA     foreign language releases</pre>
             <article class="doc-card">
                 <h3>Section Rules</h3>
                 <p>
-                    Use these for broad filters that should affect every CBFTP mapping under
+                    Use these for broad filters that should affect every FXP backend mapping under
                     the selected IRC section.
                 </p>
 <pre class="code">[release] contains INTERNAL DROP
@@ -367,7 +367,7 @@ FRENCH|GERMAN|ITA     foreign language releases</pre>
 [group] isin BadGroup1,BadGroup2 DROP</pre>
             </article>
             <article class="doc-card">
-                <h3>CBFTP Mapping Rules</h3>
+                <h3>FXP backend Mapping Rules</h3>
                 <p>
                     Use these when only one mapping needs a special rule, for example a
                     2160p mapping, a strict group list, or a site-specific quality route.
@@ -431,23 +431,23 @@ Fallback mapping trigger: empty</pre>
         <h2>Real mapping example</h2>
         <p>
             Two sites can announce different IRC sections but still race into the same
-            shared CBFTP section.
+            shared FXP backend section.
         </p>
 <pre class="code">Site Alpha:
   IRC section: X264-HD-1080P
-  CBFTP mapping: MOVIES-HD
+  FXP backend mapping: MOVIES-HD
   Section Rules:
     [release] contains 720p DROP
     [release] contains CAM DROP
 
 Site Beta:
   IRC section: X264-HD
-  CBFTP mapping: MOVIES-HD
+  FXP backend mapping: MOVIES-HD
   Section Rules:
     [release] contains CAM DROP</pre>
         <p>
-            Result: both sites send accepted releases to CBFTP section <code>MOVIES-HD</code>,
-            but Site Alpha drops 720p while Site Beta does not. CBFTP still handles the
+            Result: both sites send accepted releases to FXP backend section <code>MOVIES-HD</code>,
+            but Site Alpha drops 720p while Site Beta does not. FXP backend still handles the
             real per-site paths inside its own site/section config.
         </p>
     </section>
@@ -466,7 +466,7 @@ Site Beta:
         <article class="doc-card">
             <div class="card-title">PRE MANAGER</div>
             <p>
-                The Pre page restores the old Affil Spread &amp; Pre Manager flow: fetch CBFTP sites,
+                The Pre page restores the old Affil Spread &amp; Pre Manager flow: fetch FXP backend sites,
                 configure affil directories and sections, refresh releases, distribute with FXP,
                 check completion, delete releases and send SITE PRE.
             </p>
@@ -475,7 +475,7 @@ Site Beta:
         <article class="doc-card">
             <div class="card-title">SEARCH</div>
             <p>
-                Search runs CBFTP <code>SITE SEARCH</code> across the selected sites. Results show
+                Search runs FXP backend <code>SITE SEARCH</code> across the selected sites. Results show
                 site, section, release and path. Double-click or right-click a result to open the
                 FXP modal, choose a destination site/path and queue the transfer.
             </p>
@@ -484,7 +484,7 @@ Site Beta:
         <article class="doc-card">
             <div class="card-title">FXP CLIENT</div>
             <p>
-                The FXP Client is the dual-pane CBFTP browser. Pick source and destination sites,
+                The FXP Client is the dual-pane FXP backend browser. Pick source and destination sites,
                 browse paths, select items, queue left-to-right or right-to-left FXP jobs, and delete
                 selected entries when needed.
             </p>
@@ -501,7 +501,7 @@ Site Beta:
         <article class="doc-card">
             <div class="card-title">LOGS</div>
             <p>
-                Logs are split by Application, IRC, CBFTP and Race. Use Logs for live diagnosis,
+                Logs are split by Application, IRC, FXP backend and Race. Use Logs for live diagnosis,
                 and use Test release to confirm why a release would race or be skipped.
             </p>
         </article>
@@ -529,7 +529,7 @@ Site Beta:
         <h2>Troubleshooting</h2>
         <ul class="doc-list">
             <li>If a site does not race, check that its IRC section is enabled in the Sections tab.</li>
-            <li>If CBFTP says a section is disabled, compare the IRC section and CBFTP mapping names.</li>
+            <li>If FXP backend says a section is disabled, compare the IRC section and FXP backend mapping names.</li>
             <li>If chat joins channels on the wrong network, check the ZNC Network field and channel list.</li>
             <li>If settings seem missing, confirm the data folder under Settings.</li>
             <li>If old passwords or Blowfish keys fail, migrate legacy <code>ENC:</code> secrets on the original Windows account.</li>

@@ -6,7 +6,7 @@ using System.Text;
 namespace RaceTrade.Engine.Security
 {
     /// <summary>
-    /// Encrypts secrets (site passwords, cbftp passwords, Blowfish keys) at rest.
+    /// Encrypts secrets (site passwords, FXP backend passwords, Blowfish keys) at rest.
     ///
     /// WHY THIS REPLACES THE OLD SecureConfig:
     /// The WinForms app used Windows DPAPI (ProtectedData, CurrentUser scope). That is

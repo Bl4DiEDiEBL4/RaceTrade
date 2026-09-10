@@ -57,8 +57,8 @@ namespace RaceTrader
 
                 if (!targetSite.SiteSettings.IncompleteAutoFxpEnabled)
                 {
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Info,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Info,
                         $"[IncompleteAutoFXP] Incomplete warning detected on '{targetName}', but auto FXP is disabled.",
                         releaseName: null,
                         targetSite: targetName);
@@ -67,8 +67,8 @@ namespace RaceTrader
 
                 if (!TryParseIncomplete(targetSite, line, channelName, out var entry, out var reason))
                 {
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Error,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Error,
                         $"[IncompleteAutoFXP] Could not parse incomplete warning on '{targetName}': {reason}",
                         releaseName: null,
                         targetSite: targetName);
@@ -77,8 +77,8 @@ namespace RaceTrader
 
                 if (!MarkAttempt(entry))
                 {
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Info,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Info,
                         $"[IncompleteAutoFXP] Repair already attempted recently for [{entry.Section}] {entry.Release} on '{targetName}', skipping duplicate warning.",
                         releaseName: entry.Release,
                         targetSite: targetName);
@@ -94,8 +94,8 @@ namespace RaceTrader
             catch (Exception ex)
             {
                 var siteName = targetSite?.SiteSettings?.Sitename;
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Error,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Error,
                     $"[IncompleteAutoFXP] Unexpected repair error: {ex.Message}",
                     releaseName: null,
                     targetSite: siteName);
@@ -207,16 +207,16 @@ namespace RaceTrader
                 .Where(s => !string.Equals(s.SiteSettings.Sitename, targetName, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            LogManager.LogCBFTP(
-                CBFTPEventType.Info,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Info,
                 $"[IncompleteAutoFXP] Detected incomplete [{entry.Section}] {entry.Release} on '{targetName}'. Searching {sourceSites.Count} source site(s).",
                 releaseName: entry.Release,
                 targetSite: targetName);
 
             if (sourceSites.Count == 0)
             {
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Info,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Info,
                     $"[IncompleteAutoFXP] No sites are marked as incomplete search sources for '{entry.Release}'.",
                     releaseName: entry.Release,
                     targetSite: targetName);
@@ -245,17 +245,17 @@ namespace RaceTrader
                     targetName,
                     sourceName);
 
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Info,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Info,
                     $"[IncompleteAutoFXP] Searching '{sourceName}' for '{searchName}' with '{searchCommand}'.",
                     releaseName: entry.Release,
                     targetSite: sourceName);
 
-                var rawSearch = await CbftpRequestHelper.RunRawAsync(searchCommand, sourceName, token);
+                var rawSearch = await FxpBackendRequestHelper.RunRawAsync(searchCommand, sourceName, token);
                 if (string.IsNullOrWhiteSpace(rawSearch))
                 {
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Info,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Info,
                         $"[IncompleteAutoFXP] No SITE SEARCH result for '{searchName}' on '{sourceName}'.",
                         releaseName: entry.Release,
                         targetSite: sourceName);
@@ -265,8 +265,8 @@ namespace RaceTrader
                 var srcPath = ExtractReleasePathFromSearch(rawSearch, searchName);
                 if (string.IsNullOrWhiteSpace(srcPath))
                 {
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Info,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Info,
                         $"[IncompleteAutoFXP] Could not extract source path for '{searchName}' on '{sourceName}'.",
                         releaseName: entry.Release,
                         targetSite: sourceName);
@@ -279,13 +279,13 @@ namespace RaceTrader
                     targetName,
                     sourceName);
 
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Info,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Info,
                     $"[IncompleteAutoFXP] Found '{searchName}' on '{sourceName}' at '{srcPath}'. Queueing FXP to '{targetName}:{dstPath}'.",
                     releaseName: entry.Release,
                     targetSite: targetName);
 
-                var ok = await CbftpRacer.StartRequestTransferJob(
+                var ok = await FxpBackendRacer.StartRequestTransferJob(
                     sourceName,
                     targetName,
                     dstPath,
@@ -295,23 +295,23 @@ namespace RaceTrader
 
                 if (ok)
                 {
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.SpreadJobSent,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.SpreadJobSent,
                         $"[IncompleteAutoFXP] Queued repair FXP for [{entry.Section}] {entry.Release}: {sourceName} -> {targetName}",
                         releaseName: entry.Release,
                         targetSite: targetName);
                     return;
                 }
 
-                LogManager.LogCBFTP(
-                    CBFTPEventType.SpreadJobFailed,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.SpreadJobFailed,
                     $"[IncompleteAutoFXP] Could not queue repair FXP from '{sourceName}' to '{targetName}'. Trying next source.",
                     releaseName: entry.Release,
                     targetSite: targetName);
             }
 
-            LogManager.LogCBFTP(
-                CBFTPEventType.SpreadJobFailed,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.SpreadJobFailed,
                 $"[IncompleteAutoFXP] No usable source found for [{entry.Section}] {entry.Release}.",
                 releaseName: entry.Release,
                 targetSite: targetName);

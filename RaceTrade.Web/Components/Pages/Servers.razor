@@ -1,12 +1,17 @@
 @page "/servers"
-@inject CbftpStore Store
+@inject FxpBackendStore Store
 @inject SiteStore SiteStore
 
-<PageTitle>CBFTP servers - RaceTrade</PageTitle>
+<PageTitle>FXP Backends - RaceTrade</PageTitle>
 
 <div class="page-head">
-    <h1><Icon Name="servers" Size="18" />CBFTP servers</h1>
+    <h1><Icon Name="servers" Size="18" />FXP Backends</h1>
     <button class="btn primary" @onclick="AddRow"><Icon Name="plus" Size="13" /><span>Add server</span></button>
+</div>
+
+<div class="callout">
+    <strong>Supported backends:</strong> add a <em>CBFTP</em> or <em>WeaveFXP</em> server here.
+    RaceTrade uses the same FXP backend API for testing, importing sites and sending race jobs.
 </div>
 
 @if (_error is not null)
@@ -15,10 +20,10 @@
 }
 
 <div class="panel server-panel">
-    @if (_config.CbftpServers.Count == 0)
+    @if (_config.FxpBackends.Count == 0)
     {
         <div class="empty">
-            No cbftp servers configured. Add one - without it there is nowhere to send
+            No FXP backends configured. Add one - without it there is nowhere to send
             race jobs.
         </div>
     }
@@ -26,13 +31,14 @@
     {
         <table class="grid">
             <thead>
-                <tr><th>ID</th><th>NAME</th><th>HOST</th><th>PORT</th><th>PASSWORD</th><th>PROFILE</th><th></th></tr>
+                <tr><th>ID</th><th>NAME</th><th>HOST</th><th>PORT</th><th>PASSWORD</th><th>PROFILE</th><th>STATUS</th><th></th></tr>
             </thead>
             <tbody>
-                @for (var i = 0; i < _config.CbftpServers.Count; i++)
+                @for (var i = 0; i < _config.FxpBackends.Count; i++)
                 {
                     var idx = i;
-                    var s = _config.CbftpServers[idx];
+                    var s = _config.FxpBackends[idx];
+                    var rowTestResult = _testResults.TryGetValue(idx, out var result) ? result : null;
                     <tr>
                         <td><input type="text" value="@s.Id" @oninput="e => s.Id = e.Value?.ToString()" placeholder="1" class="w-xs" /></td>
                         <td><input type="text" value="@s.Name" @oninput="e => s.Name = e.Value?.ToString()" placeholder="local" /></td>
@@ -44,8 +50,41 @@
                                    placeholder="@(HasStoredPassword(idx) ? "(unchanged)" : "")" />
                         </td>
                         <td><input type="text" value="@s.Profile" @oninput="e => s.Profile = e.Value?.ToString()" placeholder="default" /></td>
-                        <td class="right"><button class="btn danger" @onclick="() => RemoveRow(idx)"><Icon Name="trash" Size="13" /><span>Remove</span></button></td>
+                        <td>
+                            <button type="button"
+                                    class="pill status-toggle @(s.Disabled ? "off" : "on")"
+                                    title="@(s.Disabled ? "Enable this FXP backend" : "Disable this FXP backend")"
+                                    @onclick="() => ToggleServerDisabled(idx)">
+                                @(s.Disabled ? "disabled" : "enabled")
+                            </button>
+                        </td>
+                        <td class="right server-row-actions">
+                            <button class="btn" @onclick="() => TestServer(idx)" disabled="@(_testingServerIndex is not null)">
+                                <Icon Name="test" Size="13" />
+                                <span>@(_testingServerIndex == idx ? "Testing..." : "Test")</span>
+                            </button>
+                            <button class="btn danger" @onclick="() => RemoveRow(idx)"><Icon Name="trash" Size="13" /><span>Remove</span></button>
+                        </td>
                     </tr>
+                    @if (rowTestResult is not null)
+                    {
+                        <tr class="server-test-row">
+                            <td colspan="8">
+                                <div class="fxp-backend-test-result @((rowTestResult.Success ? "ok" : "err"))">
+                                    <strong>@(rowTestResult.Success ? "FXP backend test passed" : "FXP backend test failed")</strong>
+                                    <span>@rowTestResult.Message</span>
+                                    @if (!string.IsNullOrWhiteSpace(rowTestResult.Endpoint))
+                                    {
+                                        <code>@rowTestResult.Endpoint</code>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(rowTestResult.ResponsePreview))
+                                    {
+                                        <pre>@rowTestResult.ResponsePreview</pre>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
                 }
             </tbody>
         </table>
@@ -54,44 +93,24 @@
     <div class="form-actions">
         <button class="btn primary" @onclick="Save"><Icon Name="save" Size="13" /><span>Save</span></button>
         <button class="btn" @onclick="Reload"><Icon Name="refresh" Size="13" /><span>Reload</span></button>
-        <button class="btn" @onclick="TestSelected" disabled="@(_testingServer || !_config.CbftpServers.Any())">
-            <Icon Name="test" Size="13" />
-            <span>@(_testingServer ? "Testing..." : "Test")</span>
-        </button>
     </div>
-
-    @if (_testResult is not null)
-    {
-        <div class="cbftp-test-result @(_testResult.Success ? "ok" : "err")">
-            <strong>@(_testResult.Success ? "CBFTP test passed" : "CBFTP test failed")</strong>
-            <span>@_testResult.Message</span>
-            @if (!string.IsNullOrWhiteSpace(_testResult.Endpoint))
-            {
-                <code>@_testResult.Endpoint</code>
-            }
-            @if (!string.IsNullOrWhiteSpace(_testResult.ResponsePreview))
-            {
-                <pre>@_testResult.ResponsePreview</pre>
-            }
-        </div>
-    }
 </div>
 
 <div class="panel form import-panel">
-    <h2><Icon Name="download" Size="14" />IMPORT SITES FROM CBFTP</h2>
+    <h2><Icon Name="download" Size="14" />IMPORT SITES FROM FXP BACKEND</h2>
     <p class="fh">
-        Fetches sites and CBFTP sections from the selected server, then creates matching
+        Fetches sites and sections from the selected FXP backend, then creates matching
         RaceTrade site configs. You still configure IRC host, bot nick and channels after import.
     </p>
 
     <div class="import-toolbar">
-        <select @bind="_selectedServerId" disabled="@(!_config.CbftpServers.Any() || _fetching || _importing)">
-            @foreach (var server in _config.CbftpServers)
+        <select @bind="_selectedServerId" disabled="@(!HasActiveServers || _fetching || _importing)">
+            @foreach (var server in ActiveServers)
             {
                 <option value="@server.Id">@DisplayServer(server)</option>
             }
         </select>
-        <button class="btn" @onclick="FetchSites" disabled="@(!_config.CbftpServers.Any() || _fetching || _importing)">
+        <button class="btn" @onclick="FetchSites" disabled="@(!HasActiveServers || _fetching || _importing)">
             <Icon Name="refresh" Size="13" />
             <span>@(_fetching ? "Fetching..." : "Fetch sites")</span>
         </button>
@@ -154,7 +173,7 @@
 @code {
     private sealed class ImportSiteRow
     {
-        public required CbftpSite Site { get; init; }
+        public required FxpBackendSite Site { get; init; }
         public bool Selected { get; set; } = true;
         public bool Exists { get; set; }
         public string Address => $"{Site.PrimaryAddress}:{Site.Port}";
@@ -167,15 +186,17 @@
     private string? _error;
     private string? _syncError;
     private string? _syncStatus;
-    private CbftpTestResult? _testResult;
     private string _selectedServerId = "";
     private bool _fetching;
     private bool _importing;
-    private bool _testingServer;
     private bool _overwriteExisting;
+    private int? _testingServerIndex;
+    private readonly Dictionary<int, FxpBackendTestResult> _testResults = new();
     private readonly List<ImportSiteRow> _fetchedSites = new();
 
     private int SelectedCount => _fetchedSites.Count(s => s.Selected);
+    private bool HasActiveServers => _config.FxpBackends.Any(FxpBackendStore.IsActive);
+    private IEnumerable<FxpBackend> ActiveServers => _config.FxpBackends.Where(FxpBackendStore.IsActive);
 
     protected override void OnInitialized() => Reload();
 
@@ -184,16 +205,17 @@
         try
         {
             _error = null;
-            _testResult = null;
+            _testResults.Clear();
+            _testingServerIndex = null;
             _config = Store.Load();
 
             // Stored (encrypted) passwords are kept aside and never rendered; the input
             // starts empty and only overwrites the stored value when something is typed.
-            _storedPasswords = _config.CbftpServers.Select(s => s.Password ?? "").ToList();
-            _passwords = _config.CbftpServers.Select(_ => "").ToList();
+            _storedPasswords = _config.FxpBackends.Select(s => s.Password ?? "").ToList();
+            _passwords = _config.FxpBackends.Select(_ => "").ToList();
 
-            if (!_config.CbftpServers.Any(s => string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase)))
-                _selectedServerId = _config.CbftpServers.FirstOrDefault()?.Id ?? "";
+            if (!_config.FxpBackends.Any(s => FxpBackendStore.IsActive(s) && string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase)))
+                _selectedServerId = _config.FxpBackends.FirstOrDefault(FxpBackendStore.IsActive)?.Id ?? "";
         }
         catch (Exception ex)
         {
@@ -208,25 +230,34 @@
 
     private void AddRow()
     {
-        _config.CbftpServers.Add(new CbftpServer
+        _config.FxpBackends.Add(new FxpBackend
         {
-            Id = (_config.CbftpServers.Count + 1).ToString(),
+            Id = (_config.FxpBackends.Count + 1).ToString(),
             Port = "55477"
         });
         _passwords.Add("");
         _storedPasswords.Add("");
-        _selectedServerId = _config.CbftpServers.Last().Id ?? "";
-        _testResult = null;
+        _selectedServerId = _config.FxpBackends.Last().Id ?? "";
+        _testResults.Clear();
     }
 
     private void RemoveRow(int i)
     {
-        _config.CbftpServers.RemoveAt(i);
+        _config.FxpBackends.RemoveAt(i);
         _passwords.RemoveAt(i);
         _storedPasswords.RemoveAt(i);
-        if (!_config.CbftpServers.Any(s => string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase)))
-            _selectedServerId = _config.CbftpServers.FirstOrDefault()?.Id ?? "";
-        _testResult = null;
+        if (!_config.FxpBackends.Any(s => FxpBackendStore.IsActive(s) && string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase)))
+            _selectedServerId = _config.FxpBackends.FirstOrDefault(FxpBackendStore.IsActive)?.Id ?? "";
+        _testResults.Clear();
+    }
+
+    private void ToggleServerDisabled(int i)
+    {
+        if (i < 0 || i >= _config.FxpBackends.Count)
+            return;
+
+        _config.FxpBackends[i].Disabled = !_config.FxpBackends[i].Disabled;
+        Save();
     }
 
     private void Save()
@@ -234,11 +265,12 @@
         try
         {
             _error = null;
-            _testResult = null;
+            _testResults.Clear();
+            _testingServerIndex = null;
 
-            for (var i = 0; i < _config.CbftpServers.Count; i++)
+            for (var i = 0; i < _config.FxpBackends.Count; i++)
             {
-                _config.CbftpServers[i].Password = string.IsNullOrEmpty(_passwords[i])
+                _config.FxpBackends[i].Password = string.IsNullOrEmpty(_passwords[i])
                     ? _storedPasswords[i]   // untouched: keep what was already stored
                     : _passwords[i];        // newly typed: SaveAsync encrypts it
             }
@@ -253,29 +285,27 @@
         }
     }
 
-    private async Task TestSelected()
+    private async Task TestServer(int idx)
     {
-        var server = SelectedServer();
-        if (server is null)
+        if (idx < 0 || idx >= _config.FxpBackends.Count)
         {
-            _testResult = CbftpTestResult.Fail("Select a CBFTP server first.");
             return;
         }
 
         try
         {
-            _testingServer = true;
+            _testingServerIndex = idx;
             _error = null;
-            _testResult = null;
-            _testResult = await Store.TestAsync(CloneForTest(server));
+            _testResults.Remove(idx);
+            _testResults[idx] = await Store.TestAsync(CloneForTest(_config.FxpBackends[idx]));
         }
         catch (Exception ex)
         {
-            _testResult = CbftpTestResult.Fail(ex.Message);
+            _testResults[idx] = FxpBackendTestResult.Fail(ex.Message);
         }
         finally
         {
-            _testingServer = false;
+            _testingServerIndex = null;
         }
     }
 
@@ -284,7 +314,7 @@
         var server = SelectedServer();
         if (server is null)
         {
-            _syncError = "Select a CBFTP server first.";
+            _syncError = "Select an FXP backend first.";
             return;
         }
 
@@ -296,7 +326,7 @@
             _fetchedSites.Clear();
 
             var password = string.IsNullOrWhiteSpace(server.Password) ? "" : SecureConfig.Decrypt(server.Password);
-            var result = await CbftpSync.FetchSitesFromCbftp(server.Host ?? "", server.Port ?? "", password);
+            var result = await FxpBackendSync.FetchSitesFromFxpBackend(server.Host ?? "", server.Port ?? "", password);
 
             if (!result.IsSuccess)
             {
@@ -316,7 +346,7 @@
                 }));
 
             _syncStatus = _fetchedSites.Count == 0
-                ? "No sites found in CBFTP."
+                ? "No sites found on the selected FXP backend."
                 : $"Found {_fetchedSites.Count} site(s). Select what you want to import.";
         }
         catch (Exception ex)
@@ -350,7 +380,7 @@
             _importing = true;
             _syncError = null;
 
-            var result = SiteStore.ImportFromCbftpSites(selected, _overwriteExisting);
+            var result = SiteStore.ImportFromFxpBackendSites(selected, _overwriteExisting, SelectedServer()?.Id);
             _syncStatus = $"Import complete: {result.Imported} imported, {result.Skipped} skipped, {result.Errors} errors, {result.SectionsAdded} section(s) added.";
 
             if (result.Errors > 0)
@@ -369,27 +399,28 @@
         }
     }
 
-    private CbftpServer? SelectedServer() =>
-        _config.CbftpServers.FirstOrDefault(s => string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase))
-        ?? _config.CbftpServers.FirstOrDefault();
+    private FxpBackend? SelectedServer() =>
+        _config.FxpBackends.FirstOrDefault(s => FxpBackendStore.IsActive(s) && string.Equals(s.Id, _selectedServerId, StringComparison.OrdinalIgnoreCase))
+        ?? _config.FxpBackends.FirstOrDefault(FxpBackendStore.IsActive);
 
-    private CbftpServer CloneForTest(CbftpServer server)
+    private FxpBackend CloneForTest(FxpBackend server)
     {
-        var idx = _config.CbftpServers.IndexOf(server);
+        var idx = _config.FxpBackends.IndexOf(server);
         var password = idx >= 0 && idx < _passwords.Count && !string.IsNullOrEmpty(_passwords[idx])
             ? _passwords[idx]
             : idx >= 0 && idx < _storedPasswords.Count
                 ? _storedPasswords[idx]
                 : server.Password;
 
-        return new CbftpServer
+        return new FxpBackend
         {
             Id = server.Id,
             Name = server.Name,
             Host = server.Host,
             Port = server.Port,
             Password = password,
-            Profile = server.Profile
+            Profile = server.Profile,
+            Disabled = server.Disabled
         };
     }
 
@@ -403,7 +434,7 @@
             row.Exists = existing.Contains(row.Site.Name);
     }
 
-    private static string DisplayServer(CbftpServer server)
+    private static string DisplayServer(FxpBackend server)
     {
         var name = string.IsNullOrWhiteSpace(server.Name) ? server.Id : server.Name;
         return $"{name} - {server.Host}:{server.Port}";

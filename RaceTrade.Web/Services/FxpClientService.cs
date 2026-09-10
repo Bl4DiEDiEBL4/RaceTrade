@@ -21,19 +21,19 @@ public sealed class FxpClientService
     private const long MaxTextFileBytes = 2 * 1024 * 1024;
     private const long MaxImageFileBytes = 15 * 1024 * 1024;
 
-    private readonly CbftpStore _store;
+    private readonly FxpBackendStore _store;
 
-    public FxpClientService(CbftpStore store)
+    public FxpClientService(FxpBackendStore store)
     {
         _store = store;
     }
 
-    public IReadOnlyList<CbftpServer> LoadServers() => _store.Load().CbftpServers;
+    public IReadOnlyList<FxpBackend> LoadServers() => _store.LoadActiveServers();
 
-    public async Task<IReadOnlyList<string>> FetchSitesAsync(CbftpServer server)
+    public async Task<IReadOnlyList<string>> FetchSitesAsync(FxpBackend server)
     {
         var password = DecryptPassword(server);
-        var result = await CbftpSync.FetchSitesFromCbftp(server.Host ?? "", server.Port ?? "", password);
+        var result = await FxpBackendSync.FetchSitesFromFxpBackend(server.Host ?? "", server.Port ?? "", password);
         if (!result.IsSuccess)
             throw new InvalidOperationException(result.ErrorMessage);
 
@@ -44,7 +44,7 @@ public sealed class FxpClientService
             .ToList()!;
     }
 
-    public async Task<IReadOnlyList<FxpFileItem>> BrowseAsync(CbftpServer server, string siteName, string path)
+    public async Task<IReadOnlyList<FxpFileItem>> BrowseAsync(FxpBackend server, string siteName, string path)
     {
         path = NormalizePath(path);
 
@@ -73,7 +73,7 @@ public sealed class FxpClientService
     }
 
     public async Task<FxpOperationResult> QueueTransferAsync(
-        CbftpServer server,
+        FxpBackend server,
         string sourceSite,
         string sourcePath,
         string destinationSite,
@@ -97,7 +97,7 @@ public sealed class FxpClientService
             if (string.IsNullOrWhiteSpace(releaseName))
                 releaseName = item.Name;
 
-            var result = await CbftpRacer.StartTransferJobFxp(
+            var result = await FxpBackendRacer.StartTransferJobFxp(
                 srcSite: sourceSite,
                 srcSectionOrPath: parentPath,
                 srcIsSection: false,
@@ -107,7 +107,7 @@ public sealed class FxpClientService
                 host: server.Host ?? "",
                 port: server.Port ?? "",
                 password: password,
-                serverName: server.Name ?? server.Id ?? "cbftp");
+                serverName: server.Name ?? server.Id ?? "FXP backend");
 
             if (result.Success)
             {
@@ -130,20 +130,20 @@ public sealed class FxpClientService
     }
 
     /// <summary>
-    /// Asks cbftp how a queued job is doing.
+    /// Asks FXP backend how a queued job is doing.
     ///
-    /// "Queued" only means cbftp accepted the POST — it says nothing about whether the
+    /// "Queued" only means FXP backend accepted the POST — it says nothing about whether the
     /// transfer ran. The WinForms client polled this and reported DONE/FAILED/RUNNING;
     /// the web client did not, which is why a job that never moved looked identical to
     /// one that finished.
     ///
-    /// Returns null when cbftp does not know the job (404) or cannot be reached.
+    /// Returns null when FXP backend does not know the job (404) or cannot be reached.
     /// </summary>
     public async Task<FxpJobProgress?> GetJobProgressAsync(string releaseName)
     {
         try
         {
-            var stats = await CbftpRacer.GetTransferJobStats(releaseName);
+            var stats = await FxpBackendRacer.GetTransferJobStats(releaseName);
             if (stats is null)
                 return null;
 
@@ -178,7 +178,7 @@ public sealed class FxpClientService
         return $"{len:0.##} {units[order]}";
     }
 
-    public async Task<FxpOperationResult> DeleteAsync(CbftpServer server, string siteName, string currentPath, IEnumerable<FxpFileItem> items)
+    public async Task<FxpOperationResult> DeleteAsync(FxpBackend server, string siteName, string currentPath, IEnumerable<FxpFileItem> items)
     {
         currentPath = NormalizePath(currentPath);
         var logs = new List<string>();
@@ -216,7 +216,7 @@ public sealed class FxpClientService
             logs);
     }
 
-    public async Task<FxpViewedFile> ReadFileAsync(CbftpServer server, string siteName, string filePath, string fileName)
+    public async Task<FxpViewedFile> ReadFileAsync(FxpBackend server, string siteName, string filePath, string fileName)
     {
         filePath = NormalizePath(filePath);
         var extension = Path.GetExtension(fileName);
@@ -280,7 +280,7 @@ public sealed class FxpClientService
         return TextExtensions.Contains(extension) || ImageExtensions.Contains(extension);
     }
 
-    internal static string BuildEndpoint(CbftpServer server)
+    internal static string BuildEndpoint(FxpBackend server)
     {
         var host = server.Host ?? "";
         var port = server.Port ?? "";
@@ -385,10 +385,10 @@ public sealed class FxpClientService
         '\u00B0', '\u2219', '\u00B7', '\u221A', '\u207F', '\u00B2', '\u25A0', '\u00A0'
     };
 
-    private static string DecryptPassword(CbftpServer server) =>
+    private static string DecryptPassword(FxpBackend server) =>
         string.IsNullOrWhiteSpace(server.Password) ? "" : SecureConfig.Decrypt(server.Password);
 
-    private static HttpClient CreateClient(CbftpServer server, int timeoutSeconds)
+    private static HttpClient CreateClient(FxpBackend server, int timeoutSeconds)
     {
         var handler = new HttpClientHandler
         {
@@ -546,7 +546,7 @@ public sealed class FxpFileItem
 }
 
 /// <summary>
-/// Result of an FXP action. <paramref name="Queued"/> holds the job names cbftp accepted,
+/// Result of an FXP action. <paramref name="Queued"/> holds the job names FXP backend accepted,
 /// so the page can follow them to completion instead of assuming "queued" means "done".
 /// </summary>
 public sealed record FxpOperationResult(
@@ -575,7 +575,7 @@ public sealed record FxpViewedFile(
     public string ViewerTitle => IsImage ? "Image Viewer" : IsNfo ? "NFO Viewer" : "Text Viewer";
 }
 
-/// <summary>A cbftp transfer job as it currently stands.</summary>
+/// <summary>A FXP backend transfer job as it currently stands.</summary>
 public sealed record FxpJobProgress(
     string Name,
     string Status,
@@ -597,7 +597,7 @@ public sealed record FxpJobProgress(
     public bool IsFinished => IsDone || IsFailed;
 
     /// <summary>
-    /// 0-100. Based on the file count, which is the only progress cbftp reports for a
+    /// 0-100. Based on the file count, which is the only progress FXP backend reports for a
     /// transfer job. Null when it reports nothing, so the bar can go indeterminate
     /// instead of sitting at a fake 0%.
     /// </summary>
@@ -607,7 +607,7 @@ public sealed record FxpJobProgress(
         : null;
 
     /// <summary>
-    /// cbftp reports whole seconds, so a transfer that took under two of them produces a
+    /// FXP backend reports whole seconds, so a transfer that took under two of them produces a
     /// wild figure (a 1.25 GB job "at 1282 MB/s"). Better to say nothing than to lie.
     /// </summary>
     public bool HasMeaningfulSpeed => AverageSpeed > 0 && Elapsed.TotalSeconds >= 2;

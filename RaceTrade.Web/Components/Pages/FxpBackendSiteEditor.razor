@@ -1,17 +1,18 @@
-@page "/cbftp-site"
-@page "/cbftp-site/{SiteName}"
-@inject CbftpSiteService CbftpSites
+@page "/fxp-backend-site"
+@page "/fxp-backend-site/{SiteName}"
+@inject FxpBackendSiteService FxpBackendSites
 @inject NavigationManager Nav
 
-<PageTitle>CBFTP Site - RaceTrade</PageTitle>
+<PageTitle>FXP Backend Site - RaceTrade</PageTitle>
 
 <div class="page-head">
-    <h1><Icon Name="servers" Size="18" />CBFTP Site</h1>
+    <h1><Icon Name="servers" Size="18" />FXP Backend Site</h1>
     <div class="head-actions">
         <button class="btn" @onclick="LoadSites" disabled="@Busy"><Icon Name="refresh" Size="13" /><span>Load sites</span></button>
         <button class="btn" @onclick="ShowRules" disabled="@(Busy || string.IsNullOrWhiteSpace(_model.Name))"><Icon Name="logs" Size="13" /><span>Get site rules</span></button>
         <button class="btn" @onclick="OpenDuplicate" disabled="@(Busy || string.IsNullOrWhiteSpace(_model.Name))"><Icon Name="copy" Size="13" /><span>Duplicate</span></button>
-        <button class="btn primary" @onclick="Save" disabled="@Busy"><Icon Name="save" Size="13" /><span>Save CBFTP site</span></button>
+        <button class="btn primary" @onclick="Save" disabled="@Busy"><Icon Name="save" Size="13" /><span>Save FXP backend site</span></button>
+        <a class="btn" href="servers"><Icon Name="back" Size="13" /><span>Back</span></a>
     </div>
 </div>
 
@@ -31,9 +32,9 @@
     }
 </div>
 
-<div class="panel form cbftp-site-editor">
+<div class="panel form fxp-backend-site-editor">
     <div class="toolbar embedded">
-        <label>CBFTP server</label>
+        <label>FXP backend</label>
         <select @bind="_serverId" disabled="@Busy">
             @foreach (var server in _servers)
             {
@@ -48,12 +49,12 @@
                 <option value="@site">@site</option>
             }
         </select>
-        <button class="btn" @onclick="NewSite" disabled="@Busy"><Icon Name="plus" Size="13" /><span>New CBFTP site</span></button>
+        <button class="btn" @onclick="NewSite" disabled="@Busy"><Icon Name="plus" Size="13" /><span>New FXP backend site</span></button>
     </div>
 
     @if (_tab == "Basic")
     {
-        <div class="cbftp-edit-grid">
+        <div class="fxp-backend-edit-grid">
             <div class="subcard">
                 <h2>BASIC</h2>
                 <div class="form-grid">
@@ -94,7 +95,7 @@
 
     @if (_tab == "Transfer")
     {
-        <div class="cbftp-edit-grid">
+        <div class="fxp-backend-edit-grid">
             <div class="subcard">
                 <h2>TLS / TRANSFER</h2>
                 <div class="form-grid">
@@ -169,7 +170,7 @@
     @if (_tab == "Sections")
     {
         <div class="list-editor">
-            <div class="row-actions cbftp-section-add">
+            <div class="row-actions fxp-backend-section-add">
                 <input type="text" @bind="_newSectionName" @bind:event="oninput" placeholder="TV-1080P" />
                 <input type="text" @bind="_newSectionPath" @bind:event="oninput" placeholder="/TV-1080P" />
                 <button class="btn primary" @onclick="AddSection"><Icon Name="plus" Size="13" /><span>Add section</span></button>
@@ -193,7 +194,7 @@
     @if (_tab == "Skiplist")
     {
         <div class="list-editor">
-            <div class="row-actions cbftp-skip-add">
+            <div class="row-actions fxp-backend-skip-add">
                 <select @bind="_newSkip.Action">@Options("ALLOW", "DENY", "UNIQUE", "SIMILAR")</select>
                 <select @bind="_newSkip.Scope">@Options("IN_RACE", "ALL")</select>
                 <input type="text" @bind="_newSkip.Pattern" @bind:event="oninput" placeholder="*FRENCH*" />
@@ -241,24 +242,24 @@
     <div class="modal-backdrop" @onclick="CloseDuplicate">
         <div class="modal-card duplicate-modal" @onclick:stopPropagation="true">
             <div class="modal-head">
-                <h2>Duplicate CBFTP Site</h2>
+                <h2>Duplicate FXP Backend Site</h2>
                 <button class="btn icon-only" @onclick="CloseDuplicate" aria-label="Close"><Icon Name="close" Size="15" /></button>
             </div>
             <div class="modal-body duplicate-body">
                 <div class="selected-block">
-                    <span class="label">Source CBFTP site</span>
+                    <span class="label">Source FXP backend site</span>
                     <strong>@_model.Name</strong>
                 </div>
-                <label>New CBFTP site name</label>
+                <label>New FXP backend site name</label>
                 <input type="text" @bind="_duplicateName" @bind:event="oninput" placeholder="NEW-SITE" />
                 <p class="hint">
-                    Keep this identical to the RaceTrade site name. RaceTrade finds the CBFTP site by name
+                    Keep this identical to the RaceTrade site name. RaceTrade finds the FXP backend site by name
                     when testing, browsing, FXP'ing and racing.
                 </p>
                 <div class="modal-actions">
                     <button class="btn" @onclick="CloseDuplicate" disabled="@Busy">Cancel</button>
                     <button class="btn primary" @onclick="ConfirmDuplicate" disabled="@Busy">
-                        <Icon Name="copy" Size="13" /><span>Duplicate CBFTP site</span>
+                        <Icon Name="copy" Size="13" /><span>Duplicate FXP backend site</span>
                     </button>
                 </div>
             </div>
@@ -270,12 +271,12 @@
     [Parameter] public string? SiteName { get; set; }
 
     private static readonly string[] Tabs = { "Basic", "Transfer", "Affils", "Sections", "Skiplist" };
-    private List<CbftpServer> _servers = new();
+    private List<FxpBackend> _servers = new();
     private List<string> _siteNames = new();
     private string _serverId = "";
     private string _selectedSiteName = "";
     private string _tab = "Basic";
-    private CbftpSiteEditModel _model = CbftpSiteService.New();
+    private FxpBackendSiteEditModel _model = FxpBackendSiteService.New();
     private string? _error;
     private string? _status;
     private bool Busy { get; set; }
@@ -286,11 +287,11 @@
     private string _newAffil = "";
     private string _newSectionName = "";
     private string _newSectionPath = "";
-    private CbftpSkiplistEntry _newSkip = new();
+    private FxpBackendSkiplistEntry _newSkip = new();
 
     protected override async Task OnInitializedAsync()
     {
-        _servers = CbftpSites.LoadServers().ToList();
+        _servers = FxpBackendSites.LoadServers().ToList();
         _serverId = _servers.FirstOrDefault()?.Id ?? "";
         if (!string.IsNullOrWhiteSpace(SiteName))
         {
@@ -308,14 +309,14 @@
         if (server is null)
         {
             _status = null;
-            _error = "Add a CBFTP server first.";
+            _error = "Add an FXP backend first.";
             return;
         }
 
-        _siteNames = (await CbftpSites.LoadSiteNamesAsync(server)).ToList();
+        _siteNames = (await FxpBackendSites.LoadSiteNamesAsync(server)).ToList();
         if (!string.IsNullOrWhiteSpace(SiteName) && _siteNames.Contains(SiteName, StringComparer.OrdinalIgnoreCase))
             _selectedSiteName = SiteName;
-        _status = $"Loaded {_siteNames.Count} CBFTP site(s).";
+        _status = $"Loaded {_siteNames.Count} FXP backend site(s).";
     });
 
     private async Task LoadSelected()
@@ -326,8 +327,8 @@
 
         await RunAsync(async () =>
         {
-            _model = await CbftpSites.LoadSiteAsync(server, _selectedSiteName);
-            _status = $"Loaded CBFTP site '{_model.Name}'.";
+            _model = await FxpBackendSites.LoadSiteAsync(server, _selectedSiteName);
+            _status = $"Loaded FXP backend site '{_model.Name}'.";
         });
     }
 
@@ -336,16 +337,16 @@
         var server = SelectedServer();
         if (server is null)
         {
-            _error = "Add a CBFTP server first.";
+            _error = "Add an FXP backend first.";
             return;
         }
 
         await RunAsync(async () =>
         {
-            await CbftpSites.SaveSiteAsync(server, _model);
+            await FxpBackendSites.SaveSiteAsync(server, _model);
             _model.OriginalName = _model.Name;
             _selectedSiteName = _model.Name;
-            _status = $"Saved CBFTP site '{_model.Name}'.";
+            _status = $"Saved FXP backend site '{_model.Name}'.";
             await LoadSites();
         });
     }
@@ -358,9 +359,9 @@
 
         await RunAsync(async () =>
         {
-            _rulesText = await CbftpSites.GetSiteRulesAsync(server, _model.Name);
+            _rulesText = await FxpBackendSites.GetSiteRulesAsync(server, _model.Name);
             if (string.IsNullOrWhiteSpace(_rulesText))
-                _rulesText = "No rules returned from CBFTP.";
+                _rulesText = "No rules returned from FXP backend.";
             _showRules = true;
         });
     }
@@ -380,9 +381,9 @@
     private void NewSite()
     {
         _selectedSiteName = "";
-        _model = CbftpSiteService.New(SiteName ?? "");
+        _model = FxpBackendSiteService.New(SiteName ?? "");
         _tab = "Basic";
-        _status = "New CBFTP site.";
+        _status = "New FXP backend site.";
     }
 
     private void OpenDuplicate()
@@ -403,19 +404,19 @@
         var server = SelectedServer();
         if (server is null)
         {
-            _error = "Add a CBFTP server first.";
+            _error = "Add an FXP backend first.";
             return;
         }
 
         var sourceName = _model.Name;
         await RunAsync(async () =>
         {
-            var copy = await CbftpSites.DuplicateSiteAsync(server, sourceName, _duplicateName);
+            var copy = await FxpBackendSites.DuplicateSiteAsync(server, sourceName, _duplicateName);
             _model = copy;
             _selectedSiteName = copy.Name;
-            _siteNames = (await CbftpSites.LoadSiteNamesAsync(server)).ToList();
+            _siteNames = (await FxpBackendSites.LoadSiteNamesAsync(server)).ToList();
             _tab = "Basic";
-            _status = $"Duplicated CBFTP site '{sourceName}' as '{copy.Name}'. Keep the RaceTrade site name the same.";
+            _status = $"Duplicated FXP backend site '{sourceName}' as '{copy.Name}'. Keep the RaceTrade site name the same.";
             CloseDuplicate();
         });
     }
@@ -435,7 +436,7 @@
         if (name.Length == 0 || path.Length == 0)
             return;
 
-        _model.Sections.Add(new CbftpSiteSection { Name = name, Path = path });
+        _model.Sections.Add(new FxpBackendSiteSection { Name = name, Path = path });
         _newSectionName = "";
         _newSectionPath = "";
     }
@@ -446,7 +447,7 @@
             return;
 
         _model.Skiplist.Add(_newSkip);
-        _newSkip = new CbftpSkiplistEntry();
+        _newSkip = new FxpBackendSkiplistEntry();
     }
 
     private async Task RunAsync(Func<Task> action)
@@ -467,10 +468,10 @@
         }
     }
 
-    private CbftpServer? SelectedServer() =>
+    private FxpBackend? SelectedServer() =>
         _servers.FirstOrDefault(s => string.Equals(s.Id, _serverId, StringComparison.OrdinalIgnoreCase));
 
-    private static string DisplayServer(CbftpServer server) =>
+    private static string DisplayServer(FxpBackend server) =>
         $"{server.Name ?? server.Id} - {server.Host}:{server.Port}";
 
     private void CloseRules() => _showRules = false;

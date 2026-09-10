@@ -10,20 +10,20 @@ using Newtonsoft.Json.Linq;
 using RaceTrade;
 
 /// <summary>
-/// Handles synchronization with CBFTP API to fetch sites and sections.
+/// Handles synchronization with FXP backend API to fetch sites and sections.
 /// </summary>
 /// 
 
-public class CbftpSync
+public class FxpBackendSync
 {
     /// <summary>
-    /// Fetches all sites and their sections from CBFTP API.
+    /// Fetches all sites and their sections from FXP backend API.
     /// </summary>
-    public static async Task<CbftpSyncResult> FetchSitesFromCbftp(string host, string port, string password)
+    public static async Task<FxpBackendSyncResult> FetchSitesFromFxpBackend(string host, string port, string password)
     {
         try
         {
-            LogManager.Info($"Connecting to CBFTP at {host}:{port} to fetch sites...");
+            LogManager.Info($"Connecting to FXP backend at {host}:{port} to fetch sites...");
 
             using var handler = new HttpClientHandler
             {
@@ -51,15 +51,15 @@ public class CbftpSync
             var response = await client.GetAsync($"{endpoint}/sites");
             if (!response.IsSuccessStatusCode)
             {
-                return CbftpSyncResult.Failed($"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}");
+                return FxpBackendSyncResult.Failed($"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}");
             }
 
             var responseText = await response.Content.ReadAsStringAsync();
             var sitesArray = JArray.Parse(responseText);
 
-            LogManager.Success($"Found {sitesArray.Count} site(s) in CBFTP");
+            LogManager.Success($"Found {sitesArray.Count} site(s) in FXP backend");
 
-            var syncedSites = new List<CbftpSite>();
+            var syncedSites = new List<FxpBackendSite>();
 
             // Process each site
             foreach (var siteToken in sitesArray)
@@ -85,7 +85,7 @@ public class CbftpSync
                     var detailText = await detailResponse.Content.ReadAsStringAsync();
                     var siteDetail = JObject.Parse(detailText);
 
-                    var cbftpSite = new CbftpSite
+                    var fxpBackendSite = new FxpBackendSite
                     {
                         Name = siteName,
                         Addresses = siteDetail["addresses"]?.ToObject<List<string>>() ?? new List<string>(),
@@ -93,7 +93,7 @@ public class CbftpSync
                         Password = siteDetail["password"]?.ToString(),
                         BasePath = siteDetail["base_path"]?.ToString() ?? "/",
                         Disabled = siteDetail["disabled"]?.ToObject<bool>() ?? false,
-                        Sections = new List<CbftpSection>()
+                        Sections = new List<FxpBackendSection>()
                     };
 
                     // Extract sections: array of { "name": "...", "path": "..." }
@@ -102,7 +102,7 @@ public class CbftpSync
                     {
                         foreach (var sectionToken in sectionsArray)
                         {
-                            var section = new CbftpSection
+                            var section = new FxpBackendSection
                             {
                                 Name = sectionToken["name"]?.ToString(),
                                 Path = sectionToken["path"]?.ToString()
@@ -110,13 +110,13 @@ public class CbftpSync
 
                             if (!string.IsNullOrEmpty(section.Name))
                             {
-                                cbftpSite.Sections.Add(section);
+                                fxpBackendSite.Sections.Add(section);
                             }
                         }
                     }
 
-                    syncedSites.Add(cbftpSite);
-                    LogManager.Success($"Synced site: {siteName} ({cbftpSite.Sections.Count} sections)");
+                    syncedSites.Add(fxpBackendSite);
+                    LogManager.Success($"Synced site: {siteName} ({fxpBackendSite.Sections.Count} sections)");
                 }
                 catch (Exception ex)
                 {
@@ -124,25 +124,25 @@ public class CbftpSync
                 }
             }
 
-            LogManager.Success($"Successfully synced {syncedSites.Count} site(s) from CBFTP");
-            return CbftpSyncResult.Success(syncedSites);
+            LogManager.Success($"Successfully synced {syncedSites.Count} site(s) from FXP backend");
+            return FxpBackendSyncResult.Success(syncedSites);
         }
         catch (TaskCanceledException)
         {
-            return CbftpSyncResult.Failed("Connection timeout (30 seconds)");
+            return FxpBackendSyncResult.Failed("Connection timeout (30 seconds)");
         }
         catch (HttpRequestException ex)
         {
-            return CbftpSyncResult.Failed($"Connection error: {ex.Message}");
+            return FxpBackendSyncResult.Failed($"Connection error: {ex.Message}");
         }
         catch (Exception ex)
         {
-            return CbftpSyncResult.Failed($"Unexpected error: {ex.Message}");
+            return FxpBackendSyncResult.Failed($"Unexpected error: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Fetches all global sections from CBFTP.
+    /// Fetches all global sections from FXP backend.
     /// </summary>
     public static async Task<List<string>> FetchGlobalSections(string host, string port, string password)
     {
@@ -171,7 +171,7 @@ public class CbftpSync
             var response = await client.GetAsync($"{endpoint}/sections");
             if (!response.IsSuccessStatusCode)
             {
-                LogManager.Warning("Could not fetch global sections from CBFTP");
+                LogManager.Warning("Could not fetch global sections from FXP backend");
                 return new List<string>();
             }
 
@@ -184,7 +184,7 @@ public class CbftpSync
                 .Where(name => !string.IsNullOrEmpty(name))
                 .ToList();
 
-            LogManager.Success($"Found {sections.Count} global section(s) in CBFTP");
+            LogManager.Success($"Found {sections.Count} global section(s) in FXP backend");
             return sections;
         }
         catch (Exception ex)
@@ -197,38 +197,38 @@ public class CbftpSync
 
 
 /// <summary>
-/// Result of CBFTP sync operation.
+/// Result of FXP backend sync operation.
 /// </summary>
-public class CbftpSyncResult
+public class FxpBackendSyncResult
 {
     public bool IsSuccess { get; set; }
     public string ErrorMessage { get; set; }
-    public List<CbftpSite> Sites { get; set; }
+    public List<FxpBackendSite> Sites { get; set; }
 
-    public static CbftpSyncResult Success(List<CbftpSite> sites)
+    public static FxpBackendSyncResult Success(List<FxpBackendSite> sites)
     {
-        return new CbftpSyncResult
+        return new FxpBackendSyncResult
         {
             IsSuccess = true,
             Sites = sites
         };
     }
 
-    public static CbftpSyncResult Failed(string error)
+    public static FxpBackendSyncResult Failed(string error)
     {
-        return new CbftpSyncResult
+        return new FxpBackendSyncResult
         {
             IsSuccess = false,
             ErrorMessage = error,
-            Sites = new List<CbftpSite>()
+            Sites = new List<FxpBackendSite>()
         };
     }
 }
 
 /// <summary>
-/// Represents a site from CBFTP.
+/// Represents a site from FXP backend.
 /// </summary>
-public class CbftpSite
+public class FxpBackendSite
 {
     public string Name { get; set; }
     public List<string> Addresses { get; set; }
@@ -236,7 +236,7 @@ public class CbftpSite
     public string Password { get; set; }
     public string BasePath { get; set; }
     public bool Disabled { get; set; }
-    public List<CbftpSection> Sections { get; set; }
+    public List<FxpBackendSection> Sections { get; set; }
 
     /// <summary>
     /// Gets the primary address (first in list).
@@ -278,9 +278,9 @@ public class CbftpSite
 }
 
 /// <summary>
-/// Represents a section from CBFTP.
+/// Represents a section from FXP backend.
 /// </summary>
-public class CbftpSection
+public class FxpBackendSection
 {
     public string Name { get; set; }
     public string Path { get; set; }

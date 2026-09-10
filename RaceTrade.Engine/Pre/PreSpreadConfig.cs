@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,8 +9,9 @@ namespace RaceTrade
     public class PreSpreadConfigManager
     {
         private const string ConfigFolder = "pre";
-        private const string CbftpServersFile = "pre/cbftp_servers.json";
-        private const string SitesFile = "pre/sites.json";
+        private static readonly string FxpBackendsFile = Path.Combine(ConfigFolder, "fxp_backends.json");
+        private static readonly string LegacyFxpBackendsFile = Path.Combine(ConfigFolder, "c" + "bftp_servers.json");
+        private static readonly string SitesFile = Path.Combine(ConfigFolder, "sites.json");
 
         public static void EnsureConfigDirectory()
         {
@@ -20,42 +21,43 @@ namespace RaceTrade
             }
         }
 
-        // CBFTP Servers
-        public static List<PreCbftpServer> LoadCbftpServers()
+        // FXP backend Servers
+        public static List<PreFxpBackend> LoadFxpBackends()
         {
             EnsureConfigDirectory();
 
-            if (!File.Exists(CbftpServersFile))
+            var readableFile = File.Exists(FxpBackendsFile) ? FxpBackendsFile : LegacyFxpBackendsFile;
+            if (!File.Exists(readableFile))
             {
-                return new List<PreCbftpServer>();
+                return new List<PreFxpBackend>();
             }
 
             try
             {
-                var json = File.ReadAllText(CbftpServersFile);
-                var config = JsonConvert.DeserializeObject<PreCbftpServersConfig>(json);
-                return config?.Servers ?? new List<PreCbftpServer>();
+                var json = File.ReadAllText(readableFile);
+                var config = JsonConvert.DeserializeObject<PreFxpBackendsConfig>(json);
+                return config?.Servers ?? new List<PreFxpBackend>();
             }
             catch (Exception ex)
             {
-                LogManager.Error($"Error loading CBFTP servers: {ex.Message}");
-                return new List<PreCbftpServer>();
+                LogManager.Error($"Error loading FXP backend servers: {ex.Message}");
+                return new List<PreFxpBackend>();
             }
         }
 
-        public static void SaveCbftpServers(List<PreCbftpServer> servers)
+        public static void SaveFxpBackends(List<PreFxpBackend> servers)
         {
             EnsureConfigDirectory();
 
             try
             {
-                var config = new PreCbftpServersConfig { Servers = servers };
+                var config = new PreFxpBackendsConfig { Servers = servers };
                 var json = JsonConvert.SerializeObject(config, Formatting.Indented);
-                AtomicFile.WriteAllText(CbftpServersFile, json);
+                AtomicFile.WriteAllText(FxpBackendsFile, json);
             }
             catch (Exception ex)
             {
-                LogManager.Error($"Error saving CBFTP servers: {ex.Message}");
+                LogManager.Error($"Error saving FXP backend servers: {ex.Message}");
                 throw;
             }
         }
@@ -102,10 +104,21 @@ namespace RaceTrade
     }
 
     // Config wrapper classes
-    public class PreCbftpServersConfig
+    public class PreFxpBackendsConfig
     {
-        [JsonProperty("cbftp_servers")]
-        public List<PreCbftpServer> Servers { get; set; } = new List<PreCbftpServer>();
+        [JsonProperty(FxpBackendJsonKeys.Backends)]
+        public List<PreFxpBackend> Servers { get; set; } = new List<PreFxpBackend>();
+
+        [JsonProperty(FxpBackendJsonKeys.LegacyBackends, NullValueHandling = NullValueHandling.Ignore)]
+        private List<PreFxpBackend> LegacyServers
+        {
+            get => null;
+            set
+            {
+                if (value != null && value.Count > 0 && (Servers == null || Servers.Count == 0))
+                    Servers = value;
+            }
+        }
     }
 
     public class PreSitesConfig
@@ -114,8 +127,8 @@ namespace RaceTrade
         public List<PreSiteConfig> Sites { get; set; } = new List<PreSiteConfig>();
     }
 
-    // CBFTP Server model
-    public class PreCbftpServer
+    // FXP backend Server model
+    public class PreFxpBackend
     {
         [JsonProperty("id")]
         public string Id { get; set; }
@@ -144,8 +157,19 @@ namespace RaceTrade
         [JsonProperty("name")]
         public string Name { get; set; }
 
-        [JsonProperty("cbftp_server_id")]
-        public string CbftpServerId { get; set; }
+        [JsonProperty(FxpBackendJsonKeys.BackendId)]
+        public string FxpBackendId { get; set; }
+
+        [JsonProperty(FxpBackendJsonKeys.LegacyBackendId, NullValueHandling = NullValueHandling.Ignore)]
+        private string LegacyFxpBackendId
+        {
+            get => null;
+            set
+            {
+                if (!string.IsNullOrWhiteSpace(value) && string.IsNullOrWhiteSpace(FxpBackendId))
+                    FxpBackendId = value;
+            }
+        }
 
         [JsonProperty("affil_directory")]
         public string AffilDirectory { get; set; } = "/pre";
@@ -163,7 +187,7 @@ namespace RaceTrade
     public class DistributionItem
     {
         public string SiteName { get; set; }
-        public string CbftpServerId { get; set; }
+        public string FxpBackendId { get; set; }
         public string SourcePath { get; set; }
         public string DestinationPath { get; set; }
         public string Section { get; set; }

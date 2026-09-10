@@ -1,0 +1,433 @@
+@page "/fxp-sections"
+@inject FxpBackendSiteService FxpBackendSites
+
+<PageTitle>FXP Sections - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="servers" Size="18" />FXP Sections</h1>
+    <div class="head-actions">
+        <button class="btn" @onclick="LoadServer" disabled="@Busy">
+            <Icon Name="refresh" Size="13" /><span>@(Busy ? "Loading..." : "Load server")</span>
+        </button>
+        <button class="btn primary" @onclick="SaveChanges" disabled="@(Busy || !HasChanges)">
+            <Icon Name="save" Size="13" /><span>@(Busy ? "Saving..." : "Save changes")</span>
+        </button>
+    </div>
+</div>
+
+<div class="callout">
+    <strong>FXP backend section matrix.</strong> Select the sites you want to edit, enter one section
+    name, then fill one path per selected site. The overview below shows one row per section and
+    one path column per site.
+</div>
+
+@if (_error is not null)
+{
+    <p class="hint err">@_error</p>
+}
+@if (_status is not null)
+{
+    <p class="hint ok">@_status</p>
+}
+
+<div class="panel form fxp-section-matrix-panel">
+    <div class="toolbar embedded fxp-sections-toolbar">
+        <label>FXP backend</label>
+        <select @bind="_serverId" disabled="@Busy">
+            @foreach (var server in _servers)
+            {
+                <option value="@ServerKey(server)">@DisplayServer(server)</option>
+            }
+        </select>
+        <label>Filter</label>
+        <input type="search" @bind="_filter" @bind:event="oninput" placeholder="Section or path..." />
+    </div>
+
+    @if (!_siteColumns.Any())
+    {
+        <div class="empty compact">Load a backend server to show the section matrix.</div>
+    }
+    else
+    {
+        <div class="section-block-head fxp-section-subhead">
+            <h2>1. PICK SITES <span class="count-badge">@SelectedSiteCount</span></h2>
+            <span class="fh">Every selected site gets its own path field.</span>
+        </div>
+
+        <div class="fxp-section-site-strip">
+            @foreach (var site in _siteColumns)
+            {
+                <label class="fxp-section-site-chip @(site.Selected ? "selected" : "")">
+                    <input type="checkbox" @bind="site.Selected" />
+                    <span>
+                        <strong>@site.Name</strong>
+                        <small>@site.ActiveSectionCount section(s)</small>
+                    </span>
+                    <span class="pill @(site.Disabled ? "off" : "on")">@(site.Disabled ? "disabled" : "enabled")</span>
+                </label>
+            }
+        </div>
+
+        <div class="fxp-section-create-panel">
+            <div class="section-block-head fxp-section-subhead compact">
+                <h2>2. ADD ONE SECTION</h2>
+                <span class="fh">One section name, then one path per selected site.</span>
+            </div>
+            <div class="fxp-section-create-row">
+                <label>Section name</label>
+                <input type="text" @bind="_newSectionName" @bind:event="oninput" placeholder="SD-MOVIES-PL" />
+                <button class="btn primary" @onclick="AddOrUpdateSectionPaths" disabled="@(SelectedSiteCount == 0)">
+                    <Icon Name="plus" Size="13" /><span>Add / update paths</span>
+                </button>
+            </div>
+
+            @if (SelectedSiteCount == 0)
+            {
+                <div class="empty compact">Select one or more sites to show path fields.</div>
+            }
+            else
+            {
+                <div class="fxp-section-path-inputs">
+                    @foreach (var site in _siteColumns.Where(s => s.Selected))
+                    {
+                        <label>
+                            <span>@site.Name</span>
+                            <input type="text"
+                                   value="@NewPathFor(site)"
+                                   @oninput="e => SetNewPath(site, e.Value?.ToString())"
+                                   placeholder="/" />
+                        </label>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="section-block-head fxp-section-subhead">
+            <h2>3. SECTION OVERVIEW <span class="count-badge">@FilteredRows.Count</span></h2>
+            <span class="fh">Empty cell means that section does not exist on that site.</span>
+        </div>
+
+        <div class="fxp-section-matrix-scroll">
+            <table class="grid fxp-section-matrix">
+                <thead>
+                    <tr>
+                        <th class="section-name-col">SECTION</th>
+                        @foreach (var site in _siteColumns)
+                        {
+                            <th>
+                                <span>@site.Name</span>
+                                @if (site.Disabled)
+                                {
+                                    <em>disabled</em>
+                                }
+                            </th>
+                        }
+                        <th class="w-act"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in FilteredRows)
+                    {
+                        <tr class="@(row.Deleted ? "deleted-row" : row.IsNew ? "new-row" : "")">
+                            <td>
+                                <input type="text" @bind="row.Name" @bind:event="oninput" disabled="@row.Deleted" />
+                                <span class="fxp-section-row-meta">@row.FilledCount/@_siteColumns.Count site(s)</span>
+                            </td>
+                            @foreach (var site in _siteColumns)
+                            {
+                                <td>
+                                    <input type="text"
+                                           value="@row.PathFor(site)"
+                                           @oninput="e => row.SetPath(site, e.Value?.ToString())"
+                                           disabled="@row.Deleted"
+                                           placeholder="/" />
+                                </td>
+                            }
+                            <td class="right">
+                                @if (row.Deleted)
+                                {
+                                    <button class="btn sm" @onclick="() => row.Deleted = false">Undo</button>
+                                }
+                                else
+                                {
+                                    <button class="btn danger sm" @onclick="() => row.Deleted = true">&times;</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private List<FxpBackend> _servers = new();
+    private readonly List<BackendSiteColumn> _siteColumns = new();
+    private readonly List<SectionMatrixRow> _rows = new();
+    private readonly Dictionary<string, string> _newPathsBySite = new(StringComparer.OrdinalIgnoreCase);
+    private string _serverId = "";
+    private string _filter = "";
+    private string _newSectionName = "";
+    private string? _error;
+    private string? _status;
+    private bool Busy { get; set; }
+
+    private bool HasChanges => _rows.Any(r => r.HasChanges);
+    private int SelectedSiteCount => _siteColumns.Count(s => s.Selected);
+
+    private List<SectionMatrixRow> FilteredRows
+    {
+        get
+        {
+            IEnumerable<SectionMatrixRow> rows = _rows;
+            if (!string.IsNullOrWhiteSpace(_filter))
+            {
+                var q = _filter.Trim();
+                rows = rows.Where(r =>
+                    r.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    r.Paths.Values.Any(p => p.Contains(q, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            return rows.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _servers = FxpBackendSites.LoadServers().ToList();
+        _serverId = _servers.FirstOrDefault() is { } first ? ServerKey(first) : "";
+        if (!_servers.Any())
+            _status = "No active FXP backends configured yet.";
+    }
+
+    private async Task LoadServer()
+    {
+        await RunAsync(async () =>
+        {
+            var server = SelectedServer();
+            if (server is null)
+            {
+                _siteColumns.Clear();
+                _rows.Clear();
+                _status = null;
+                _error = "Add an FXP backend first.";
+                return;
+            }
+
+            _siteColumns.Clear();
+            _rows.Clear();
+            _newPathsBySite.Clear();
+
+            var siteNames = await FxpBackendSites.LoadSiteNamesAsync(server);
+            foreach (var siteName in siteNames)
+            {
+                var model = await FxpBackendSites.LoadSiteAsync(server, siteName);
+                var site = new BackendSiteColumn(server, model);
+                _siteColumns.Add(site);
+
+                foreach (var section in model.Sections)
+                {
+                    if (string.IsNullOrWhiteSpace(section.Name))
+                        continue;
+
+                    var row = FindOrCreateRow(section.Name.Trim(), isNew: false);
+                    row.SetInitialPath(site, NormalizePath(section.Path));
+                }
+            }
+
+            foreach (var site in _siteColumns)
+                _newPathsBySite[site.Name] = "";
+
+            _status = $"Loaded {_siteColumns.Count} site(s) and {_rows.Count} unique section row(s) from {DisplayServer(server)}.";
+        });
+    }
+
+    private void AddOrUpdateSectionPaths()
+    {
+        _error = null;
+        var name = _newSectionName.Trim();
+        if (name.Length == 0)
+        {
+            _error = "Enter a section name.";
+            return;
+        }
+
+        var selected = _siteColumns.Where(s => s.Selected).ToList();
+        if (selected.Count == 0)
+        {
+            _error = "Select at least one site.";
+            return;
+        }
+
+        var paths = selected
+            .Select(site => (Site: site, Path: NewPathFor(site)))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Path))
+            .ToList();
+
+        if (paths.Count == 0)
+        {
+            _error = "Fill at least one path for a selected site.";
+            return;
+        }
+
+        var row = FindOrCreateRow(name, isNew: true);
+        var changed = 0;
+        foreach (var (site, path) in paths)
+        {
+            row.SetPath(site, path);
+            changed++;
+        }
+
+        _newSectionName = "";
+        foreach (var site in selected)
+            _newPathsBySite[site.Name] = "";
+        _status = $"Prepared section '{name}' with {changed} site path(s). Press Save changes to patch the backend.";
+    }
+
+    private async Task SaveChanges()
+    {
+        await RunAsync(async () =>
+        {
+            foreach (var site in _siteColumns)
+            {
+                site.Model.Sections = _rows
+                    .Where(r => !r.Deleted && !string.IsNullOrWhiteSpace(r.Name))
+                    .Select(r => new FxpBackendSiteSection
+                    {
+                        Name = r.Name.Trim(),
+                        Path = NormalizePath(r.PathFor(site))
+                    })
+                    .Where(s => !string.IsNullOrWhiteSpace(s.Path))
+                    .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.Last())
+                    .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                await FxpBackendSites.SaveSiteAsync(site.Server, site.Model);
+            }
+
+            _status = $"Saved section matrix for {_siteColumns.Count} site(s).";
+            await LoadServer();
+        });
+    }
+
+    private SectionMatrixRow FindOrCreateRow(string name, bool isNew)
+    {
+        var row = _rows.FirstOrDefault(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (row is not null)
+            return row;
+
+        row = new SectionMatrixRow(name, isNew);
+        _rows.Add(row);
+        return row;
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        try
+        {
+            Busy = true;
+            _error = null;
+            await action();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private FxpBackend? SelectedServer() =>
+        _servers.FirstOrDefault(s => string.Equals(ServerKey(s), _serverId, StringComparison.OrdinalIgnoreCase));
+
+    private string NewPathFor(BackendSiteColumn site) =>
+        _newPathsBySite.TryGetValue(site.Name, out var path) ? path : "";
+
+    private void SetNewPath(BackendSiteColumn site, string? path) =>
+        _newPathsBySite[site.Name] = path ?? "";
+
+    private static string NormalizePath(string? value)
+    {
+        var path = (value ?? "").Trim();
+        if (path.Length == 0)
+            return "";
+        return path.StartsWith('/') ? path : "/" + path;
+    }
+
+    private static string ServerKey(FxpBackend server) =>
+        !string.IsNullOrWhiteSpace(server.Id) ? server.Id : $"{server.Host}:{server.Port}";
+
+    private static string DisplayServer(FxpBackend server)
+    {
+        var name = string.IsNullOrWhiteSpace(server.Name) ? server.Id : server.Name;
+        return $"{name} - {server.Host}:{server.Port}";
+    }
+
+    private sealed class BackendSiteColumn
+    {
+        public BackendSiteColumn(FxpBackend server, FxpBackendSiteEditModel model)
+        {
+            Server = server;
+            Model = model;
+            Name = model.Name;
+            Disabled = model.Disabled;
+        }
+
+        public FxpBackend Server { get; }
+        public FxpBackendSiteEditModel Model { get; }
+        public string Name { get; }
+        public bool Disabled { get; }
+        public bool Selected { get; set; } = true;
+        public int ActiveSectionCount => Model.Sections.Count;
+    }
+
+    private sealed class SectionMatrixRow
+    {
+        private readonly Dictionary<string, string> _originalPaths = new(StringComparer.OrdinalIgnoreCase);
+        private readonly string _originalName;
+
+        public SectionMatrixRow(string name, bool isNew)
+        {
+            Name = name;
+            IsNew = isNew;
+            _originalName = name;
+        }
+
+        public string Name { get; set; }
+        public bool IsNew { get; }
+        public bool Deleted { get; set; }
+        public Dictionary<string, string> Paths { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public int FilledCount => Paths.Count(p => !string.IsNullOrWhiteSpace(p.Value));
+        public bool NameChanged => !string.Equals(Name, _originalName, StringComparison.Ordinal);
+        public bool PathsChanged =>
+            Paths.Count != _originalPaths.Count ||
+            Paths.Any(p => !_originalPaths.TryGetValue(p.Key, out var original) ||
+                           !string.Equals(NormalizePath(p.Value), NormalizePath(original), StringComparison.Ordinal));
+        public bool HasChanges => Deleted || IsNew || NameChanged || PathsChanged;
+
+        public string PathFor(BackendSiteColumn site) =>
+            Paths.TryGetValue(site.Name, out var path) ? path : "";
+
+        public void SetPath(BackendSiteColumn site, string? path)
+        {
+            var normalized = NormalizePath(path);
+            if (string.IsNullOrWhiteSpace(normalized))
+                Paths.Remove(site.Name);
+            else
+                Paths[site.Name] = normalized;
+        }
+
+        public void SetInitialPath(BackendSiteColumn site, string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return;
+
+            Paths[site.Name] = path;
+            _originalPaths[site.Name] = path;
+        }
+    }
+}

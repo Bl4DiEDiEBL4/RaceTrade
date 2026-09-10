@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject NavigationManager Nav
 
 @* Static by design. Anything interactive lives in its own component with its own
    render mode (see TraderStatus) - a layout does not get one. *@
@@ -8,7 +9,7 @@
             <img class="brand-logo brand-logo-dark" src="racetrade-logo.svg" alt="RaceTrade" />
             <img class="brand-logo brand-logo-light" src="racetrade-logo-light.svg" alt="RaceTrade" />
             <span class="brand-meta">
-                <span class="brand-ver">v2.1.3</span>
+                <span class="brand-ver">v2.1.4</span>
                 <span class="brand-community">linknet/#racetrade</span>
             </span>
         </div>
@@ -23,26 +24,27 @@
 
         <div class="sidebar-scroll">
             <div class="nav-title">MENU</div>
-            <NavLink class="nav-item" href="" Match="NavLinkMatch.All"><Icon Name="dashboard" /><span>Dashboard</span></NavLink>
-            <NavLink class="nav-item" href="sites"><Icon Name="sites" /><span>Sites</span></NavLink>
-            <NavLink class="nav-item" href="servers"><Icon Name="servers" /><span>CBFTP servers</span></NavLink>
-            <NavLink class="nav-item" href="prebots"><Icon Name="prebots" /><span>PreBots</span></NavLink>
+            <a class='@NavClass("")' href=""><Icon Name="dashboard" /><span>Dashboard</span></a>
+            <a class='@NavClass("sites")' href="sites"><Icon Name="sites" /><span>Sites</span></a>
+            <a class='@NavClass("servers", "fxp-backend-site")' href="servers"><Icon Name="servers" /><span>FXP Backends</span></a>
+            <a class='@NavClass("fxp-sections")' href="fxp-sections"><Icon Name="database" /><span>FXP Sections</span></a>
+            <a class='@NavClass("prebots")' href="prebots"><Icon Name="prebots" /><span>PreBots</span></a>
 
             <div class="nav-title">TOOLS</div>
-            <NavLink class="nav-item" href="pre"><Icon Name="flag" /><span>Pre</span></NavLink>
-            <NavLink class="nav-item" href="test"><Icon Name="test" /><span>Test release</span></NavLink>
-            <NavLink class="nav-item" href="search"><Icon Name="search" /><span>Search</span></NavLink>
-            <NavLink class="nav-item" href="fxp"><Icon Name="fxp" /><span>FXP Client</span></NavLink>
-            <NavLink class="nav-item" href="chat"><Icon Name="chat" /><span>Chat</span></NavLink>
-            <NavLink class="nav-item" href="logs"><Icon Name="logs" /><span>Logs</span></NavLink>
-            <NavLink class="nav-item" href="databases"><Icon Name="database" /><span>Databases</span></NavLink>
-            <NavLink class="nav-item" href="skips"><Icon Name="warn" /><span>Skips</span></NavLink>
-            <NavLink class="nav-item" href="history"><Icon Name="changelog" /><span>History</span></NavLink>
-            <NavLink class="nav-item" href="settings"><Icon Name="settings" /><span>Settings</span></NavLink>
+            <a class='@NavClass("pre")' href="pre"><Icon Name="flag" /><span>Pre</span></a>
+            <a class='@NavClass("test")' href="test"><Icon Name="test" /><span>Test release</span></a>
+            <a class='@NavClass("search")' href="search"><Icon Name="search" /><span>Search</span></a>
+            <a class='@NavClass("fxp")' href="fxp"><Icon Name="fxp" /><span>FXP Client</span></a>
+            <a class='@NavClass("chat")' href="chat"><Icon Name="chat" /><span>Chat</span></a>
+            <a class='@NavClass("logs")' href="logs"><Icon Name="logs" /><span>Logs</span></a>
+            <a class='@NavClass("databases")' href="databases"><Icon Name="database" /><span>Databases</span></a>
+            <a class='@NavClass("skips")' href="skips"><Icon Name="warn" /><span>Skips</span></a>
+            <a class='@NavClass("history")' href="history"><Icon Name="changelog" /><span>History</span></a>
+            <a class='@NavClass("settings")' href="settings"><Icon Name="settings" /><span>Settings</span></a>
 
             <div class="nav-title">INFO</div>
-            <NavLink class="nav-item" href="help"><Icon Name="help" /><span>Help</span></NavLink>
-            <NavLink class="nav-item" href="changelog"><Icon Name="changelog" /><span>Changelog</span></NavLink>
+            <a class='@NavClass("help")' href="help"><Icon Name="help" /><span>Help</span></a>
+            <a class='@NavClass("changelog")' href="changelog"><Icon Name="changelog" /><span>Changelog</span></a>
             <a class="nav-item nav-external"
                href="https://github.com/Bl4DiEDiEBL4/RaceTrade"
                target="_blank"
@@ -71,3 +73,34 @@
         </main>
     </section>
 </div>
+
+@code {
+    private string NavClass(params string[] prefixes) =>
+        IsCurrent(prefixes) ? "nav-item active" : "nav-item";
+
+    private bool IsCurrent(params string[] prefixes)
+    {
+        var current = CurrentPath();
+        return prefixes.Any(prefix => MatchesPrefix(current, prefix));
+    }
+
+    private string CurrentPath()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri);
+        var cut = path.IndexOfAny(new[] { '?', '#' });
+        if (cut >= 0)
+            path = path[..cut];
+
+        return "/" + path.Trim('/');
+    }
+
+    private static bool MatchesPrefix(string current, string prefix)
+    {
+        prefix = "/" + prefix.Trim('/');
+        if (prefix == "/")
+            return current == "/";
+
+        return string.Equals(current, prefix, StringComparison.OrdinalIgnoreCase) ||
+               current.StartsWith(prefix + "/", StringComparison.OrdinalIgnoreCase);
+    }
+}

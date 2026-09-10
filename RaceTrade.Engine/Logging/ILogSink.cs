@@ -19,14 +19,14 @@ namespace RaceTrade.Engine.Logging
 
     /// <summary>
     /// Where an engine log message came from, so a UI can route messages to the
-    /// right pane (IRC window, race log, cbftp log, ...) without parsing strings.
+    /// right pane (IRC window, race log, FXP backend log, ...) without parsing strings.
     /// </summary>
     public enum LogChannel
     {
         Application,
         Irc,
         Race,
-        Cbftp,
+        FxpBackend,
         PreDb
     }
 

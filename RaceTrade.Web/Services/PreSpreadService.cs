@@ -8,29 +8,31 @@ namespace RaceTrade.Web.Services;
 public sealed class PreSpreadService
 {
     private const string ConfigFolder = "pre";
-    private const string ServersFile = "pre/cbftp_servers.json";
-    private const string SitesFile = "pre/sites.json";
+    private static readonly string ServersFile = Path.Combine(ConfigFolder, "fxp_backends.json");
+    private static readonly string LegacyServersFile = Path.Combine(ConfigFolder, "c" + "bftp_servers.json");
+    private static readonly string SitesFile = Path.Combine(ConfigFolder, "sites.json");
 
-    private readonly CbftpStore _cbftpStore;
+    private readonly FxpBackendStore _fxpBackendStore;
     private readonly FxpClientService _fxp;
 
-    public PreSpreadService(CbftpStore cbftpStore, FxpClientService fxp)
+    public PreSpreadService(FxpBackendStore fxpBackendStore, FxpClientService fxp)
     {
-        _cbftpStore = cbftpStore;
+        _fxpBackendStore = fxpBackendStore;
         _fxp = fxp;
     }
 
-    public List<PreCbftpServer> LoadServers()
+    public List<PreFxpBackend> LoadServers()
     {
         EnsureDirectory();
-        if (!File.Exists(ServersFile))
+        var readableFile = ResolveReadableServersFile();
+        if (!File.Exists(readableFile))
             return ImportServersFromMainConfig(save: false);
 
-        var config = JsonConvert.DeserializeObject<PreCbftpServersConfig>(File.ReadAllText(ServersFile));
-        return config?.Servers ?? new List<PreCbftpServer>();
+        var config = JsonConvert.DeserializeObject<PreFxpBackendsConfig>(File.ReadAllText(readableFile));
+        return config?.Servers ?? new List<PreFxpBackend>();
     }
 
-    public void SaveServers(List<PreCbftpServer> servers)
+    public void SaveServers(List<PreFxpBackend> servers)
     {
         EnsureDirectory();
         foreach (var server in servers)
@@ -38,38 +40,39 @@ public sealed class PreSpreadService
 
         AtomicFile.WriteAllText(
             ServersFile,
-            JsonConvert.SerializeObject(new PreCbftpServersConfig { Servers = servers }, Formatting.Indented));
+            JsonConvert.SerializeObject(new PreFxpBackendsConfig { Servers = servers }, Formatting.Indented));
     }
 
     /// <summary>
     /// A server's identity, stable across imports.
     ///
-    /// This used to fall back to <c>Guid.NewGuid()</c> when the main cbftp config had no
-    /// id, so every "Import CBFTP servers" minted brand new ids. Sites were deduped on
+    /// This used to fall back to <c>Guid.NewGuid()</c> when the main FXP backend config had no
+    /// id, so every "Import FXP backend servers" minted brand new ids. Sites were deduped on
     /// (name, server id), so after a re-import nothing matched and every site was added a
     /// second time — and the sites saved earlier pointed at ids that no longer existed,
-    /// which is why "Source CBFTP server not found" appeared and releases never loaded.
+    /// which is why "Source FXP backend server not found" appeared and releases never loaded.
     ///
-    /// Host:port is the real identity of a cbftp instance, so it is what we key on.
+    /// Host:port is the real identity of a FXP backend instance, so it is what we key on.
     /// </summary>
-    private static string StableId(CbftpServer s) =>
+    private static string StableId(FxpBackend s) =>
         !string.IsNullOrWhiteSpace(s.Id) ? s.Id!
         : !string.IsNullOrWhiteSpace(s.Host) ? $"{s.Host}:{s.Port}"
-        : s.Name ?? "cbftp";
+        : s.Name ?? "FXP backend";
 
     /// <summary>
-    /// Pulls the cbftp servers from the main config and MERGES them into the Pre server
+    /// Pulls the FXP backend servers from the main config and MERGES them into the Pre server
     /// list: existing entries keep their id (so the sites pointing at them keep working)
     /// and only get their address/password refreshed.
     /// </summary>
-    public List<PreCbftpServer> ImportServersFromMainConfig(bool save = true)
+    public List<PreFxpBackend> ImportServersFromMainConfig(bool save = true)
     {
-        var existing = File.Exists(ServersFile)
-            ? JsonConvert.DeserializeObject<PreCbftpServersConfig>(File.ReadAllText(ServersFile))?.Servers
-              ?? new List<PreCbftpServer>()
-            : new List<PreCbftpServer>();
+        var readableFile = ResolveReadableServersFile();
+        var existing = File.Exists(readableFile)
+            ? JsonConvert.DeserializeObject<PreFxpBackendsConfig>(File.ReadAllText(readableFile))?.Servers
+              ?? new List<PreFxpBackend>()
+            : new List<PreFxpBackend>();
 
-        foreach (var s in _cbftpStore.Load().CbftpServers)
+        foreach (var s in _fxpBackendStore.LoadActiveServers())
         {
             var id = StableId(s);
 
@@ -84,10 +87,10 @@ public sealed class PreSpreadService
 
             if (match is null)
             {
-                existing.Add(new PreCbftpServer
+                existing.Add(new PreFxpBackend
                 {
                     Id = id,
-                    Name = s.Name ?? s.Id ?? "cbftp",
+                    Name = s.Name ?? s.Id ?? "FXP backend",
                     Host = s.Host ?? "",
                     Port = s.Port ?? "",
                     Password = s.Password ?? "",
@@ -112,13 +115,13 @@ public sealed class PreSpreadService
     }
 
     /// <summary>
-    /// Removes a cbftp server from the Pre config, together with the Pre sites that were
+    /// Removes a FXP backend server from the Pre config, together with the Pre sites that were
     /// reachable only through it — leaving them behind would just produce rows that can
     /// never load a listing.
     /// </summary>
     public PreActionResult RemoveServer(
         string serverId,
-        List<PreCbftpServer> servers,
+        List<PreFxpBackend> servers,
         List<PreSiteConfig> sites)
     {
         var server = servers.FirstOrDefault(s =>
@@ -128,7 +131,7 @@ public sealed class PreSpreadService
             return PreActionResult.Fail("Server not found.");
 
         var orphaned = sites
-            .Where(s => string.Equals(s.CbftpServerId, serverId, StringComparison.OrdinalIgnoreCase))
+            .Where(s => string.Equals(s.FxpBackendId, serverId, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         servers.Remove(server);
@@ -150,9 +153,9 @@ public sealed class PreSpreadService
 
     /// <summary>
     /// Loads the Pre sites, dropping duplicates and repairing entries that point at a
-    /// cbftp server which no longer exists (the legacy of the old random ids).
+    /// FXP backend server which no longer exists (the legacy of the old random ids).
     /// </summary>
-    public List<PreSiteConfig> LoadSites(IReadOnlyList<PreCbftpServer>? servers = null)
+    public List<PreSiteConfig> LoadSites(IReadOnlyList<PreFxpBackend>? servers = null)
     {
         EnsureDirectory();
         if (!File.Exists(SitesFile))
@@ -169,13 +172,13 @@ public sealed class PreSpreadService
             foreach (var site in repaired)
             {
                 var known = servers.Any(s =>
-                    string.Equals(s.Id, site.CbftpServerId, StringComparison.OrdinalIgnoreCase));
+                    string.Equals(s.Id, site.FxpBackendId, StringComparison.OrdinalIgnoreCase));
 
                 // Dangling reference. With a single server there is only one sensible
                 // answer, so bind it rather than leaving the site permanently broken.
                 if (!known && servers.Count == 1)
                 {
-                    site.CbftpServerId = servers[0].Id;
+                    site.FxpBackendId = servers[0].Id;
                     rebound = true;
                 }
             }
@@ -192,7 +195,7 @@ public sealed class PreSpreadService
     }
 
     /// <summary>
-    /// One entry per (site name, cbftp server). Keeps the first, which is the one the
+    /// One entry per (site name, FXP backend server). Keeps the first, which is the one the
     /// user has been editing — a later duplicate only ever carries defaults.
     /// </summary>
     private static List<PreSiteConfig> Deduplicate(IEnumerable<PreSiteConfig> sites)
@@ -205,7 +208,7 @@ public sealed class PreSpreadService
             if (string.IsNullOrWhiteSpace(site.Name))
                 continue;
 
-            if (seen.Add($"{site.Name}\u0000{site.CbftpServerId}"))
+            if (seen.Add($"{site.Name}\u0000{site.FxpBackendId}"))
                 result.Add(site);
         }
 
@@ -220,7 +223,7 @@ public sealed class PreSpreadService
             JsonConvert.SerializeObject(new PreSitesConfig { Sites = sites }, Formatting.Indented));
     }
 
-    public async Task<PreActionResult> FetchAllSitesAsync(List<PreCbftpServer> servers, List<PreSiteConfig> existingSites)
+    public async Task<PreActionResult> FetchAllSitesAsync(List<PreFxpBackend> servers, List<PreSiteConfig> existingSites)
     {
         var logs = new List<string>();
         var imported = 0;
@@ -230,7 +233,7 @@ public sealed class PreSpreadService
             try
             {
                 var password = DecryptPassword(server);
-                var result = await CbftpSync.FetchSitesFromCbftp(server.Host ?? "", server.Port ?? "", password);
+                var result = await FxpBackendSync.FetchSitesFromFxpBackend(server.Host ?? "", server.Port ?? "", password);
                 if (!result.IsSuccess)
                 {
                     logs.Add($"{server.Name}: {result.ErrorMessage}");
@@ -246,7 +249,7 @@ public sealed class PreSpreadService
                     // never replaced by a default copy.
                     if (existingSites.Any(s =>
                             string.Equals(s.Name, site.Name, StringComparison.OrdinalIgnoreCase) &&
-                            string.Equals(s.CbftpServerId, server.Id, StringComparison.OrdinalIgnoreCase)))
+                            string.Equals(s.FxpBackendId, server.Id, StringComparison.OrdinalIgnoreCase)))
                     {
                         skipped++;
                         continue;
@@ -255,7 +258,7 @@ public sealed class PreSpreadService
                     existingSites.Add(new PreSiteConfig
                     {
                         Name = site.Name,
-                        CbftpServerId = server.Id,
+                        FxpBackendId = server.Id,
                         AffilDirectory = "/pre",
                         Section = "DEFAULT",
                         Enabled = true
@@ -291,14 +294,14 @@ public sealed class PreSpreadService
     }
 
     public async Task<IReadOnlyList<string>> ListReleasesAsync(
-        PreCbftpServer server,
+        PreFxpBackend server,
         PreSiteConfig sourceSite)
     {
         var path = FxpClientService.NormalizePath(sourceSite.AffilDirectory ?? "/pre");
 
         try
         {
-            var items = await _fxp.BrowseAsync(ToCbftpServer(server), sourceSite.Name ?? "", path);
+            var items = await _fxp.BrowseAsync(ToFxpBackend(server), sourceSite.Name ?? "", path);
 
             return items
                 .Where(i => i.IsDirectory && i.Name is not "." and not "..")
@@ -309,27 +312,27 @@ public sealed class PreSpreadService
         catch (Exception ex)
         {
             // Say WHERE it failed. "Object reference not set" tells you nothing when the
-            // real problem is a wrong affil directory or a cbftp that is not reachable.
+            // real problem is a wrong affil directory or a FXP backend that is not reachable.
             throw new InvalidOperationException(
                 $"Could not list {sourceSite.Name}:{path} via {server.Name} ({server.Host}:{server.Port}) - {ex.Message}", ex);
         }
     }
 
     /// <summary>Quick reachability check for one Pre site, for the Test button.</summary>
-    public async Task<PreActionResult> TestSiteAsync(PreSiteConfig site, IReadOnlyList<PreCbftpServer> servers)
+    public async Task<PreActionResult> TestSiteAsync(PreSiteConfig site, IReadOnlyList<PreFxpBackend> servers)
     {
-        var server = FindServer(servers, site.CbftpServerId);
+        var server = FindServer(servers, site.FxpBackendId);
         if (server is null)
         {
             return PreActionResult.Fail(
-                $"{site.Name}: no cbftp server bound. Pick one under CBFTP server, then Save config.");
+                $"{site.Name}: no FXP backend bound. Pick one under FXP backend, then Save config.");
         }
 
         var path = FxpClientService.NormalizePath(site.AffilDirectory ?? "/pre");
 
         try
         {
-            var items = await _fxp.BrowseAsync(ToCbftpServer(server), site.Name ?? "", path);
+            var items = await _fxp.BrowseAsync(ToFxpBackend(server), site.Name ?? "", path);
             var dirs = items.Count(i => i.IsDirectory);
 
             return new PreActionResult(true,
@@ -346,12 +349,12 @@ public sealed class PreSpreadService
         string release,
         PreSiteConfig source,
         IReadOnlyList<PreSiteConfig> destinations,
-        IReadOnlyList<PreCbftpServer> servers)
+        IReadOnlyList<PreFxpBackend> servers)
     {
         var logs = new List<string>();
-        var sourceServer = FindServer(servers, source.CbftpServerId);
+        var sourceServer = FindServer(servers, source.FxpBackendId);
         if (sourceServer is null)
-            return PreActionResult.Fail("Source CBFTP server not found.");
+            return PreActionResult.Fail("Source FXP backend not found.");
 
         var success = 0;
         var failed = 0;
@@ -363,7 +366,7 @@ public sealed class PreSpreadService
             try
             {
                 var destinationPath = FxpClientService.NormalizePath(destination.AffilDirectory);
-                var result = await CbftpRacer.StartTransferJobFxp(
+                var result = await FxpBackendRacer.StartTransferJobFxp(
                     srcSite: source.Name ?? "",
                     srcSectionOrPath: sourcePath,
                     srcIsSection: false,
@@ -373,7 +376,7 @@ public sealed class PreSpreadService
                     host: sourceServer.Host ?? "",
                     port: sourceServer.Port ?? "",
                     password: password,
-                    serverName: sourceServer.Name ?? sourceServer.Id ?? "cbftp");
+                    serverName: sourceServer.Name ?? sourceServer.Id ?? "FXP backend");
 
                 if (result.Success)
                 {
@@ -399,7 +402,7 @@ public sealed class PreSpreadService
     public async Task<PreActionResult> SendPreAsync(
         string release,
         IReadOnlyList<PreSiteConfig> sites,
-        IReadOnlyList<PreCbftpServer> servers)
+        IReadOnlyList<PreFxpBackend> servers)
     {
         var logs = new List<string>();
         var tasks = sites
@@ -416,7 +419,7 @@ public sealed class PreSpreadService
     public async Task<PreActionResult> DeleteReleaseAsync(
         string release,
         IReadOnlyList<PreSiteConfig> sites,
-        IReadOnlyList<PreCbftpServer> servers)
+        IReadOnlyList<PreFxpBackend> servers)
     {
         var logs = new List<string>();
         var success = 0;
@@ -424,11 +427,11 @@ public sealed class PreSpreadService
 
         foreach (var site in sites)
         {
-            var server = FindServer(servers, site.CbftpServerId);
+            var server = FindServer(servers, site.FxpBackendId);
             if (server is null)
             {
                 failed++;
-                logs.Add($"{site.Name}: CBFTP server not found");
+                logs.Add($"{site.Name}: FXP backend not found");
                 continue;
             }
 
@@ -453,12 +456,12 @@ public sealed class PreSpreadService
         string release,
         PreSiteConfig source,
         IReadOnlyList<PreSiteConfig> sites,
-        IReadOnlyList<PreCbftpServer> servers)
+        IReadOnlyList<PreFxpBackend> servers)
     {
         var logs = new List<string>();
-        var sourceServer = FindServer(servers, source.CbftpServerId);
+        var sourceServer = FindServer(servers, source.FxpBackendId);
         if (sourceServer is null)
-            return PreActionResult.Fail("Source CBFTP server not found.");
+            return PreActionResult.Fail("Source FXP backend not found.");
 
         var sourcePath = FxpClientService.CombinePath(source.AffilDirectory ?? "/pre", release);
         var sourceFiles = await GetFileListRecursiveAsync(sourceServer, source.Name ?? "", sourcePath);
@@ -470,11 +473,11 @@ public sealed class PreSpreadService
 
         foreach (var site in sites.Where(s => !string.Equals(s.Name, source.Name, StringComparison.OrdinalIgnoreCase)))
         {
-            var server = FindServer(servers, site.CbftpServerId);
+            var server = FindServer(servers, site.FxpBackendId);
             if (server is null)
             {
                 incomplete++;
-                logs.Add($"{site.Name}: CBFTP server not found");
+                logs.Add($"{site.Name}: FXP backend not found");
                 continue;
             }
 
@@ -508,13 +511,13 @@ public sealed class PreSpreadService
     private async Task SendPreToSiteAsync(
         string release,
         PreSiteConfig site,
-        IReadOnlyList<PreCbftpServer> servers,
+        IReadOnlyList<PreFxpBackend> servers,
         List<string> logs)
     {
-        var server = FindServer(servers, site.CbftpServerId);
+        var server = FindServer(servers, site.FxpBackendId);
         if (server is null)
         {
-            lock (logs) logs.Add($"{site.Name}: CBFTP server not found");
+            lock (logs) logs.Add($"{site.Name}: FXP backend not found");
             return;
         }
 
@@ -533,7 +536,7 @@ public sealed class PreSpreadService
         }
     }
 
-    private async Task<bool> SendRawAsync(PreCbftpServer server, string siteName, string command)
+    private async Task<bool> SendRawAsync(PreFxpBackend server, string siteName, string command)
     {
         using var client = CreateClient(server, 30);
         var endpoint = BuildEndpoint(server);
@@ -544,7 +547,7 @@ public sealed class PreSpreadService
         return response.IsSuccessStatusCode;
     }
 
-    private async Task<bool> DeletePathAsync(PreCbftpServer server, string siteName, string path)
+    private async Task<bool> DeletePathAsync(PreFxpBackend server, string siteName, string path)
     {
         using var client = CreateClient(server, 60);
         var endpoint = BuildEndpoint(server);
@@ -553,14 +556,14 @@ public sealed class PreSpreadService
         return response.IsSuccessStatusCode;
     }
 
-    private async Task<List<PreRemoteFile>> GetFileListRecursiveAsync(PreCbftpServer server, string siteName, string remotePath)
+    private async Task<List<PreRemoteFile>> GetFileListRecursiveAsync(PreFxpBackend server, string siteName, string remotePath)
     {
         var files = new List<PreRemoteFile>();
         IReadOnlyList<FxpFileItem> items;
 
         try
         {
-            items = await _fxp.BrowseAsync(ToCbftpServer(server), siteName, remotePath);
+            items = await _fxp.BrowseAsync(ToFxpBackend(server), siteName, remotePath);
         }
         catch
         {
@@ -607,10 +610,10 @@ public sealed class PreSpreadService
         return problems;
     }
 
-    private static PreCbftpServer? FindServer(IReadOnlyList<PreCbftpServer> servers, string? id) =>
+    private static PreFxpBackend? FindServer(IReadOnlyList<PreFxpBackend> servers, string? id) =>
         servers.FirstOrDefault(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase));
 
-    private static CbftpServer ToCbftpServer(PreCbftpServer server) => new()
+    private static FxpBackend ToFxpBackend(PreFxpBackend server) => new()
     {
         Id = server.Id,
         Name = server.Name,
@@ -620,7 +623,7 @@ public sealed class PreSpreadService
         Profile = server.Profile
     };
 
-    private static string BuildEndpoint(PreCbftpServer server)
+    private static string BuildEndpoint(PreFxpBackend server)
     {
         var host = server.Host ?? "";
         var port = server.Port ?? "";
@@ -629,7 +632,7 @@ public sealed class PreSpreadService
             : $"https://{host}:{port}";
     }
 
-    private static HttpClient CreateClient(PreCbftpServer server, int timeoutSeconds)
+    private static HttpClient CreateClient(PreFxpBackend server, int timeoutSeconds)
     {
         var handler = new HttpClientHandler
         {
@@ -644,18 +647,32 @@ public sealed class PreSpreadService
         return client;
     }
 
-    private static string DecryptPassword(PreCbftpServer server) =>
+    private static string DecryptPassword(PreFxpBackend server) =>
         string.IsNullOrWhiteSpace(server.Password) ? "" : SecureConfig.Decrypt(server.Password);
 
     private static void EnsureDirectory() => Directory.CreateDirectory(ConfigFolder);
 
+    private static string ResolveReadableServersFile() =>
+        File.Exists(ServersFile) ? ServersFile : LegacyServersFile;
+
     private sealed record PreRemoteFile(string Name, long Size);
 }
 
-public sealed class PreCbftpServersConfig
+public sealed class PreFxpBackendsConfig
 {
-    [JsonProperty("cbftp_servers")]
-    public List<PreCbftpServer> Servers { get; set; } = new();
+    [JsonProperty(FxpBackendJsonKeys.Backends)]
+    public List<PreFxpBackend> Servers { get; set; } = new();
+
+    [JsonProperty(FxpBackendJsonKeys.LegacyBackends, NullValueHandling = NullValueHandling.Ignore)]
+    private List<PreFxpBackend>? LegacyServers
+    {
+        get => null;
+        set
+        {
+            if (value != null && value.Count > 0 && (Servers == null || Servers.Count == 0))
+                Servers = value;
+        }
+    }
 }
 
 public sealed class PreSitesConfig
@@ -664,7 +681,7 @@ public sealed class PreSitesConfig
     public List<PreSiteConfig> Sites { get; set; } = new();
 }
 
-public sealed class PreCbftpServer
+public sealed class PreFxpBackend
 {
     [JsonProperty("id")]
     public string? Id { get; set; }
@@ -690,8 +707,19 @@ public sealed class PreSiteConfig
     [JsonProperty("name")]
     public string? Name { get; set; }
 
-    [JsonProperty("cbftp_server_id")]
-    public string? CbftpServerId { get; set; }
+    [JsonProperty(FxpBackendJsonKeys.BackendId)]
+    public string? FxpBackendId { get; set; }
+
+    [JsonProperty(FxpBackendJsonKeys.LegacyBackendId, NullValueHandling = NullValueHandling.Ignore)]
+    private string? LegacyFxpBackendId
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value) && string.IsNullOrWhiteSpace(FxpBackendId))
+                FxpBackendId = value;
+        }
+    }
 
     [JsonProperty("affil_directory")]
     public string? AffilDirectory { get; set; } = "/pre";

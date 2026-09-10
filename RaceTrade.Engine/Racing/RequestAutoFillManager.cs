@@ -1,4 +1,4 @@
-﻿using RaceTrade;
+using RaceTrade;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -229,31 +229,31 @@ namespace RaceTrader
                 return empty;
             }
 
-            LogManager.LogCBFTP(
-                CBFTPEventType.Info,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Info,
                 $"[RequestAutoFill] Polling requests on '{s.Sitename}'",  // with command: {s.RequestListCommand}
                 releaseName: null,
                 targetSite: s.Sitename);
 
-            // Call cbftp /raw and get the raw result for this site
-            var raw = await CbftpRequestHelper.RunRawAsync(
+            // Call FXP backend /raw and get the raw result for this site
+            var raw = await FxpBackendRequestHelper.RunRawAsync(
                 s.RequestListCommand,
                 s.Sitename,
                 token);
 
             if (string.IsNullOrWhiteSpace(raw))
             {
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Info,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Info,
                     $"[RequestAutoFill] No request output received for '{s.Sitename}'.",
                     releaseName: null,
                     targetSite: s.Sitename);
                 return empty;
             }
             if (EngineSettings.DebugEnabled) { 
-                // Log raw SITE REQUESTS output into CBFTP log so you can see EXACTLY what the site returned
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Info,
+                // Log raw SITE REQUESTS output into FXP backend log so you can see EXACTLY what the site returned
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Info,
                     $"[RequestAutoFill] SITE REQUESTS raw output for '{s.Sitename}':\n{raw}",
                     releaseName: null,
                     targetSite: s.Sitename);
@@ -262,8 +262,8 @@ namespace RaceTrader
 
             if (entries.Count == 0)
             {
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Info,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Info,
                     $"[RequestAutoFill] No open requests found on '{s.Sitename}'.",
                     releaseName: null,
                     targetSite: s.Sitename);
@@ -274,8 +274,8 @@ namespace RaceTrader
             var summary = string.Join(Environment.NewLine,
                 entries.Select(e => $"  {e.Id ?? "?"}: {e.Name} (by {e.User})"));
 
-            LogManager.LogCBFTP(
-                CBFTPEventType.Info,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Info,
                 $"[RequestAutoFill] Found {entries.Count} open request(s) on '{s.Sitename}':\n{summary}",
                 releaseName: null,
                 targetSite: s.Sitename);
@@ -408,7 +408,7 @@ namespace RaceTrader
 
 
         /// <summary>
-        /// Normalize a release name for cbftp SITE SEARCH:
+        /// Normalize a release name for FXP backend SITE SEARCH:
         /// - convert various Unicode dash characters to ASCII '-'
         /// </summary>
         private static string NormalizeReleaseNameForSearch(string name)
@@ -451,7 +451,7 @@ namespace RaceTrader
 
                 while (!token.IsCancellationRequested)
                 {
-                    var stats = await CbftpRacer.GetTransferJobStats(jobName);
+                    var stats = await FxpBackendRacer.GetTransferJobStats(jobName);
 
                     if (stats == null)
                     {
@@ -459,8 +459,8 @@ namespace RaceTrader
                         emptyCount++;
                         if (emptyCount > 6) // e.g. ~60 seconds with 10s interval
                         {
-                            LogManager.LogCBFTP(
-                                CBFTPEventType.Info,
+                            LogManager.LogFxpBackend(
+                                FxpBackendEventType.Info,
                                 $"[RequestAutoFill] Transferjob '{jobName}' not found while waiting to REQFILL.",
                                 releaseName: jobName,
                                 targetSite: dstName);
@@ -475,8 +475,8 @@ namespace RaceTrader
                         if (status == "DONE")
                         {
                             var speedLabel = stats.SpeedFromApi ? "speed" : "avg(est)";
-                            LogManager.LogCBFTP(
-                                CBFTPEventType.Info,
+                            LogManager.LogFxpBackend(
+                                FxpBackendEventType.Info,
                                 $"[RequestAutoFill] Transferjob for '{jobName}' is DONE ({stats.FilesTransferred}/{stats.FilesTotal} files, {speedLabel}: {stats.AverageSpeed:F1} MB/s). Sending REQFILLED...",
                                 releaseName: jobName,
                                 targetSite: dstName);
@@ -484,11 +484,11 @@ namespace RaceTrader
                             var fillCmd = BuildFillCommand(requestSite, req);
                             if (!string.IsNullOrWhiteSpace(fillCmd))
                             {
-                                await CbftpRequestHelper.RunRawAsync(fillCmd, dstName, token);
+                                await FxpBackendRequestHelper.RunRawAsync(fillCmd, dstName, token);
                             }
 
-                            LogManager.LogCBFTP(
-                                CBFTPEventType.SpreadJobCompleted,
+                            LogManager.LogFxpBackend(
+                                FxpBackendEventType.SpreadJobCompleted,
                                 $"[RequestAutoFill] Request '{jobName}' on '{dstName}' filled (after successful transferjob).",
                                 releaseName: jobName,
                                 targetSite: dstName);
@@ -497,8 +497,8 @@ namespace RaceTrader
 
                         if (status == "FAILED" || status == "TIMEOUT" || status == "ABORTED")
                         {
-                            LogManager.LogCBFTP(
-                                CBFTPEventType.SpreadJobFailed,
+                            LogManager.LogFxpBackend(
+                                FxpBackendEventType.SpreadJobFailed,
                                 $"[RequestAutoFill] Transferjob for '{jobName}' ended with status {status}, NOT sending REQFILLED.",
                                 releaseName: jobName,
                                 targetSite: dstName);
@@ -577,8 +577,8 @@ namespace RaceTrader
                 // normalize ONLY for searching; keep original for dst path / logging if you want
                 var searchName = NormalizeReleaseNameForSearch(originalName);
 
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Info,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Info,
                     $"[RequestAutoFill] Trying to auto-fill request '{originalName}' on '{dstName}' (searching as '{searchName}')...",
                     releaseName: originalName,
                     targetSite: dstName);
@@ -587,27 +587,27 @@ namespace RaceTrader
                 {
                     var srcName = src.SiteSettings.Sitename;
 
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Info,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Info,
                         $"[RequestAutoFill] Searching '{srcName}' for '{searchName}'...",
                         releaseName: originalName,
                         targetSite: srcName);
 
                     var searchCmd = $"SITE SEARCH {searchName}";
-                    var rawSearch = await CbftpRequestHelper.RunRawAsync(searchCmd, srcName, token);
+                    var rawSearch = await FxpBackendRequestHelper.RunRawAsync(searchCmd, srcName, token);
 
                     if (string.IsNullOrWhiteSpace(rawSearch))
                     {
-                        LogManager.LogCBFTP(
-                            CBFTPEventType.Info,
+                        LogManager.LogFxpBackend(
+                            FxpBackendEventType.Info,
                             $"[RequestAutoFill] No SITE SEARCH result for '{searchName}' on '{srcName}'.",
                             releaseName: originalName,
                             targetSite: srcName);
                         continue;
                     }
 
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Info,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Info,
                         $"[RequestAutoFill] SITE SEARCH raw output from '{srcName}' for '{searchName}':\n{rawSearch}",
                         releaseName: originalName,
                         targetSite: srcName);
@@ -615,16 +615,16 @@ namespace RaceTrader
                     var srcPath = ExtractReleasePathFromSearch(rawSearch, searchName);
                     if (string.IsNullOrEmpty(srcPath))
                     {
-                        LogManager.LogCBFTP(
-                            CBFTPEventType.Info,
+                        LogManager.LogFxpBackend(
+                            FxpBackendEventType.Info,
                             $"[RequestAutoFill] Could not extract path for '{searchName}' on '{srcName}' from SITE SEARCH output.",
                             releaseName: originalName,
                             targetSite: srcName);
                         continue;
                     }
 
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Info,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Info,
                         $"[RequestAutoFill] Found '{searchName}' on '{srcName}' at path '{srcPath}'.",
                         releaseName: originalName,
                         targetSite: srcName);
@@ -637,7 +637,7 @@ namespace RaceTrader
                         break; // config broken for this dst
                     }
 
-                    var ok = await CbftpRacer.StartRequestTransferJob(
+                    var ok = await FxpBackendRacer.StartRequestTransferJob(
                         srcName,
                         dstName,
                         dstPath,
@@ -656,9 +656,9 @@ namespace RaceTrader
                     InFlightFills.TryAdd(FillKey(dstName, req), 0);
 
                     // Do NOT REQFILL here.
-                    // Start a background waiter that will REQFILL when cbftp reports status DONE.
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Info,
+                    // Start a background waiter that will REQFILL when FXP backend reports status DONE.
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Info,
                         $"[RequestAutoFill] Transferjob started for '{originalName}' from '{srcName}' -> '{dstName}' (dst: '{dstPath}'). Waiting for completion before REQFILL...",
                         releaseName: originalName,
                         targetSite: dstName);
@@ -835,10 +835,10 @@ namespace RaceTrader
     }
 
     /// <summary>
-    /// Small helper that calls cbftp /raw using your existing cbftp_config.json.
+    /// Small helper that calls FXP backend /raw using your existing backend config.
     /// This is used ONLY for SITE REQUESTS, SITE SEARCH, and REQFILLED commands.
     /// </summary>
-    internal static class CbftpRequestHelper
+    internal static class FxpBackendRequestHelper
     {
         public static async Task<string> RunRawAsync(
             string command,
@@ -849,21 +849,20 @@ namespace RaceTrader
 
             try
             {
-                string configPath = Path.Combine("cbftp", "cbftp_config.json");
-                if (!File.Exists(configPath))
+                if (!FxpBackendConfigFiles.TryGetReadablePath(out var configPath))
                 {
-                    LogManager.Error("[RequestAutoFill] cbftp_config.json not found, cannot call /raw.");
+                    LogManager.Error("[RequestAutoFill] fxp_backend_config.json not found, cannot call /raw.");
                     return null;
                 }
 
-                // Reuse your existing Config / CbftpServer classes from RaceTrade
+                // Reuse your existing Config / FxpBackend classes from RaceTrade
                 var jsonContent = File.ReadAllText(configPath);
                 var config = JsonConvert.DeserializeObject<Config>(jsonContent);
 
-                var server = config?.CbftpServers?.FirstOrDefault();
+                var server = config?.FxpBackends?.FirstOrDefault(s => !s.Disabled);
                 if (server == null)
                 {
-                    LogManager.Error("[RequestAutoFill] No cbftp servers found in cbftp_config.json.");
+                    LogManager.Error("[RequestAutoFill] No enabled FXP backend servers found in fxp_backend_config.json.");
                     return null;
                 }
 
@@ -920,8 +919,8 @@ namespace RaceTrader
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Error,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Error,
                         $"[RequestAutoFill] /raw HTTP {(int)response.StatusCode}: {response.ReasonPhrase}",
                         releaseName: null,
                         targetSite: siteName
@@ -964,8 +963,8 @@ namespace RaceTrader
             }
             catch (TaskCanceledException)
             {
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Error,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Error,
                     "[RequestAutoFill] /raw request timeout (30 seconds)",
                     releaseName: null,
                     targetSite: siteName
@@ -974,8 +973,8 @@ namespace RaceTrader
             }
             catch (Exception ex)
             {
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Error,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Error,
                     $"[RequestAutoFill] /raw HTTP error: {ex.Message}",
                     releaseName: null,
                     targetSite: siteName

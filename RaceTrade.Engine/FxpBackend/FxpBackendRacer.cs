@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using RaceTrade.Engine.Logging;
 using RaceTrade.Engine.Compat;
 using System.Collections.Concurrent;
@@ -16,12 +16,12 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RaceTrade;
 
-public class CbftpJobStats
+public class FxpBackendJobStats
 {
     public string Status { get; set; }
     public string Section { get; set; }
-    public int FilesTotal { get; set; }          // not used by stock cbftp (will be 0)
-    public int FilesTransferred { get; set; }    // not used by stock cbftp (will be 0)
+    public int FilesTotal { get; set; }          // not used by stock FXP backend (will be 0)
+    public int FilesTransferred { get; set; }    // not used by stock FXP backend (will be 0)
     public long BytesTransferred { get; set; }   // mapped from size_estimated_bytes
     public double AverageSpeed { get; set; }     // MiB/s
     public bool SpeedFromApi { get; set; }
@@ -31,16 +31,16 @@ public class CbftpJobStats
 }
 
 /// <summary>
-/// CBFTP client for initiating spreadjob transfers.
+/// FXP backend client for initiating spreadjob transfers.
 /// </summary>
-public class CbftpRacer
+public class FxpBackendRacer
 {
-    private static Dictionary<string, dynamic> CBFTP_CONFIGS = new Dictionary<string, dynamic>();
+    private static Dictionary<string, dynamic> FXP_BACKEND_CONFIGS = new Dictionary<string, dynamic>();
     // The WinForms build also held a reference to the MainApp form here
     // (SetMainForm/mainForm). It was write-only — never read — and it was the last
     // hard link from the racer to a UI type, so it is gone.
 
-    static CbftpRacer()
+    static FxpBackendRacer()
     {
         LoadConfiguration();
     }
@@ -60,14 +60,14 @@ public class CbftpRacer
 
 
 
-    public static async Task<CbftpJobStats> GetTransferJobStats(string releaseName)
+    public static async Task<FxpBackendJobStats> GetTransferJobStats(string releaseName)
     {
         try
         {
-            var config = CBFTP_CONFIGS.Values.FirstOrDefault();
+            var config = FXP_BACKEND_CONFIGS.Values.FirstOrDefault();
             if (config == null)
             {
-                LogManager.Error("No CBFTP configuration available");
+                LogManager.Error("No FXP backend configuration available");
                 return null;
             }
 
@@ -100,7 +100,7 @@ public class CbftpRacer
 
             if (EngineSettings.DebugEnabled)
             {
-                LogManager.Debug($"CBFTP API Response for transferjob '{releaseName}': Status={response.StatusCode}");
+                LogManager.Debug($"FXP backend API Response for transferjob '{releaseName}': Status={response.StatusCode}");
             }
 
             if (!response.IsSuccessStatusCode)
@@ -115,13 +115,13 @@ public class CbftpRacer
 
             if (EngineSettings.DebugEnabled)
             {
-                LogManager.Debug($"CBFTP TransferJob '{releaseName}' Response: {content}");
+                LogManager.Debug($"FXP backend TransferJob '{releaseName}' Response: {content}");
             }
 
             var jobData = JsonConvert.DeserializeObject<JObject>(content) ?? new JObject();
             var jobStatus = ReadString(jobData, "status");
 
-            var stats = new CbftpJobStats
+            var stats = new FxpBackendJobStats
             {
                 Status = string.IsNullOrWhiteSpace(jobStatus) ? "unknown" : jobStatus,
                 DestinationSites = new List<string>(),
@@ -158,16 +158,42 @@ public class CbftpRacer
     }
 
 
-    public static async Task<string> GetSiteRulesTextAsync(string siteName)
+    public static async Task<string> GetSiteRulesTextAsync(string siteName, string fxpBackendServerId = null)
     {
         if (string.IsNullOrWhiteSpace(siteName))
             return "No site name provided.";
 
-        var config = CBFTP_CONFIGS.Values.FirstOrDefault();
+        dynamic config = null;
+        if (!string.IsNullOrWhiteSpace(fxpBackendServerId))
+        {
+            if (!FXP_BACKEND_CONFIGS.TryGetValue(fxpBackendServerId, out config))
+            {
+                foreach (var candidate in FXP_BACKEND_CONFIGS.Values)
+                {
+                    string candidateName = candidate.Name;
+                    if (string.Equals(candidateName, fxpBackendServerId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        config = candidate;
+                        break;
+                    }
+                }
+            }
+
+            if (config == null)
+            {
+                LogManager.Error($"FXP backend server '{fxpBackendServerId}' is not available for SITE RULES");
+                return $"Configured FXP backend server '{fxpBackendServerId}' is not available.";
+            }
+        }
+        else
+        {
+            config = FXP_BACKEND_CONFIGS.Values.FirstOrDefault();
+        }
+
         if (config == null)
         {
-            LogManager.Error("No CBFTP configuration available for SITE RULES");
-            return "No CBFTP configuration available.";
+            LogManager.Error("No FXP backend configuration available for SITE RULES");
+            return "No FXP backend configuration available.";
         }
 
         string host = config.Host;
@@ -233,8 +259,8 @@ public class CbftpRacer
 
             if (!response.IsSuccessStatusCode)
             {
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Error,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Error,
                     $"SITE RULES HTTP {(int)response.StatusCode}: {response.ReasonPhrase}",
                     releaseName: null,
                     targetSite: siteName
@@ -308,8 +334,8 @@ public class CbftpRacer
         }
         catch (TaskCanceledException)
         {
-            LogManager.LogCBFTP(
-                CBFTPEventType.Error,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Error,
                 "SITE RULES request timeout (30 seconds)",
                 releaseName: null,
                 targetSite: siteName
@@ -319,8 +345,8 @@ public class CbftpRacer
         }
         catch (Exception ex)
         {
-            LogManager.LogCBFTP(
-                CBFTPEventType.Error,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Error,
                 $"SITE RULES HTTP error: {ex.Message}",
                 releaseName: null,
                 targetSite: siteName
@@ -333,17 +359,17 @@ public class CbftpRacer
 
 
     /// <summary>
-    /// Uses ONLY the stock CBFTP endpoint: GET /spreadjobs/{releaseName}
+    /// Uses ONLY the stock FXP backend endpoint: GET /spreadjobs/{releaseName}
     /// and only stock fields: status, sites, size_estimated_bytes, time_spent_seconds.
     /// </summary>
-    public static async Task<CbftpJobStats> GetJobStats(string releaseName)
+    public static async Task<FxpBackendJobStats> GetJobStats(string releaseName)
     {
         try
         {
-            var config = CBFTP_CONFIGS.Values.FirstOrDefault();
+            var config = FXP_BACKEND_CONFIGS.Values.FirstOrDefault();
             if (config == null)
             {
-                LogManager.Error("No CBFTP configuration available");
+                LogManager.Error("No FXP backend configuration available");
                 return null;
             }
 
@@ -376,7 +402,7 @@ public class CbftpRacer
 
             if (EngineSettings.DebugEnabled)
             {
-                LogManager.Debug($"CBFTP API Response for job '{releaseName}': Status={response.StatusCode}");
+                LogManager.Debug($"FXP backend API Response for job '{releaseName}': Status={response.StatusCode}");
             }
 
             if (!response.IsSuccessStatusCode)
@@ -391,13 +417,13 @@ public class CbftpRacer
 
             if (EngineSettings.DebugEnabled)
             {
-                LogManager.Debug($"CBFTP Job '{releaseName}' Response: {content}");
+                LogManager.Debug($"FXP backend Job '{releaseName}' Response: {content}");
             }
 
             var jobData = JsonConvert.DeserializeObject<JObject>(content) ?? new JObject();
             var jobStatus = ReadString(jobData, "status");
 
-            var stats = new CbftpJobStats
+            var stats = new FxpBackendJobStats
             {
                 Status = string.IsNullOrWhiteSpace(jobStatus) ? "unknown" : jobStatus,
                 DestinationSites = new List<string>(),
@@ -407,10 +433,10 @@ public class CbftpRacer
             AddDistinct(stats.DestinationSites, ReadStringList(jobData,
                 "sites", "destination_sites", "dst_sites", "target_sites"));
 
-            // size_estimated_bytes (stock CBFTP field)
+            // size_estimated_bytes (stock FXP backend field)
             long estimatedBytes = ReadLong(jobData, "size_estimated_bytes", "size_bytes", "bytes_total", "bytes");
 
-            // time_spent_seconds (stock CBFTP field)
+            // time_spent_seconds (stock FXP backend field)
             long timeSpentSeconds = ReadLong(jobData, "time_spent_seconds", "timeSpentSeconds");
 
             stats.BytesTransferred = estimatedBytes;
@@ -447,7 +473,7 @@ public class CbftpRacer
     }
 
     /// <summary>
-    /// Monitor stock CBFTP job: only cares about DONE / FAILED / TIMEOUT.
+    /// Monitor stock FXP backend job: only cares about DONE / FAILED / TIMEOUT.
     /// </summary>
     public static async Task MonitorJobProgress(
         string releaseName,
@@ -459,7 +485,11 @@ public class CbftpRacer
         // channel as the Detected/Racing lines they belong to. Without it those two
         // rows sit in the log with an empty channel column and cannot be tied back
         // to the announce.
-        string ircChannel = null)
+        string ircChannel = null,
+        string fxpBackendHost = null,
+        string fxpBackendPort = null,
+        string fxpBackendPassword = null,
+        string fxpBackendServerName = null)
     {
         try
         {
@@ -493,15 +523,15 @@ public class CbftpRacer
                     var allSites = string.Join(",", targetSites);
                     string completionMsg = BuildJobLogMessage(stats, section, targetSites, "✓");
 
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.SpreadJobCompleted,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.SpreadJobCompleted,
                         completionMsg,
                         releaseName: releaseName,
                         targetSite: allSites
                     );
 
                     // The race log is where you look to see whether a race finished, so
-                    // this belongs there and not only in the CBFTP log.
+                    // this belongs there and not only in the FXP backend log.
                     LogManager.LogRace(
                         RaceStatus.Completed,
                         releaseName,
@@ -515,14 +545,14 @@ public class CbftpRacer
                 }
                 else if (status == "FAILED" || status == "TIMEOUT" || status == "ABORTED")
                 {
-                    string reason = status == "TIMEOUT" ? "CBFTP transfer timeout"
-                                  : status == "ABORTED" ? "CBFTP transfer aborted"
-                                  : "CBFTP transfer failed";
+                    string reason = status == "TIMEOUT" ? "FXP backend transfer timeout"
+                                  : status == "ABORTED" ? "FXP backend transfer aborted"
+                                  : "FXP backend transfer failed";
 
                     string failMsg = BuildJobLogMessage(stats, section, targetSites, $"✗ {reason}");
 
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.SpreadJobFailed,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.SpreadJobFailed,
                         failMsg,
                         releaseName: releaseName
                     );
@@ -539,6 +569,16 @@ public class CbftpRacer
                         ircChannel: ircChannel,
                         details: BuildRaceJobDetails(stats)
                     );
+
+                    await TryHardResetSpreadJobAsync(
+                        fxpBackendHost,
+                        fxpBackendPort,
+                        fxpBackendPassword,
+                        fxpBackendServerName,
+                        releaseName,
+                        reason,
+                        cancellationToken
+                    );
                     break;
                 }
 
@@ -552,7 +592,7 @@ public class CbftpRacer
         }
     }
 
-    private static string BuildJobLogMessage(CbftpJobStats stats, string fallbackSection, IEnumerable<string> fallbackSites, string prefix)
+    private static string BuildJobLogMessage(FxpBackendJobStats stats, string fallbackSection, IEnumerable<string> fallbackSites, string prefix)
     {
         var parts = new List<string>();
         var section = !string.IsNullOrWhiteSpace(stats.Section) ? stats.Section : fallbackSection;
@@ -580,7 +620,7 @@ public class CbftpRacer
         return parts.Count == 0 ? prefix : $"{prefix} {string.Join(" | ", parts)}";
     }
 
-    private static string BuildRaceJobDetails(CbftpJobStats stats)
+    private static string BuildRaceJobDetails(FxpBackendJobStats stats)
     {
         var parts = new List<string>();
 
@@ -592,7 +632,7 @@ public class CbftpRacer
         return string.Join(" | ", parts);
     }
 
-    private static List<string> BuildJobMetrics(CbftpJobStats stats)
+    private static List<string> BuildJobMetrics(FxpBackendJobStats stats)
     {
         var metrics = new List<string>();
 
@@ -615,10 +655,10 @@ public class CbftpRacer
         return metrics;
     }
 
-    private static void PopulateJobDetails(JObject jobData, CbftpJobStats stats)
+    private static void PopulateJobDetails(JObject jobData, FxpBackendJobStats stats)
     {
         stats.Section = ReadString(jobData,
-            "section", "cbftp_section", "cbftpSection", "src_section", "dst_section", "section_name", "category");
+            "section", "fxp_backend_section", "fxpBackendSection", "src_section", "dst_section", "section_name", "category");
 
         stats.Subpaths = ReadStringList(jobData,
             "subpaths", "sub_paths", "paths", "path_groups", "file_subpaths", "fileSubpaths");
@@ -656,7 +696,7 @@ public class CbftpRacer
         return total;
     }
 
-    private static string SpeedLabel(CbftpJobStats stats) =>
+    private static string SpeedLabel(FxpBackendJobStats stats) =>
         stats.SpeedFromApi ? "Speed" : "Avg(est)";
 
     private static string FormatStatus(string status)
@@ -816,35 +856,43 @@ public class CbftpRacer
     }
 
     /// <summary>
-    /// Re-reads cbftp/cbftp_config.json. Call after servers are added/edited/deleted
+    /// Re-reads the FXP backend config. Call after servers are added/edited/deleted
     /// in the UI so racing does not keep using a stale server list until restart.
     /// </summary>
     public static void ReloadConfiguration()
     {
-        CBFTP_CONFIGS.Clear();
+        FXP_BACKEND_CONFIGS.Clear();
         LoadConfiguration();
     }
 
     private static void LoadConfiguration()
     {
-        const string mainConfigPath = "cbftp/cbftp_config.json";
-
         try
         {
-            if (File.Exists(mainConfigPath))
+            if (FxpBackendConfigFiles.TryGetReadablePath(out var mainConfigPath))
             {
                 var jsonContent = File.ReadAllText(mainConfigPath);
                 var config = JsonConvert.DeserializeObject<MainConfig>(jsonContent);
 
-                if (config?.CbftpServers == null)
+                if (config?.FxpBackends == null)
                 {
-                    LogManager.Error("No CBFTP servers found in configuration");
+                    LogManager.Error("No FXP backend servers found in configuration");
                     return;
                 }
 
-                foreach (var server in config.CbftpServers)
+                var loadedCount = 0;
+                var disabledCount = 0;
+
+                foreach (var server in config.FxpBackends)
                 {
-                    CBFTP_CONFIGS[server.Id] = new
+                    if (server.Disabled)
+                    {
+                        disabledCount++;
+                        LogManager.Info($"FXP backend server [{server.Name ?? server.Id}] is disabled. Skipping.");
+                        continue;
+                    }
+
+                    FXP_BACKEND_CONFIGS[server.Id] = new
                     {
                         Name = server.Name ?? server.Id,
                         Host = server.Host,
@@ -853,42 +901,63 @@ public class CbftpRacer
                         Profile = server.Profile
                     };
 
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.Connected,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Connected,
                         $"Loaded config: {server.Name ?? server.Id}, Host: {server.Host}, Port: {server.Port}, Profile: {server.Profile}"
                     );
+
+                    loadedCount++;
                 }
 
-                LogManager.Info($"Loaded {config.CbftpServers.Count} CBFTP configuration(s)");
+                var suffix = disabledCount > 0 ? $" ({disabledCount} disabled)" : "";
+                LogManager.Info($"Loaded {loadedCount} FXP backend configuration(s){suffix}");
             }
             else
             {
-                LogManager.Error($"Main configuration file not found: {mainConfigPath}");
+                LogManager.Error($"Main configuration file not found: {FxpBackendConfigFiles.Path}");
             }
         }
         catch (Exception ex)
         {
-            LogManager.Error($"Error loading CBFTP configurations: {ex.Message}");
+            LogManager.Error($"Error loading FXP backend configurations: {ex.Message}");
         }
     }
 
-    // One HttpClient per cbftp endpoint, kept alive for the process lifetime.
+    // One HttpClient per FXP backend endpoint, kept alive for the process lifetime.
     // Creating a client per race meant every single race paid a TCP handshake plus
     // a full TLS handshake before the command bytes could leave — pure lost race
     // time. Reusing the client keeps the connection warm (keep-alive) so a race
     // command usually goes out in a single round trip.
-    private static readonly ConcurrentDictionary<string, HttpClient> CbftpClients =
+    private static readonly ConcurrentDictionary<string, HttpClient> FxpBackendClients =
         new ConcurrentDictionary<string, HttpClient>();
 
-    // Long enough that a healthy-but-busy cbftp still answers (avoiding a fallback
+    private static readonly Dictionary<string, DateTimeOffset> LastFxpBackendHardResetByServer =
+        new Dictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<string, int> FxpBackendHardResetAttemptsByJob =
+        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly object FxpBackendHardResetLock = new object();
+
+    // Long enough that a healthy-but-busy FXP backend still answers (avoiding a fallback
     // to the next server, which would submit the same spreadjob twice), short
-    // enough that a dead cbftp doesn't hold the race hostage for half a minute.
+    // enough that a dead FXP backend doesn't hold the race hostage for half a minute.
     private const int SpreadjobTimeoutSeconds = 8;
 
-    private static HttpClient GetCbftpClient(string endpoint, string password, string host)
+    private static string BuildFxpBackendEndpoint(string host, string port)
+    {
+        if (host.Contains("://"))
+        {
+            return host.EndsWith($":{port}", StringComparison.OrdinalIgnoreCase) ? host : $"{host}:{port}";
+        }
+
+        return $"https://{host}:{port}";
+    }
+
+    private static HttpClient GetFxpBackendClient(string endpoint, string password, string host)
     {
         var key = endpoint + "\n" + password;
-        return CbftpClients.GetOrAdd(key, _ =>
+        return FxpBackendClients.GetOrAdd(key, _ =>
         {
             // Note: the callback reads EngineSettings.AllowInsecureSsl live rather than
             // capturing it, so toggling the setting takes effect without having to
@@ -937,8 +1006,153 @@ public class CbftpRacer
         });
     }
 
+    private static bool ShouldHardResetForTransferFailure(TransferResult result)
+    {
+        if (result == null || result.Success) return false;
+
+        if (result.StatusCode.HasValue && result.StatusCode.Value >= 500) return true;
+
+        var message = result.ErrorMessage ?? "";
+        return message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("timed out", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("failed", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("not started", StringComparison.OrdinalIgnoreCase)
+               || message.Contains("aborted", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryReserveFxpBackendHardReset(
+        string serverKey,
+        string jobKey,
+        TimeSpan cooldown,
+        int maxAttempts,
+        out TimeSpan remaining,
+        out int attempt,
+        out bool attemptsExhausted)
+    {
+        lock (FxpBackendHardResetLock)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var currentAttempts = FxpBackendHardResetAttemptsByJob.TryGetValue(jobKey, out var count) ? count : 0;
+
+            attempt = currentAttempts + 1;
+            attemptsExhausted = currentAttempts >= maxAttempts;
+            if (attemptsExhausted)
+            {
+                remaining = TimeSpan.Zero;
+                return false;
+            }
+
+            if (LastFxpBackendHardResetByServer.TryGetValue(serverKey, out var last))
+            {
+                var elapsed = now - last;
+                if (elapsed < cooldown)
+                {
+                    remaining = cooldown - elapsed;
+                    attemptsExhausted = false;
+                    return false;
+                }
+            }
+
+            LastFxpBackendHardResetByServer[serverKey] = now;
+            FxpBackendHardResetAttemptsByJob[jobKey] = attempt;
+            remaining = TimeSpan.Zero;
+            attemptsExhausted = false;
+            return true;
+        }
+    }
+
+    public static async Task TryHardResetSpreadJobAsync(
+        string host,
+        string port,
+        string password,
+        string serverName,
+        string releaseName,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        if (!EngineSettings.AutoHardResetFxpBackendJobs) return;
+        if (string.IsNullOrWhiteSpace(host) ||
+            string.IsNullOrWhiteSpace(port) ||
+            string.IsNullOrWhiteSpace(password) ||
+            string.IsNullOrWhiteSpace(releaseName))
+        {
+            return;
+        }
+
+        var endpoint = BuildFxpBackendEndpoint(host, port);
+        var cooldownMinutes = Math.Max(1, EngineSettings.FxpBackendHardResetCooldownMinutes);
+        var cooldown = TimeSpan.FromMinutes(cooldownMinutes);
+        var maxAttempts = EngineSettings.FxpBackendHardResetMaxAttempts;
+        if (maxAttempts < 1) maxAttempts = 1;
+        if (maxAttempts > 5) maxAttempts = 5;
+
+        var serverKey = string.IsNullOrWhiteSpace(serverName) ? endpoint : serverName;
+        var jobKey = $"{serverKey}\u0000{releaseName}";
+
+        if (!TryReserveFxpBackendHardReset(serverKey, jobKey, cooldown, maxAttempts, out var remaining, out var attempt, out var attemptsExhausted))
+        {
+            var message = attemptsExhausted
+                ? $"Auto hard reset skipped; max attempts reached ({maxAttempts})."
+                : $"Auto hard reset skipped; cooldown active ({Math.Ceiling(remaining.TotalMinutes)}m left).";
+
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Info,
+                message,
+                releaseName: releaseName,
+                targetSite: serverName
+            );
+            return;
+        }
+
+        try
+        {
+            var client = GetFxpBackendClient(endpoint, password, host);
+            var body = new StringContent(JsonConvert.SerializeObject(new { hard = true }), Encoding.UTF8, "application/json");
+            var jobName = Uri.EscapeDataString(releaseName);
+            var response = await client.PostAsync($"{endpoint}/spreadjobs/{jobName}/reset", body, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Info,
+                    $"Auto hard reset {attempt}/{maxAttempts} sent after {reason}.",
+                    releaseName: releaseName,
+                    targetSite: serverName
+                );
+            }
+            else
+            {
+                var responseText = await response.Content.ReadAsStringAsync();
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Error,
+                    $"Auto hard reset failed: HTTP {(int)response.StatusCode} {response.ReasonPhrase} {responseText}",
+                    releaseName: releaseName,
+                    targetSite: serverName
+                );
+            }
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Error,
+                $"Auto hard reset timed out after {SpreadjobTimeoutSeconds} seconds.",
+                releaseName: releaseName,
+                targetSite: serverName
+            );
+        }
+        catch (Exception ex)
+        {
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Error,
+                $"Auto hard reset failed: {ex.Message}",
+                releaseName: releaseName,
+                targetSite: serverName
+            );
+        }
+    }
+
     /// <summary>
-    /// Starts a spreadjob transfer on CBFTP.
+    /// Starts a spreadjob transfer on FXP backend.
     /// </summary>
     public static async Task<TransferResult> StartSpreadjobTransfer(
         Dictionary<string, object> payload,
@@ -953,17 +1167,10 @@ public class CbftpRacer
 
         try
         {
-            if (host.Contains("://"))
-            {
-                endpoint = host.EndsWith($":{port}") ? host : $"{host}:{port}";
-            }
-            else
-            {
-                endpoint = $"https://{host}:{port}";
-            }
+            endpoint = BuildFxpBackendEndpoint(host, port);
 
-            // Reused, connection-warm client (see GetCbftpClient).
-            var client = GetCbftpClient(endpoint, password, host);
+            // Reused, connection-warm client (see GetFxpBackendClient).
+            var client = GetFxpBackendClient(endpoint, password, host);
 
             var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
@@ -977,8 +1184,8 @@ public class CbftpRacer
 
             if (!response.IsSuccessStatusCode)
             {
-                LogManager.LogCBFTP(
-                    CBFTPEventType.SpreadJobFailed,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.SpreadJobFailed,
                     $"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}",
                     releaseName: release,
                     targetSite: serverName
@@ -996,10 +1203,10 @@ public class CbftpRacer
             {
                 var jsonResponse = JsonConvert.DeserializeObject<Dictionary<string, object>>(responseText);
 
-                // The cbftp API doc does not document the POST /spreadjobs response body.
+                // The FXP backend API doc does not document the POST /spreadjobs response body.
                 // Treat any 2xx as started unless the response explicitly reports a
                 // non-STARTED state — otherwise a working job would be logged as failed
-                // and the next cbftp server would be tried (duplicate job).
+                // and the next FXP backend server would be tried (duplicate job).
                 string state = jsonResponse != null && jsonResponse.ContainsKey("state")
                     ? jsonResponse["state"]?.ToString()
                     : null;
@@ -1015,8 +1222,8 @@ public class CbftpRacer
                         jobId = id;
                     }
 
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.SpreadJobStarted,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.SpreadJobStarted,
                         "Spreadjob started successfully",
                         spreadJobId: jobId,
                         releaseName: release,
@@ -1027,8 +1234,8 @@ public class CbftpRacer
                 }
                 else
                 {
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.SpreadJobFailed,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.SpreadJobFailed,
                         $"Spreadjob not started. State: {state}",
                         releaseName: release,
                         targetSite: serverName
@@ -1044,8 +1251,8 @@ public class CbftpRacer
             }
             catch (JsonException)
             {
-                LogManager.LogCBFTP(
-                    CBFTPEventType.Error,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.Error,
                     "Unexpected response format",
                     releaseName: release,
                     targetSite: serverName
@@ -1061,8 +1268,8 @@ public class CbftpRacer
         }
         catch (TaskCanceledException)
         {
-            LogManager.LogCBFTP(
-                CBFTPEventType.Error,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Error,
                 $"Request timeout ({SpreadjobTimeoutSeconds} seconds)",
                 releaseName: release,
                 targetSite: serverName
@@ -1072,8 +1279,8 @@ public class CbftpRacer
         }
         catch (HttpRequestException ex)
         {
-            LogManager.LogCBFTP(
-                CBFTPEventType.Error,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Error,
                 $"HTTP request failed: {ex.Message}",
                 releaseName: release,
                 targetSite: serverName
@@ -1083,8 +1290,8 @@ public class CbftpRacer
         }
         catch (Exception ex)
         {
-            LogManager.LogCBFTP(
-                CBFTPEventType.Error,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Error,
                 $"Unexpected error: {ex.Message}",
                 releaseName: release,
                 targetSite: serverName
@@ -1174,21 +1381,56 @@ public class CbftpRacer
                 }
             }
 
-            bool anyTransferSucceeded = false;
-
-            foreach (var cbftpKey in CBFTP_CONFIGS.Keys)
+            if (FXP_BACKEND_CONFIGS.Count == 0)
             {
-                var config = CBFTP_CONFIGS[cbftpKey];
+                LogManager.Error("No FXP backend servers configured.");
+                return;
+            }
+
+            bool anyTransferSucceeded = false;
+            bool processedReleaseLogged = false;
+            var sitesByFxpBackend = GroupAllowedSitesByFxpBackend(allowedSites);
+
+            foreach (var fxpBackendGroup in sitesByFxpBackend)
+            {
+                if (!FXP_BACKEND_CONFIGS.TryGetValue(fxpBackendGroup.Key, out var config))
+                {
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Error,
+                        $"Configured FXP backend server '{fxpBackendGroup.Key}' was not found for sites: {string.Join(", ", fxpBackendGroup.Value)}",
+                        releaseName: release,
+                        targetSite: fxpBackendGroup.Key
+                    );
+                    continue;
+                }
+
                 string serverName = config.Name;
                 string host = config.Host;
                 string port = config.Port;
                 string password = config.Password;
+                var targetSiteKeys = fxpBackendGroup.Value;
+                var targetSites = targetSiteKeys
+                    .Select(RemoteSiteNameForKey)
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (targetSites.Count < 2)
+                {
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.Info,
+                        $"Skipping spreadjob on FXP backend '{serverName}': only {targetSites.Count} mapped site(s) [{string.Join(", ", targetSites)}] from config(s) [{string.Join(", ", targetSiteKeys)}]. A spreadjob needs at least 2 sites on the same FXP backend server.",
+                        releaseName: release,
+                        targetSite: serverName
+                    );
+                    continue;
+                }
 
                 if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(port) || string.IsNullOrEmpty(password))
                 {
                     if (EngineSettings.DebugEnabled)
                     {
-                        LogManager.Warning($"CBFTP '{cbftpKey}': Missing configuration");
+                        LogManager.Warning($"FXP backend '{fxpBackendGroup.Key}': Missing configuration");
                     }
                     continue;
                 }
@@ -1197,23 +1439,29 @@ public class CbftpRacer
                 {
                     { "section", section },
                     { "name", release },
-                    { "sites", allowedSites },
+                    { "sites", targetSites },
                     { "profile", config.Profile }
                 };
 
                 // Add sites_dlonly array (not string)
-                if (sitesDlOnly.Any())
+                var sitesDlOnlyForServer = sitesDlOnly
+                    .Where(site => targetSiteKeys.Contains(site, StringComparer.OrdinalIgnoreCase))
+                    .Select(RemoteSiteNameForKey)
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (sitesDlOnlyForServer.Any())
                 {
-                    payload.Add("sites_dlonly", sitesDlOnly);
+                    payload.Add("sites_dlonly", sitesDlOnlyForServer);
 
                     if (EngineSettings.DebugEnabled)
                     {
-                        LogManager.Debug($"sites_dlonly: [{string.Join(", ", sitesDlOnly)}]");
+                        LogManager.Debug($"sites_dlonly: [{string.Join(", ", sitesDlOnlyForServer)}]");
                     }
                 }
 
-                LogManager.LogCBFTP(
-                    CBFTPEventType.SpreadJobSent,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.SpreadJobSent,
                     "Sending spreadjob",
                     releaseName: release,
                     targetSite: serverName
@@ -1232,16 +1480,20 @@ public class CbftpRacer
                             release,
                             announceSite,
                             section,
-                            allowedSites,
+                            targetSites,
                             cts.Token,
-                            ircChannel
+                            ircChannel,
+                            host,
+                            port,
+                            password,
+                            serverName
                         ));
                     }
 
                     if (!transferResult.JobId.HasValue)
                     {
-                        LogManager.LogCBFTP(
-                            CBFTPEventType.SpreadJobCompleted,
+                        LogManager.LogFxpBackend(
+                            FxpBackendEventType.SpreadJobCompleted,
                             "Transfer completed successfully",
                             releaseName: release,
                             targetSite: serverName
@@ -1252,30 +1504,45 @@ public class CbftpRacer
                     // match on it, so a decorated string kills duplicate detection entirely
                     // (re-announces would be raced again). Timestamp/section/sites have
                     // their own columns.
-                    SQLiteHelper.LogProcessedRelease(
-                        releaseName: release,
-                        category: section,
-                        siteName: string.Join(",", allowedSites),
-                        dateProcessed: DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                        pretime: 0
-                    );
-
-                    break;
+                    if (!processedReleaseLogged)
+                    {
+                        SQLiteHelper.LogProcessedRelease(
+                            releaseName: release,
+                            category: section,
+                            siteName: string.Join(",", allowedSites),
+                            dateProcessed: DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                            pretime: 0
+                        );
+                        processedReleaseLogged = true;
+                    }
                 }
                 else
                 {
-                    LogManager.LogCBFTP(
-                        CBFTPEventType.SpreadJobFailed,
+                    LogManager.LogFxpBackend(
+                        FxpBackendEventType.SpreadJobFailed,
                         $"Transfer failed: {transferResult.ErrorMessage}",
                         releaseName: release,
                         targetSite: serverName
                     );
+
+                    if (ShouldHardResetForTransferFailure(transferResult))
+                    {
+                        await TryHardResetSpreadJobAsync(
+                            host,
+                            port,
+                            password,
+                            serverName,
+                            release,
+                            transferResult.ErrorMessage,
+                            CancellationToken.None
+                        );
+                    }
                 }
             }
 
             if (!anyTransferSucceeded)
             {
-                LogManager.Error($"All CBFTP servers failed for release '{release}'");
+                LogManager.Error($"All FXP backend servers failed for release '{release}'");
             }
         }
         catch (Exception ex)
@@ -1283,13 +1550,78 @@ public class CbftpRacer
             LogManager.Exception(ex, $"Exception in HandleTransferJob for '{release}'");
         }
     }
+
+    private static Dictionary<string, List<string>> GroupAllowedSitesByFxpBackend(IEnumerable<string> allowedSites)
+    {
+        var groups = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var fallbackKey = FXP_BACKEND_CONFIGS.Keys.FirstOrDefault() ?? "";
+
+        foreach (var site in allowedSites.Where(s => !string.IsNullOrWhiteSpace(s)))
+        {
+            var fxpBackendKey = ResolveFxpBackendKeyForSite(site, fallbackKey);
+            if (string.IsNullOrWhiteSpace(fxpBackendKey))
+                continue;
+
+            if (!groups.TryGetValue(fxpBackendKey, out var sites))
+            {
+                sites = new List<string>();
+                groups[fxpBackendKey] = sites;
+            }
+
+            if (!sites.Contains(site, StringComparer.OrdinalIgnoreCase))
+                sites.Add(site);
+        }
+
+        return groups;
+    }
+
+    private static string RemoteSiteNameForKey(string siteKey)
+    {
+        if (SiteConfigManager.TryGetSiteConfig(siteKey, out var siteConfig))
+        {
+            var remoteName = siteConfig.SiteSettings?.Sitename?.Trim();
+            if (!string.IsNullOrWhiteSpace(remoteName))
+                return remoteName;
+        }
+
+        return siteKey;
+    }
+
+    private static string ResolveFxpBackendKeyForSite(string site, string fallbackKey)
+    {
+        if (!SiteConfigManager.TryGetSiteConfig(site, out var siteConfig))
+            return fallbackKey;
+
+        var configured = siteConfig.SiteSettings?.FxpBackendId?.Trim();
+        if (string.IsNullOrWhiteSpace(configured))
+            return fallbackKey;
+
+        var keyMatch = FXP_BACKEND_CONFIGS.Keys.FirstOrDefault(k =>
+            string.Equals(k, configured, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(keyMatch))
+            return keyMatch;
+
+        foreach (var kvp in FXP_BACKEND_CONFIGS)
+        {
+            string name = kvp.Value.Name;
+            if (string.Equals(name, configured, StringComparison.OrdinalIgnoreCase))
+                return kvp.Key;
+        }
+
+        LogManager.LogFxpBackend(
+            FxpBackendEventType.Error,
+            $"[{site}] is mapped to FXP backend server [{configured}], but that server is disabled or not loaded. Skipping this site for the race.",
+            targetSite: site
+        );
+        return "";
+    }
     
     // ============================================================
     //  TRANSFERJOBS (FXP / DOWNLOAD / UPLOAD) – used for requests
     // ============================================================
 
     /// <summary>
-    /// Low-level HTTP helper that POSTS to /transferjobs on cbftp.
+    /// Low-level HTTP helper that POSTS to /transferjobs on FXP backend.
     /// </summary>
     private static async Task<TransferResult> PostTransferJob(
         Dictionary<string, object> payload,
@@ -1307,7 +1639,7 @@ public class CbftpRacer
 
             using var handler = new HttpClientHandler
             {
-                // cbftp uses self-signed cert; this is equivalent to curl -k
+                // FXP backend uses self-signed cert; this is equivalent to curl -k
                 ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) =>
                 {
                     if (sslPolicyErrors == System.Net.Security.SslPolicyErrors.None)
@@ -1350,8 +1682,8 @@ public class CbftpRacer
 
             if (!response.IsSuccessStatusCode)
             {
-                LogManager.LogCBFTP(
-                    CBFTPEventType.SpreadJobFailed,
+                LogManager.LogFxpBackend(
+                    FxpBackendEventType.SpreadJobFailed,
                     $"Transferjob HTTP {(int)response.StatusCode}: {response.ReasonPhrase}",
                     releaseName: releaseName,
                     targetSite: serverName
@@ -1376,8 +1708,8 @@ public class CbftpRacer
         }
         catch (TaskCanceledException)
         {
-            LogManager.LogCBFTP(
-                CBFTPEventType.Error,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Error,
                 "Transferjob request timeout (30 seconds)",
                 releaseName: releaseName,
                 targetSite: serverName
@@ -1387,8 +1719,8 @@ public class CbftpRacer
         }
         catch (Exception ex)
         {
-            LogManager.LogCBFTP(
-                CBFTPEventType.Error,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Error,
                 $"Transferjob HTTP error: {ex.Message}",
                 releaseName: releaseName,
                 targetSite: serverName
@@ -1408,7 +1740,7 @@ public class CbftpRacer
     ///   - if srcIsSection == false => sent as "src_path"
     ///
     /// dstPath:
-    ///   - sent as "dst_path" (can be a real path or a cbftp section name).
+    ///   - sent as "dst_path" (can be a real path or a FXP backend section name).
     /// </summary>
     public static async Task<TransferResult> StartTransferJobFxp(
         string srcSite,
@@ -1418,12 +1750,12 @@ public class CbftpRacer
         string dstPath,
         string releaseName)
     {
-        // pick the first cbftp config (same as GetJobStats)
-        var config = CBFTP_CONFIGS.Values.FirstOrDefault();
+        // pick the first FXP backend config (same as GetJobStats)
+        var config = FXP_BACKEND_CONFIGS.Values.FirstOrDefault();
         if (config == null)
         {
-            LogManager.Error("No CBFTP configuration available for transferjob");
-            return TransferResult.Failed("NO_CONFIG", "No CBFTP configuration available");
+            LogManager.Error("No FXP backend configuration available for transferjob");
+            return TransferResult.Failed("NO_CONFIG", "No FXP backend configuration available");
         }
 
         return await StartTransferJobFxp(
@@ -1433,9 +1765,9 @@ public class CbftpRacer
     }
 
     /// <summary>
-    /// Same as above but posts the FXP job to an explicitly given cbftp instance
-    /// (host/port/password) instead of the first one from cbftp_config.json.
-    /// Used by the Pre manager, which keeps its own cbftp server list.
+    /// Same as above but posts the FXP job to an explicitly given FXP backend instance
+    /// (host/port/password) instead of the first one from fxp_backend_config.json.
+    /// Used by the Pre manager, which keeps its own FXP backend server list.
     /// The given instance must know BOTH srcSite and dstSite.
     /// </summary>
     public static async Task<TransferResult> StartTransferJobFxp(
@@ -1450,7 +1782,7 @@ public class CbftpRacer
         string password,
         string serverName)
     {
-        // Build payload exactly as in cbftp docs for an FXP job
+        // Build payload exactly as in FXP backend docs for an FXP job
         var payload = new Dictionary<string, object>
         {
             { "src_site", srcSite },
@@ -1491,8 +1823,8 @@ public class CbftpRacer
 
         if (!result.Success)
         {
-            LogManager.LogCBFTP(
-                CBFTPEventType.SpreadJobFailed,
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.SpreadJobFailed,
                 $"Request transferjob failed: {result.ErrorMessage}",
                 releaseName: releaseName,
                 targetSite: dstSite
@@ -1510,14 +1842,25 @@ public class CbftpRacer
     // Configuration classes
     public class MainConfig
     {
-        [JsonProperty("cbftp_servers")]
-        public List<CbftpServer> CbftpServers { get; set; }
+        [JsonProperty(FxpBackendJsonKeys.Backends)]
+        public List<FxpBackend> FxpBackends { get; set; }
+
+        [JsonProperty(FxpBackendJsonKeys.LegacyBackends, NullValueHandling = NullValueHandling.Ignore)]
+        private List<FxpBackend> LegacyBackends
+        {
+            get => null;
+            set
+            {
+                if (value != null && value.Count > 0 && (FxpBackends == null || FxpBackends.Count == 0))
+                    FxpBackends = value;
+            }
+        }
 
         [JsonProperty("jobs")]
         public JobSettings Jobs { get; set; }
     }
 
-    public class CbftpServer
+    public class FxpBackend
     {
         [JsonProperty("id")]
         public string Id { get; set; }
@@ -1536,6 +1879,9 @@ public class CbftpRacer
 
         [JsonProperty("profile")]
         public string Profile { get; set; }
+
+        [JsonProperty("disabled")]
+        public bool Disabled { get; set; }
     }
 
     public class JobSettings

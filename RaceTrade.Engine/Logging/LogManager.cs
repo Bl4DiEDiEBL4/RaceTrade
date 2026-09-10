@@ -5,10 +5,10 @@ using RaceTrade.Engine.Logging;
 /// Engine-side replacement for the WinForms LogManager.
 ///
 /// The original static LogManager held references to the log Forms (ApplicationLog,
-/// IrcLog, RaceLog, CBFTPIntegrationLog) and pushed entries straight into them, which
+/// IrcLog, RaceLog, FxpBackendIntegrationLog) and pushed entries straight into them, which
 /// is what tied nearly every engine file to WinForms.
 ///
-/// This keeps the exact same call surface — LogManager.Info/Error/LogCBFTP/... — so the
+/// This keeps the exact same call surface — LogManager.Info/Error/LogFxpBackend/... — so the
 /// ~380 existing call sites compile unchanged, but routes everything to a pluggable
 /// <see cref="ILogSink"/>. The host (Blazor, console, tests) installs the sink at
 /// startup via <see cref="Configure"/>; until then output is discarded, so engine code
@@ -37,7 +37,7 @@ public static class LogManager
     }
 
     public static bool DisableRaceLog { get; set; }
-    public static bool DisableCbftpLog { get; set; }
+    public static bool DisableFxpBackendLog { get; set; }
     public static bool DisableApplicationLog { get; set; }
 
     private static void Emit(LogLevel level, LogChannel channel, string message,
@@ -148,23 +148,28 @@ public static class LogManager
     public static void LogIRC(IRCEventType eventType, string message, string channel = null,
         string server = null, bool ruleMatched = false, string matchedRule = null)
     {
-        var level = eventType == IRCEventType.Error ? LogLevel.Error : LogLevel.Info;
+        var level = eventType switch
+        {
+            IRCEventType.Error => LogLevel.Error,
+            IRCEventType.Warning => LogLevel.Warning,
+            _ => LogLevel.Info
+        };
         var detail = message;
         if (ruleMatched && !string.IsNullOrEmpty(matchedRule)) detail += $" (rule: {matchedRule})";
 
         Emit(level, LogChannel.Irc, detail, server, source: channel, status: eventType.ToString());
     }
 
-    public static void LogCBFTP(CBFTPEventType eventType, string message, int? spreadJobId = null,
+    public static void LogFxpBackend(FxpBackendEventType eventType, string message, int? spreadJobId = null,
         string releaseName = null, string targetSite = null, int? progressPercent = null)
     {
-        if (DisableCbftpLog) return;
+        if (DisableFxpBackendLog) return;
 
         var level = eventType switch
         {
-            CBFTPEventType.Error => LogLevel.Error,
-            CBFTPEventType.SpreadJobFailed => LogLevel.Error,
-            CBFTPEventType.SpreadJobCompleted => LogLevel.Success,
+            FxpBackendEventType.Error => LogLevel.Error,
+            FxpBackendEventType.SpreadJobFailed => LogLevel.Error,
+            FxpBackendEventType.SpreadJobCompleted => LogLevel.Success,
             _ => LogLevel.Info
         };
 
@@ -172,7 +177,7 @@ public static class LogManager
         if (spreadJobId.HasValue) detail += $" (job#{spreadJobId})";
         if (progressPercent.HasValue) detail += $" {progressPercent}%";
 
-        Emit(level, LogChannel.Cbftp, detail, targetSite, releaseName,
+        Emit(level, LogChannel.FxpBackend, detail, targetSite, releaseName,
             status: eventType.ToString(),
             targetSite: targetSite);
     }
@@ -195,10 +200,11 @@ public enum IRCEventType
     Disconnection,
     Message,
     Announce,
+    Warning,
     Error
 }
 
-public enum CBFTPEventType
+public enum FxpBackendEventType
 {
     Info,
     Connected,

@@ -1,7 +1,8 @@
 @page "/sites"
 @inject SiteStore Store
 @inject SiteConnectionTestService SiteTester
-@inject CbftpSiteService CbftpSites
+@inject FxpBackendSiteService FxpBackendSites
+@inject FxpBackendStore FxpBackendConfigStore
 
 <PageTitle>Sites - RaceTrade</PageTitle>
 
@@ -20,7 +21,7 @@
 @if (_siteTestResult is not null)
 {
     <div class="site-test-result @(_siteTestResult.Success ? "ok" : "err")">
-        <strong>@(_siteTestResult.Success ? "CBFTP site check passed" : "CBFTP site check failed")</strong>
+        <strong>@(_siteTestResult.Success ? "FXP backend site check passed" : "FXP backend site check failed")</strong>
         <span>@_siteTestResult.Message</span>
         @if (_siteTestResult.Details.Count > 0)
         {
@@ -41,87 +42,102 @@
     }
     else
     {
-        <table class="grid sites-table">
-            <colgroup>
-                <col class="c-site" />
-                <col class="c-host" />
-                <col class="c-network" />
-                <col class="c-small" />
-                <col class="c-small" />
-                <col class="c-status" />
-                <col class="c-actions" />
-            </colgroup>
-            <thead>
-                <tr>
-                    <th>SITE</th><th>ZNC HOST</th><th>NETWORK</th>
-                    <th>CHANNELS</th><th>SECTIONS</th><th class="site-status">STATUS</th><th class="site-actions-head">ACTIONS</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in _rows)
-                {
+        <div class="sites-table-wrap">
+            <table class="grid sites-table">
+                <colgroup>
+                    <col class="c-site" />
+                    <col class="c-fxp-backend" />
+                    <col class="c-host" />
+                    <col class="c-network" />
+                    <col class="c-small" />
+                    <col class="c-small" />
+                    <col class="c-status" />
+                    <col class="c-actions" />
+                </colgroup>
+                <thead>
                     <tr>
-                        <td class="site">@r.Name</td>
-                        <td>@r.Host</td>
-                        <td>@r.Network</td>
-                        <td class="dim">@r.Channels</td>
-                        <td class="dim">@r.Sections</td>
-                        <td class="site-status">
-                            @if (r.Disabled)
-                            {
-                                <button type="button"
-                                        class="pill status-toggle off"
-                                        title="Enable this site"
-                                        @onclick="() => ToggleDisabled(r.Name)">
-                                    disabled
-                                </button>
-                            }
-                            else if (r.DlOnly)
-                            {
-                                <button type="button"
-                                        class="pill status-toggle dl"
-                                        title="Disable this site"
-                                        @onclick="() => ToggleDisabled(r.Name)">
-                                    dl-only
-                                </button>
-                            }
-                            else
-                            {
-                                <button type="button"
-                                        class="pill status-toggle on"
-                                        title="Disable this site"
-                                        @onclick="() => ToggleDisabled(r.Name)">
-                                    enabled
-                                </button>
-                            }
-                        </td>
-                        <td class="site-actions">
-                            <div class="site-action-row">
-                                <button class="btn" title="Check the CBFTP site config" disabled="@IsBusy"
-                                        @onclick="() => TestSite(r.Name)">
-                                    <Icon Name="test" Size="13" /><span>@ActionText(r.Name, "test", "Test")</span>
-                                </button>
-                                <button class="btn" title="Test the CBFTP site login with a root listing" disabled="@IsBusy"
-                                        @onclick="() => LoginSite(r.Name)">
-                                    <Icon Name="play" Size="13" /><span>@ActionText(r.Name, "login", "Login")</span>
-                                </button>
-                                <button class="btn" title="Duplicate the RaceTrade site config" disabled="@IsBusy"
-                                        @onclick="() => OpenDuplicateSite(r.Name)">
-                                    <Icon Name="copy" Size="13" /><span>Duplicate</span>
-                                </button>
-                                <button class="btn" title="Duplicate the CBFTP site config" disabled="@IsBusy"
-                                        @onclick="() => OpenDuplicateCbftpSite(r.Name)">
-                                    <Icon Name="copy" Size="13" /><span>Copy CBFTP</span>
-                                </button>
-                                <a class="btn" href="@($"sites/edit/{Uri.EscapeDataString(r.Name)}")"><Icon Name="edit" Size="13" /><span>Edit</span></a>
-                                <a class="btn" href="@($"cbftp-site/{Uri.EscapeDataString(r.Name)}")"><Icon Name="servers" Size="13" /><span>Edit CBFTP Site</span></a>
-                                <button class="btn danger" disabled="@IsBusy" @onclick="() => Delete(r.Name)"><Icon Name="trash" Size="13" /><span>Delete</span></button>
-                            </div>
-                        </td>
+                        <th>SITE</th><th>FXP backend</th><th>ZNC HOST</th><th>NETWORK</th>
+                        <th>CHANNELS</th><th>SECTIONS</th><th class="site-status">STATUS</th><th class="site-actions-head">ACTIONS</th>
                     </tr>
-                }
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    @foreach (var r in _rows)
+                    {
+                        <tr>
+                            <td class="site">@r.Name</td>
+                            <td class="dim">@DisplayEmpty(r.FxpBackend)</td>
+                            <td>@r.Host</td>
+                            <td>@r.Network</td>
+                            <td class="dim">@r.Channels</td>
+                            <td class="dim">@r.Sections</td>
+                            <td class="site-status">
+                                @if (r.EffectiveDisabled)
+                                {
+                                    <button type="button"
+                                            class="pill status-toggle off"
+                                            title="Enable this site"
+                                            @onclick="() => ToggleDisabled(r.Key)">
+                                        @if (r.ServerMissing)
+                                        {
+                                            <text>mapping missing</text>
+                                        }
+                                        else if (r.LinkedServerDisabled)
+                                        {
+                                            <text>server disabled</text>
+                                        }
+                                        else
+                                        {
+                                            <text>disabled</text>
+                                        }
+                                    </button>
+                                }
+                                else if (r.DlOnly)
+                                {
+                                    <button type="button"
+                                            class="pill status-toggle dl"
+                                            title="Disable this site"
+                                            @onclick="() => ToggleDisabled(r.Key)">
+                                        dl-only
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="button"
+                                            class="pill status-toggle on"
+                                            title="Disable this site"
+                                            @onclick="() => ToggleDisabled(r.Key)">
+                                        enabled
+                                    </button>
+                                }
+                            </td>
+                            <td class="site-actions">
+                                <div class="site-action-row">
+                                    <button class="btn" title="Check the RaceTrade to FXP backend site mapping" disabled="@IsBusy"
+                                            @onclick="() => TestSite(r.Key)">
+                                        <Icon Name="test" Size="13" /><span>@ActionText(r.Key, "test", "Config")</span>
+                                    </button>
+                                    <button class="btn" title="Test the FXP backend site login with a root listing" disabled="@IsBusy"
+                                            @onclick="() => LoginSite(r.Key)">
+                                        <Icon Name="play" Size="13" /><span>@ActionText(r.Key, "login", "Login")</span>
+                                    </button>
+                                    <button class="btn" title="Duplicate the RaceTrade site config" disabled="@IsBusy"
+                                            @onclick="() => OpenDuplicateSite(r.Key)">
+                                        <Icon Name="copy" Size="13" /><span>Duplicate</span>
+                                    </button>
+                                    <button class="btn" title="Copy the FXP backend site config to another backend" disabled="@IsBusy"
+                                            @onclick="() => OpenDuplicateFxpBackendSite(r.Key)">
+                                        <Icon Name="copy" Size="13" /><span>Copy FXP backend</span>
+                                    </button>
+                                    <a class="btn" href="@($"sites/edit/{Uri.EscapeDataString(r.Key)}")"><Icon Name="edit" Size="13" /><span>Edit</span></a>
+                                    <a class="btn" href="@($"fxp-backend-site/{Uri.EscapeDataString(r.Name)}")"><Icon Name="servers" Size="13" /><span>Edit FXP Backend Site</span></a>
+                                    <button class="btn danger" disabled="@IsBusy" @onclick="() => Delete(r.Key)"><Icon Name="trash" Size="13" /><span>Delete</span></button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
     }
 </div>
 
@@ -141,8 +157,8 @@
                 <label>New site name</label>
                 <input type="text" @bind="_duplicateSiteName" @bind:event="oninput" placeholder="NEW-SITE" />
                 <p class="hint">
-                    The RaceTrade site name and CBFTP site name should be the same. If you duplicate both,
-                    use this exact name in the CBFTP duplicate popup too.
+                    The RaceTrade site name and FXP backend site name should be the same. If you duplicate both,
+                    use this exact name in the FXP backend duplicate popup too.
                 </p>
                 <div class="modal-actions">
                     <button class="btn" @onclick="CloseDuplicateSite" disabled="@IsBusy">Cancel</button>
@@ -155,36 +171,44 @@
     </div>
 }
 
-@if (_duplicateCbftpSource is not null)
+@if (_duplicateFxpBackendSource is not null)
 {
-    <div class="modal-backdrop" @onclick="CloseDuplicateCbftpSite">
+    <div class="modal-backdrop" @onclick="CloseDuplicateFxpBackendSite">
         <div class="modal-card duplicate-modal" @onclick:stopPropagation="true">
             <div class="modal-head">
-                <h2>Duplicate CBFTP Site</h2>
-                <button class="btn icon-only" @onclick="CloseDuplicateCbftpSite" aria-label="Close"><Icon Name="close" Size="15" /></button>
+                <h2>Copy FXP Backend Site</h2>
+                <button class="btn icon-only" @onclick="CloseDuplicateFxpBackendSite" aria-label="Close"><Icon Name="close" Size="15" /></button>
             </div>
             <div class="modal-body duplicate-body">
                 <div class="selected-block">
-                    <span class="label">Source CBFTP site</span>
-                    <strong>@_duplicateCbftpSource</strong>
+                    <span class="label">Source FXP backend site</span>
+                    <strong>@_duplicateFxpBackendSource</strong>
                 </div>
-                <label>CBFTP server</label>
-                <select @bind="_duplicateCbftpServerId" disabled="@IsBusy">
-                    @foreach (var server in _duplicateCbftpServers)
+                <label>From backend</label>
+                <select @bind="_duplicateFxpBackendSourceId" disabled="@IsBusy">
+                    @foreach (var server in _duplicateFxpBackends)
                     {
-                        <option value="@server.Id">@DisplayCbftpServer(server)</option>
+                        <option value="@server.Id">@DisplayFxpBackend(server)</option>
                     }
                 </select>
-                <label>New CBFTP site name</label>
-                <input type="text" @bind="_duplicateCbftpName" @bind:event="oninput" placeholder="NEW-SITE" />
+                <label>To backend</label>
+                <select @bind="_duplicateFxpBackendTargetId" disabled="@IsBusy">
+                    @foreach (var server in _duplicateFxpBackends)
+                    {
+                        <option value="@server.Id">@DisplayFxpBackend(server)</option>
+                    }
+                </select>
+                <label>New FXP backend site name</label>
+                <input type="text" @bind="_duplicateFxpBackendName" @bind:event="oninput" placeholder="NEW-SITE" />
                 <p class="hint">
-                    Keep this identical to the RaceTrade site name. RaceTrade looks up CBFTP site configs by name,
-                    so mismatched names make testing, FXP and racing confusing.
+                    Duplicate keeps the site on the same backend. Copy FXP backend site lets you copy this backend
+                    config from one CBFTP/WeaveFXP server to another. Keep the backend site name identical to the
+                    RaceTrade site name unless you also rename the RaceTrade site.
                 </p>
                 <div class="modal-actions">
-                    <button class="btn" @onclick="CloseDuplicateCbftpSite" disabled="@IsBusy">Cancel</button>
-                    <button class="btn primary" @onclick="ConfirmDuplicateCbftpSite" disabled="@(IsBusy || !_duplicateCbftpServers.Any())">
-                        <Icon Name="copy" Size="13" /><span>Duplicate CBFTP site</span>
+                    <button class="btn" @onclick="CloseDuplicateFxpBackendSite" disabled="@IsBusy">Cancel</button>
+                    <button class="btn primary" @onclick="ConfirmDuplicateFxpBackendSite" disabled="@(IsBusy || !_duplicateFxpBackends.Any())">
+                        <Icon Name="copy" Size="13" /><span>Copy FXP backend site</span>
                     </button>
                 </div>
             </div>
@@ -193,20 +217,22 @@
 }
 
 @code {
-    private sealed record Row(string Name, string Host, string Network,
-                              int Channels, int Sections, bool Disabled, bool DlOnly);
+    private sealed record Row(string Key, string Name, string FxpBackend, string Host, string Network,
+                              int Channels, int Sections, bool Disabled, bool DlOnly,
+                              bool LinkedServerDisabled, bool ServerMissing, bool EffectiveDisabled);
 
     private List<Row> _rows = new();
-    private List<CbftpServer> _duplicateCbftpServers = new();
+    private List<FxpBackend> _duplicateFxpBackends = new();
     private string? _error;
     private SiteConnectionTestResult? _siteTestResult;
     private string? _busySite;
     private string? _busyAction;
     private string? _duplicateSiteSource;
     private string _duplicateSiteName = "";
-    private string? _duplicateCbftpSource;
-    private string _duplicateCbftpName = "";
-    private string _duplicateCbftpServerId = "";
+    private string? _duplicateFxpBackendSource;
+    private string _duplicateFxpBackendName = "";
+    private string _duplicateFxpBackendSourceId = "";
+    private string _duplicateFxpBackendTargetId = "";
     private bool _duplicating;
 
     private bool IsBusy => _busySite is not null || _duplicating;
@@ -219,20 +245,36 @@
         {
             _error = null;
             _siteTestResult = null;
+            var fxpBackendServers = FxpBackendConfigStore.Load().FxpBackends;
             _rows = Store.ListNames().Select(n =>
             {
                 var c = Store.Load(n);
                 var chans = SiteStore.ReadChannels(c.SiteSettings)
                     .Count(x => !string.IsNullOrWhiteSpace(x.Channel));
+                var configuredServer = ResolveFxpBackend(fxpBackendServers, c.SiteSettings?.FxpBackendId);
+                var linkedServerDisabled = configuredServer is not null && configuredServer.Disabled;
+                var serverMissing = !string.IsNullOrWhiteSpace(c.SiteSettings?.FxpBackendId) &&
+                                    configuredServer is null;
+                var siteDisabled = c.SiteSettings?.DisableSite ?? false;
+                var effectiveDisabled = siteDisabled || linkedServerDisabled || serverMissing;
+
+                var displayName = c.SiteSettings?.Sitename?.Trim();
+                if (string.IsNullOrWhiteSpace(displayName))
+                    displayName = n;
 
                 return new Row(
                     n,
+                    displayName,
+                    c.SiteSettings?.FxpBackendId ?? "",
                     c.Server?.Host ?? "",
                     c.Server?.Network ?? "",
                     chans,
                     c.Sections?.Count ?? 0,
-                    c.SiteSettings?.DisableSite ?? false,
-                    c.SiteSettings?.DlOnlySite ?? false);
+                    siteDisabled,
+                    c.SiteSettings?.DlOnlySite ?? false,
+                    linkedServerDisabled,
+                    serverMissing,
+                    effectiveDisabled);
             }).ToList();
         }
         catch (Exception ex)
@@ -276,7 +318,7 @@
             _siteTestResult = new SiteConnectionTestResult(
                 true,
                 $"Duplicated RaceTrade site '{_duplicateSiteSource}' as '{_duplicateSiteName.Trim()}'.",
-                new[] { "Use the same name when duplicating the CBFTP site." });
+                new[] { "Use the same name when duplicating the FXP backend site." });
             CloseDuplicateSite();
         }
         catch (Exception ex)
@@ -289,33 +331,53 @@
         }
     }
 
-    private void OpenDuplicateCbftpSite(string name)
+    private void OpenDuplicateFxpBackendSite(string name)
     {
         _error = null;
         _siteTestResult = null;
-        _duplicateCbftpSource = name;
-        _duplicateCbftpName = SuggestCbftpCopyName(name);
-        _duplicateCbftpServers = CbftpSites.LoadServers().ToList();
-        _duplicateCbftpServerId = _duplicateCbftpServers.FirstOrDefault()?.Id ?? "";
+        var cfg = Store.Load(name);
+        var remoteName = cfg.SiteSettings?.Sitename?.Trim();
+        if (string.IsNullOrWhiteSpace(remoteName))
+            remoteName = name;
+
+        _duplicateFxpBackendSource = remoteName;
+        _duplicateFxpBackendName = SuggestFxpBackendCopyName(remoteName);
+        _duplicateFxpBackends = FxpBackendSites.LoadServers().ToList();
+        var configured = cfg.SiteSettings?.FxpBackendId?.Trim();
+        _duplicateFxpBackendSourceId = _duplicateFxpBackends.FirstOrDefault(s =>
+            string.Equals(s.Id, configured, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(s.Name, configured, StringComparison.OrdinalIgnoreCase))?.Id
+            ?? _duplicateFxpBackends.FirstOrDefault()?.Id
+            ?? "";
+        _duplicateFxpBackendTargetId = _duplicateFxpBackends.FirstOrDefault(s =>
+            !string.Equals(s.Id, _duplicateFxpBackendSourceId, StringComparison.OrdinalIgnoreCase))?.Id
+            ?? _duplicateFxpBackendSourceId;
     }
 
-    private void CloseDuplicateCbftpSite()
+    private void CloseDuplicateFxpBackendSite()
     {
-        _duplicateCbftpSource = null;
-        _duplicateCbftpName = "";
-        _duplicateCbftpServerId = "";
-        _duplicateCbftpServers.Clear();
+        _duplicateFxpBackendSource = null;
+        _duplicateFxpBackendName = "";
+        _duplicateFxpBackendSourceId = "";
+        _duplicateFxpBackendTargetId = "";
+        _duplicateFxpBackends.Clear();
     }
 
-    private async Task ConfirmDuplicateCbftpSite()
+    private async Task ConfirmDuplicateFxpBackendSite()
     {
-        if (_duplicateCbftpSource is null)
+        if (_duplicateFxpBackendSource is null)
             return;
 
-        var server = _duplicateCbftpServers.FirstOrDefault(s => string.Equals(s.Id, _duplicateCbftpServerId, StringComparison.OrdinalIgnoreCase));
-        if (server is null)
+        var sourceServer = _duplicateFxpBackends.FirstOrDefault(s => string.Equals(s.Id, _duplicateFxpBackendSourceId, StringComparison.OrdinalIgnoreCase));
+        var targetServer = _duplicateFxpBackends.FirstOrDefault(s => string.Equals(s.Id, _duplicateFxpBackendTargetId, StringComparison.OrdinalIgnoreCase));
+        if (sourceServer is null)
         {
-            _error = "Select a CBFTP server first.";
+            _error = "Select the source FXP backend first.";
+            return;
+        }
+        if (targetServer is null)
+        {
+            _error = "Select the target FXP backend first.";
             return;
         }
 
@@ -324,12 +386,12 @@
             _duplicating = true;
             _error = null;
             _siteTestResult = null;
-            await CbftpSites.DuplicateSiteAsync(server, _duplicateCbftpSource, _duplicateCbftpName);
+            await FxpBackendSites.CopySiteAsync(sourceServer, targetServer, _duplicateFxpBackendSource, _duplicateFxpBackendName);
             _siteTestResult = new SiteConnectionTestResult(
                 true,
-                $"Duplicated CBFTP site '{_duplicateCbftpSource}' as '{_duplicateCbftpName.Trim()}'.",
-                new[] { "Keep the RaceTrade site name and CBFTP site name identical." });
-            CloseDuplicateCbftpSite();
+                $"Copied FXP backend site '{_duplicateFxpBackendSource}' from {DisplayFxpBackend(sourceServer)} to {DisplayFxpBackend(targetServer)} as '{_duplicateFxpBackendName.Trim()}'.",
+                new[] { "Keep the RaceTrade site name and FXP backend site name identical, or update the RaceTrade site mapping/name after copying." });
+            CloseDuplicateFxpBackendSite();
         }
         catch (Exception ex)
         {
@@ -389,6 +451,9 @@
             ? "Testing..."
             : fallback;
 
+    private static string DisplayEmpty(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "legacy" : value.Trim();
+
     private void ToggleDisabled(string name)
     {
         try
@@ -410,7 +475,7 @@
         return SuggestCopyName(source, candidate => names.Contains(candidate, StringComparer.OrdinalIgnoreCase));
     }
 
-    private static string SuggestCbftpCopyName(string source) => $"{source}-copy";
+    private static string SuggestFxpBackendCopyName(string source) => $"{source}-copy";
 
     private static string SuggestCopyName(string source, Func<string, bool> exists)
     {
@@ -428,6 +493,17 @@
         return $"{baseName}-{DateTime.Now:HHmmss}";
     }
 
-    private static string DisplayCbftpServer(CbftpServer server) =>
+    private static string DisplayFxpBackend(FxpBackend server) =>
         $"{server.Name ?? server.Id} - {server.Host}:{server.Port}";
+
+    private static FxpBackend? ResolveFxpBackend(IReadOnlyList<FxpBackend> servers, string? serverId)
+    {
+        if (string.IsNullOrWhiteSpace(serverId))
+            return null;
+
+        var trimmed = serverId.Trim();
+        return servers.FirstOrDefault(s =>
+            string.Equals(s.Id, trimmed, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(s.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+    }
 }

@@ -15,11 +15,29 @@ public static class EngineSettings
     public static bool DebugEnabled { get; set; }
 
     /// <summary>
-    /// Accept TLS certificates that fail validation when talking to cbftp.
-    /// Needed for the self-signed certs most cbftp instances use, but it does mean the
+    /// Accept TLS certificates that fail validation when talking to FXP backend.
+    /// Needed for the self-signed certs most FXP backend instances use, but it does mean the
     /// connection is not authenticated — keep it off unless you need it.
     /// </summary>
     public static bool AllowInsecureSsl { get; set; }
+
+    /// <summary>
+    /// Send a hard reset to FXP backend when a spreadjob times out or ends as failed/aborted.
+    /// Off by default because a hard reset clears fxp-backend-side job state.
+    /// </summary>
+    public static bool AutoHardResetFxpBackendJobs { get; set; }
+
+    /// <summary>Minimum minutes between automatic hard resets for the same FXP backend server.</summary>
+    public static int FxpBackendHardResetCooldownMinutes { get; set; } = 10;
+
+    /// <summary>Maximum automatic hard reset attempts for the same FXP backend server/release pair.</summary>
+    public static int FxpBackendHardResetMaxAttempts { get; set; } = 1;
+
+    /// <summary>
+    /// On startup, retry failed RaceTrade history entries from this many hours back.
+    /// 0 disables it. Off by default because this can send hard resets for old FXP backend jobs.
+    /// </summary>
+    public static int FxpBackendHardResetLookbackHours { get; set; }
 }
 
 /// <summary>
@@ -56,6 +74,6 @@ public static class LogColors
 
     public static string Red(string text) => Wrap(text, 4);
 
-    /// <summary>Bot names, channels, cbftp sections.</summary>
+    /// <summary>Bot names, channels, FXP backend sections.</summary>
     public static string Cyan(string text) => Wrap(text, 11);
 }

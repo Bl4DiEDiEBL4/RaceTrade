@@ -24,6 +24,7 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
     private const int MaxLinesPerChannel = 500;
 
     private readonly UiLogSink _sink;
+    private readonly TrayNotificationService _tray;
     private int _notifyScheduled;
 
     // (site, channel) -> recent lines, and -> nick => status prefix ('\0' = plain user).
@@ -39,7 +40,14 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
     private readonly ConcurrentDictionary<(string Site, string Channel), ConcurrentDictionary<string, char>> _users =
         new(ChannelKeyComparer.Instance);
 
-    public WebIrcOutput(UiLogSink sink) => _sink = sink;
+    private readonly ConcurrentDictionary<string, string> _ownNicks =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public WebIrcOutput(UiLogSink sink, TrayNotificationService tray)
+    {
+        _sink = sink;
+        _tray = tray;
+    }
 
     /// <summary>Never disposed: unlike a Form, this lives for the process.</summary>
     public bool IsDisposed => false;
@@ -63,6 +71,17 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
         var key = Key(siteName, channelName);
         _lines.GetOrAdd(key, _ => new ConcurrentQueue<ChatLine>());
         _users.GetOrAdd(key, _ => new ConcurrentDictionary<string, char>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    public void SetOwnNick(string siteName, string nick)
+    {
+        siteName = (siteName ?? "").Trim();
+        var parsedNick = SplitPrefix(nick).Nick;
+
+        if (siteName.Length == 0 || parsedNick.Length == 0)
+            return;
+
+        _ownNicks[siteName] = parsedNick;
     }
 
     /// <summary>
@@ -96,6 +115,7 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
         // Bound the buffer without locking; a brief overshoot is fine.
         while (q.Count > MaxLinesPerChannel && q.TryDequeue(out _)) { }
 
+        NotifyChatIfNeeded(siteName, channelName, message);
         ScheduleChanged();
     }
 
@@ -235,4 +255,71 @@ public sealed class WebIrcOutput : IIrcOutput, IChannelOutput
 
     private static string PlainChannelName(string channel) =>
         IsPrivateMessage(channel) ? channel[3..] : channel;
+
+    private void NotifyChatIfNeeded(string siteName, string channelName, string message)
+    {
+        if (!TryParseUserMessage(message, out var sender, out var body))
+            return;
+
+        if (_ownNicks.TryGetValue(siteName ?? "", out var ownNick) &&
+            sender.Equals(ownNick, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var isPrivate = IsPrivateMessage(channelName ?? "");
+        if (!isPrivate)
+        {
+            if (string.IsNullOrWhiteSpace(ownNick) || !ContainsNickMention(body, ownNick))
+                return;
+        }
+
+        _tray.NotifyChat(siteName ?? "", channelName ?? "", sender, body, isPrivate);
+    }
+
+    private static bool TryParseUserMessage(string message, out string sender, out string body)
+    {
+        sender = "";
+        body = "";
+
+        if (string.IsNullOrWhiteSpace(message) || message[0] != '<')
+            return false;
+
+        var end = message.IndexOf('>');
+        if (end <= 1 || end >= message.Length - 1)
+            return false;
+
+        var rawSender = message[1..end].Trim();
+        var parsed = SplitPrefix(rawSender).Nick;
+        if (parsed.Length == 0)
+            return false;
+
+        sender = parsed;
+        body = message[(end + 1)..].Trim();
+        return body.Length > 0;
+    }
+
+    private static bool ContainsNickMention(string text, string nick)
+    {
+        if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(nick))
+            return false;
+
+        var index = 0;
+        while ((index = text.IndexOf(nick, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            var beforeOk = index == 0 || !IsNickChar(text[index - 1]);
+            var after = index + nick.Length;
+            var afterOk = after >= text.Length || !IsNickChar(text[after]);
+
+            if (beforeOk && afterOk)
+                return true;
+
+            index += nick.Length;
+        }
+
+        return false;
+    }
+
+    private static bool IsNickChar(char c) =>
+        char.IsLetterOrDigit(c) || c is '-' or '_' or '[' or ']' or '\\' or '`' or '^' or '{' or '}' or '|';
 }

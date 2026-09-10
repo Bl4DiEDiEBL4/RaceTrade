@@ -1,4 +1,4 @@
-﻿@page "/test"
+@page "/test"
 @inject SiteStore Sites
 @using Newtonsoft.Json.Linq
 
@@ -86,6 +86,21 @@
 
     private void Add(string text, string level = "info") => _results.Add(new Line(text, level));
 
+    private static Dictionary<string, string> BuildRaceSectionDictionary(IEnumerable<string>? sections)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var section in sections ?? Enumerable.Empty<string>())
+        {
+            var name = section?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            result[name] = string.Empty;
+        }
+
+        return result;
+    }
+
     private void ClearResults()
     {
         _results.Clear();
@@ -171,29 +186,28 @@
             Add($"Site: {_site}   Section: {_section}   Release: {_release}");
             var isGlobalPreBotMode = IsConfiguredGlobalPreBotMode(cfg.SiteSettings?.PreOrSite);
 
-            // 1. section -> cbftp mapping
-            var cbftpSection = RaceHelper.GetMappedCbftpSection(
+            // 1. section -> FXP backend mapping
+            var fxpBackendSection = RaceHelper.GetMappedFxpBackendSection(
                 _section, _release, json,
                 cfg.SiteSettings?.SectionPrefix,
                 cfg.SiteSettings?.SectionSuffix);
 
-            if (string.IsNullOrEmpty(cbftpSection) || cbftpSection.StartsWith("[ERROR]"))
+            if (string.IsNullOrEmpty(fxpBackendSection) || fxpBackendSection.StartsWith("[ERROR]"))
             {
-                Add($"No CBFTP mapping for IRC section '{_section}'. Add it under the site's Sections tab.", "error");
+                Add($"No FXP backend mapping for IRC section '{_section}'. Add it under the site's Sections tab.", "error");
                 return;
             }
 
-            Add($"Mapped to CBFTP section: {cbftpSection}", "success");
+            Add($"Mapped to FXP backend section: {fxpBackendSection}", "success");
 
             // 2. which sites would race it
-            var raceSections = cfg.RaceSectionsEnabled?.ToDictionary(s => s, _ => string.Empty)
-                               ?? new Dictionary<string, string>();
+            var raceSections = BuildRaceSectionDictionary(cfg.RaceSectionsEnabled);
 
             var result = await RaceHelper.FilterAllowedSites(
                 raceSections,
                 new Dictionary<string, string>(),
                 cfg.GlobalBlacklist ?? new List<string>(),
-                cbftpSection,
+                fxpBackendSection,
                 _release,
                 _release,
                 cfg.SiteSettings?.SectionPrefix,

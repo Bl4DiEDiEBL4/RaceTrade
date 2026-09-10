@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using RaceTrade.Engine.Logging;
 using RaceTrade;
 
@@ -89,7 +92,7 @@ public static class SiteConfigManager
                 return config;
             }
 
-            var filePath = Path.Combine("sites", $"{siteName}.json");
+            var filePath = ResolveSitePath(siteName, out var configKey);
 
             if (!File.Exists(filePath))
             {
@@ -116,9 +119,15 @@ public static class SiteConfigManager
                     throw new InvalidOperationException($"Site configuration missing 'site_settings': {filePath}");
                 }
 
+                config.SiteSettings.ConfigKey = configKey;
+                NormalizeRaceSectionsEnabled(config);
+
                 // Cache it
-                ConfigCache[siteName] = config;
-                Console.WriteLine($"[SiteConfigManager] Loaded and cached configuration for '{siteName}'");
+                ConfigCache[configKey] = config;
+                if (!string.Equals(configKey, siteName, StringComparison.OrdinalIgnoreCase))
+                    ConfigCache[siteName] = config;
+
+                Console.WriteLine($"[SiteConfigManager] Loaded and cached configuration for '{configKey}'");
 
                 return config;
             }
@@ -127,6 +136,71 @@ public static class SiteConfigManager
                 throw new InvalidOperationException($"Invalid JSON in site configuration: {filePath}", ex);
             }
         }
+    }
+
+    private static string ResolveSitePath(string siteName, out string configKey)
+    {
+        configKey = siteName;
+        var directPath = Path.Combine("sites", $"{siteName}.json");
+        if (File.Exists(directPath))
+            return directPath;
+
+        if (!Directory.Exists("sites"))
+            return directPath;
+
+        var matches = new List<(string Key, string Path)>();
+        foreach (var filePath in Directory.GetFiles("sites", "*.json"))
+        {
+            var key = Path.GetFileNameWithoutExtension(filePath);
+            if (ShouldIgnoreSite(key))
+                continue;
+
+            try
+            {
+                var root = JObject.Parse(File.ReadAllText(filePath));
+                var remoteName = root["site_settings"]?["sitename"]?.ToString()?.Trim();
+                if (string.Equals(remoteName, siteName, StringComparison.OrdinalIgnoreCase))
+                    matches.Add((key, filePath));
+            }
+            catch
+            {
+                // Let the normal load path report parse errors for direct matches. The
+                // fallback scan should not make one bad site block every other lookup.
+            }
+        }
+
+        if (matches.Count == 1)
+        {
+            configKey = matches[0].Key;
+            return matches[0].Path;
+        }
+
+        if (matches.Count > 1)
+        {
+            var keys = string.Join(", ", matches.Select(m => m.Key));
+            throw new InvalidOperationException(
+                $"Site name '{siteName}' matches multiple local configs ({keys}). Use the config key instead.");
+        }
+
+        return directPath;
+    }
+
+    private static void NormalizeRaceSectionsEnabled(SiteConfig config)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var normalized = new List<string>();
+
+        foreach (var section in config.RaceSectionsEnabled ?? new List<string>())
+        {
+            var name = section?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            if (seen.Add(name))
+                normalized.Add(name);
+        }
+
+        config.RaceSectionsEnabled = normalized;
     }
 
     /// <summary>
@@ -139,9 +213,26 @@ public static class SiteConfigManager
         lock (cacheLock)
         {
             if (string.IsNullOrWhiteSpace(siteName))
+            {
                 ConfigCache.Clear();
+            }
             else
+            {
                 ConfigCache.TryRemove(siteName, out _);
+
+                foreach (var pair in ConfigCache.ToArray())
+                {
+                    var settings = pair.Value.SiteSettings;
+                    if (settings == null)
+                        continue;
+
+                    if (string.Equals(settings.ConfigKey, siteName, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(settings.Sitename, siteName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ConfigCache.TryRemove(pair.Key, out _);
+                    }
+                }
+            }
         }
     }
 

@@ -52,6 +52,7 @@ public sealed class EngineHost : IAsyncDisposable
 
             SiteConfigManager.Invalidate();
             RaceHelper.LoadAllSiteConfigs();
+            LogManager.LogIRC(IRCEventType.Connection, "Racer start requested; loading IRC clients.");
 
             var started = 0;
             var readySites = CollectReadyClients(logSkips: false).ToList();
@@ -76,17 +77,24 @@ public sealed class EngineHost : IAsyncDisposable
                 LogManager.Info(
                     $"Racer monitoring site [{LogColors.Magenta(name)}]: bot [{LogColors.Cyan(config.SiteSettings?.BotName)}], " +
                     $"channels [{LogColors.Green(monitoredChannels)}].");
+                LogManager.LogIRC(IRCEventType.Connection,
+                    $"Racer monitoring site '{name}': bot '{config.SiteSettings?.BotName}', channels [{monitoredChannels}].",
+                    server: name);
 
                 _siteTasks.Add(Task.Run(async () =>
                 {
-                    var client = new IRCClient(config, name, _output, token);
-                    lock (_clients) _clients[name] = client;
+                    IRCClient? client = null;
 
                     try
                     {
+                        client = new IRCClient(config, name, _output, token);
+                        lock (_clients) _clients[name] = client;
+
                         LogManager.Info($"Connecting to ZNC for site '{name}'...");
+                        LogManager.LogIRC(IRCEventType.Connection, $"Connecting to ZNC for site '{name}'.", server: name);
                         await client.ConnectToZNCAsync();
                         LogManager.Success($"Site '{name}' disconnected cleanly.");
+                        LogManager.LogIRC(IRCEventType.Disconnection, $"Site '{name}' disconnected cleanly.", server: name);
                     }
                     catch (OperationCanceledException)
                     {
@@ -95,10 +103,14 @@ public sealed class EngineHost : IAsyncDisposable
                     catch (Exception ex)
                     {
                         LogManager.Error($"IRC error for site '{name}': {ex.Message}");
+                        LogManager.LogIRC(IRCEventType.Error, $"IRC error for site '{name}': {ex.Message}", server: name);
                     }
                     finally
                     {
-                        lock (_clients) _clients.Remove(name);
+                        if (client is not null)
+                        {
+                            lock (_clients) _clients.Remove(name);
+                        }
                     }
                 }, token));
 
@@ -111,6 +123,7 @@ public sealed class EngineHost : IAsyncDisposable
                 _cts = null;
                 IsRunning = false;
                 LogManager.Warning("Racer started, but no site is ready to connect. Check the Sites page.");
+                LogManager.LogIRC(IRCEventType.Warning, "Racer started, but no site is ready to connect. Check the Sites page.");
             }
             else
             {
@@ -123,6 +136,7 @@ public sealed class EngineHost : IAsyncDisposable
                 StartRequestAutoFill();
 
                 LogManager.Success($"Racer started: connecting {started} site(s).");
+                LogManager.LogIRC(IRCEventType.Connection, $"Racer started: connecting {started} IRC client(s).");
             }
         }
         finally
@@ -256,7 +270,7 @@ public sealed class EngineHost : IAsyncDisposable
         {
             if (!SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) || cfg is null)
             {
-                if (logSkips) LogManager.Warning($"Skipping site '{siteName}': could not load site config.");
+                if (logSkips) LogIrcStartupWarning($"Skipping site '{siteName}': could not load site config.", siteName);
                 continue;
             }
 
@@ -269,19 +283,19 @@ public sealed class EngineHost : IAsyncDisposable
             // Same preconditions IRCClient enforces before dialling out. Keep this in
             // sync so the Start button does not reject a site the actual client accepts.
             if (string.IsNullOrWhiteSpace(cfg.Server?.Host))
-            { if (logSkips) LogManager.Warning($"Skipping site '{siteName}': missing IRC host."); continue; }
+            { if (logSkips) LogIrcStartupWarning($"Skipping site '{siteName}': missing IRC host.", siteName); continue; }
 
             if (string.IsNullOrWhiteSpace(cfg.Server?.Username))
-            { if (logSkips) LogManager.Warning($"Skipping site '{siteName}': missing IRC username."); continue; }
+            { if (logSkips) LogIrcStartupWarning($"Skipping site '{siteName}': missing IRC username.", siteName); continue; }
 
             if (RequiresPassword(cfg) && string.IsNullOrWhiteSpace(cfg.Server?.Password))
-            { if (logSkips) LogManager.Warning($"Skipping site '{siteName}': missing IRC password."); continue; }
+            { if (logSkips) LogIrcStartupWarning($"Skipping site '{siteName}': missing IRC password.", siteName); continue; }
 
             if (string.IsNullOrWhiteSpace(cfg.SiteSettings?.BotName))
-            { if (logSkips) LogManager.Warning($"Skipping site '{siteName}': missing bot name."); continue; }
+            { if (logSkips) LogIrcStartupWarning($"Skipping site '{siteName}': missing bot name.", siteName); continue; }
 
             if (ConfiguredChannels(cfg.SiteSettings).Count == 0)
-            { if (logSkips) LogManager.Warning($"Skipping site '{siteName}': no IRC channels defined."); continue; }
+            { if (logSkips) LogIrcStartupWarning($"Skipping site '{siteName}': no IRC channels defined.", siteName); continue; }
 
             yield return (siteName, cfg);
         }
@@ -307,7 +321,7 @@ public sealed class EngineHost : IAsyncDisposable
             if (string.IsNullOrWhiteSpace(prebotName))
             {
                 if (logSkips)
-                    LogManager.Warning($"Site '{siteName}' uses Global PreBot, but no PreBot name is selected.");
+                    LogIrcStartupWarning($"Site '{siteName}' uses Global PreBot, but no PreBot name is selected.", siteName);
                 continue;
             }
 
@@ -330,7 +344,7 @@ public sealed class EngineHost : IAsyncDisposable
             if (!availablePreBots.Contains(prebotName, StringComparer.OrdinalIgnoreCase))
             {
                 if (logSkips)
-                    LogManager.Warning($"PreBot '{prebotName}' is selected by a site, but pre_bots\\{prebotName}.json was not found.");
+                    LogIrcStartupWarning($"PreBot '{prebotName}' is selected by a site, but pre_bots\\{prebotName}.json was not found.", prebotName);
                 continue;
             }
 
@@ -359,16 +373,16 @@ public sealed class EngineHost : IAsyncDisposable
         var settings = prebotConfig.SiteSettings ?? new PreBotSiteSettings();
 
         if (string.IsNullOrWhiteSpace(znc.Host))
-        { if (logSkips) LogManager.Warning($"Skipping PreBot '{prebotName}': missing IRC host."); return false; }
+        { if (logSkips) LogIrcStartupWarning($"Skipping PreBot '{prebotName}': missing IRC host.", prebotName); return false; }
 
         if (string.IsNullOrWhiteSpace(znc.Username))
-        { if (logSkips) LogManager.Warning($"Skipping PreBot '{prebotName}': missing IRC username."); return false; }
+        { if (logSkips) LogIrcStartupWarning($"Skipping PreBot '{prebotName}': missing IRC username.", prebotName); return false; }
 
         if (string.IsNullOrWhiteSpace(settings.BotName))
-        { if (logSkips) LogManager.Warning($"Skipping PreBot '{prebotName}': missing bot name."); return false; }
+        { if (logSkips) LogIrcStartupWarning($"Skipping PreBot '{prebotName}': missing bot name.", prebotName); return false; }
 
         if (string.IsNullOrWhiteSpace(settings.Channel1))
-        { if (logSkips) LogManager.Warning($"Skipping PreBot '{prebotName}': missing channel."); return false; }
+        { if (logSkips) LogIrcStartupWarning($"Skipping PreBot '{prebotName}': missing channel.", prebotName); return false; }
 
         var enabledSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var mergedSections = new List<Section>();
@@ -402,7 +416,9 @@ public sealed class EngineHost : IAsyncDisposable
             },
             SiteSettings = new SiteSettings
             {
+                ConfigKey = firstSite.SiteSettings?.ConfigKey,
                 Sitename = firstSite.SiteSettings?.Sitename,
+                FxpBackendId = firstSite.SiteSettings?.FxpBackendId,
                 BotName = settings.BotName,
                 Chan1 = settings.Channel1,
                 BlowfishKey1 = settings.BlowfishKey1,
@@ -420,6 +436,12 @@ public sealed class EngineHost : IAsyncDisposable
 
         LogManager.Success($"PreBot '{prebotName}' configured for {linkedSites.Count} site(s), monitoring {enabledSections.Count} section(s).");
         return true;
+    }
+
+    private static void LogIrcStartupWarning(string message, string? site = null)
+    {
+        LogManager.Warning(message);
+        LogManager.LogIRC(IRCEventType.Warning, message, server: site);
     }
 
     private static bool RequiresPassword(SiteConfig cfg)

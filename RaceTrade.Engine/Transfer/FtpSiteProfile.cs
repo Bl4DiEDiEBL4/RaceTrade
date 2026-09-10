@@ -16,11 +16,11 @@ namespace RaceTrade.Engine.Transfer
     }
 
     /// <summary>
-    /// Everything needed to talk FTP to one site. This is the config cbftp currently owns
+    /// Everything needed to talk FTP to one site. This is the config FXP backend currently owns
     /// on RaceTrade's behalf; a native racer needs it locally.
     ///
     /// Stored on the site JSON under "ftp". When it is absent the site keeps racing
-    /// through cbftp, so adding this model changes nothing until a profile is filled in.
+    /// through FXP backend, so adding this model changes nothing until a profile is filled in.
     /// </summary>
     public class FtpSiteProfile
     {

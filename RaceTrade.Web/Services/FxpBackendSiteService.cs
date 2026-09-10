@@ -5,18 +5,18 @@ using Newtonsoft.Json.Linq;
 
 namespace RaceTrade.Web.Services;
 
-public sealed class CbftpSiteService
+public sealed class FxpBackendSiteService
 {
-    private readonly CbftpStore _store;
+    private readonly FxpBackendStore _store;
 
-    public CbftpSiteService(CbftpStore store)
+    public FxpBackendSiteService(FxpBackendStore store)
     {
         _store = store;
     }
 
-    public IReadOnlyList<CbftpServer> LoadServers() => _store.Load().CbftpServers;
+    public IReadOnlyList<FxpBackend> LoadServers() => _store.LoadActiveServers();
 
-    public async Task<IReadOnlyList<string>> LoadSiteNamesAsync(CbftpServer server)
+    public async Task<IReadOnlyList<string>> LoadSiteNamesAsync(FxpBackend server)
     {
         using var client = CreateClient(server);
         var endpoint = FxpClientService.BuildEndpoint(server);
@@ -32,7 +32,7 @@ public sealed class CbftpSiteService
             .ToList()!;
     }
 
-    public async Task<CbftpSiteEditModel> LoadSiteAsync(CbftpServer server, string siteName)
+    public async Task<FxpBackendSiteEditModel> LoadSiteAsync(FxpBackend server, string siteName)
     {
         using var client = CreateClient(server);
         var endpoint = FxpClientService.BuildEndpoint(server);
@@ -82,7 +82,7 @@ public sealed class CbftpSiteService
             .ToList() ?? new();
         model.Sections = obj["sections"]?
             .OfType<JObject>()
-            .Select(s => new CbftpSiteSection
+            .Select(s => new FxpBackendSiteSection
             {
                 Name = s.Value<string>("name") ?? "",
                 Path = s.Value<string>("path") ?? ""
@@ -91,7 +91,7 @@ public sealed class CbftpSiteService
             .ToList() ?? new();
         model.Skiplist = obj["skiplist"]?
             .OfType<JObject>()
-            .Select(s => new CbftpSkiplistEntry
+            .Select(s => new FxpBackendSkiplistEntry
             {
                 Action = s.Value<string>("action") ?? "DENY",
                 Scope = s.Value<string>("scope") ?? "ALL",
@@ -106,10 +106,10 @@ public sealed class CbftpSiteService
         return model;
     }
 
-    public async Task SaveSiteAsync(CbftpServer server, CbftpSiteEditModel model)
+    public async Task SaveSiteAsync(FxpBackend server, FxpBackendSiteEditModel model)
     {
         if (string.IsNullOrWhiteSpace(model.Name))
-            throw new InvalidOperationException("CBFTP site name is required.");
+            throw new InvalidOperationException("FXP backend site name is required.");
 
         var addresses = SplitLines(model.AddressesText);
         if (addresses.Count == 0)
@@ -185,30 +185,38 @@ public sealed class CbftpSiteService
             throw new InvalidOperationException($"HTTP {(int)response.StatusCode}: {response.ReasonPhrase} {text}");
     }
 
-    public async Task<CbftpSiteEditModel> DuplicateSiteAsync(CbftpServer server, string sourceName, string newName)
+    public async Task<FxpBackendSiteEditModel> DuplicateSiteAsync(FxpBackend server, string sourceName, string newName)
+    {
+        return await CopySiteAsync(server, server, sourceName, newName);
+    }
+
+    public async Task<FxpBackendSiteEditModel> CopySiteAsync(FxpBackend sourceServer, FxpBackend targetServer, string sourceName, string newName)
     {
         var source = sourceName?.Trim() ?? "";
         var target = newName?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(source))
-            throw new InvalidOperationException("Source CBFTP site is required.");
+            throw new InvalidOperationException("Source FXP backend site is required.");
         if (string.IsNullOrWhiteSpace(target))
-            throw new InvalidOperationException("New CBFTP site name is required.");
-        if (string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("The new CBFTP site name must be different from the source.");
+            throw new InvalidOperationException("New FXP backend site name is required.");
+        if (SameServer(sourceServer, targetServer) &&
+            string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The new FXP backend site name must be different from the source.");
+        }
 
-        var existing = await LoadSiteNamesAsync(server);
+        var existing = await LoadSiteNamesAsync(targetServer);
         if (existing.Contains(target, StringComparer.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"CBFTP site '{target}' already exists.");
+            throw new InvalidOperationException($"FXP backend site '{target}' already exists.");
 
-        var copy = await LoadSiteAsync(server, source);
+        var copy = await LoadSiteAsync(sourceServer, source);
         copy.OriginalName = null;
         copy.Name = target;
-        await SaveSiteAsync(server, copy);
+        await SaveSiteAsync(targetServer, copy);
         copy.OriginalName = target;
         return copy;
     }
 
-    public async Task<string> GetSiteRulesAsync(CbftpServer server, string siteName)
+    public async Task<string> GetSiteRulesAsync(FxpBackend server, string siteName)
     {
         using var client = CreateClient(server);
         var endpoint = FxpClientService.BuildEndpoint(server);
@@ -231,7 +239,7 @@ public sealed class CbftpSiteService
         }
     }
 
-    public static CbftpSiteEditModel New(string name = "") => new()
+    public static FxpBackendSiteEditModel New(string name = "") => new()
     {
         Name = name,
         BasePath = "/",
@@ -252,7 +260,7 @@ public sealed class CbftpSiteService
         ProxyType = "GLOBAL"
     };
 
-    private static HttpClient CreateClient(CbftpServer server)
+    private static HttpClient CreateClient(FxpBackend server)
     {
         var handler = new HttpClientHandler
         {
@@ -274,6 +282,13 @@ public sealed class CbftpSiteService
             .ToList();
 
     private static int Clamp(int value) => Math.Max(0, Math.Min(value, 100000));
+
+    private static bool SameServer(FxpBackend left, FxpBackend right) =>
+        string.Equals(left.Id, right.Id, StringComparison.OrdinalIgnoreCase) ||
+        (!string.IsNullOrWhiteSpace(left.Host) &&
+         !string.IsNullOrWhiteSpace(left.Port) &&
+         string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase) &&
+         string.Equals(left.Port, right.Port, StringComparison.OrdinalIgnoreCase));
 
     private static string CleanRulesText(string text)
     {
@@ -297,7 +312,7 @@ public sealed class CbftpSiteService
     }
 }
 
-public sealed class CbftpSiteEditModel
+public sealed class FxpBackendSiteEditModel
 {
     public string? OriginalName { get; set; }
     public string Name { get; set; } = "";
@@ -332,17 +347,17 @@ public sealed class CbftpSiteEditModel
     public string ProxyType { get; set; } = "GLOBAL";
     public string ProxyName { get; set; } = "";
     public List<string> Affils { get; set; } = new();
-    public List<CbftpSiteSection> Sections { get; set; } = new();
-    public List<CbftpSkiplistEntry> Skiplist { get; set; } = new();
+    public List<FxpBackendSiteSection> Sections { get; set; } = new();
+    public List<FxpBackendSkiplistEntry> Skiplist { get; set; } = new();
 }
 
-public sealed class CbftpSiteSection
+public sealed class FxpBackendSiteSection
 {
     public string Name { get; set; } = "";
     public string Path { get; set; } = "";
 }
 
-public sealed class CbftpSkiplistEntry
+public sealed class FxpBackendSkiplistEntry
 {
     public string Action { get; set; } = "DENY";
     public string Scope { get; set; } = "ALL";

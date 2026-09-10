@@ -379,3 +379,7 @@ data/
 /RaceTrade/CBFTP/cbftp_config.json
 /RaceTrade/db/
 /RaceTrade/settings/
+# RaceTrade local runtime/reference folders
+RaceTrade/
+fxp_backend/
+trdjs-ref/

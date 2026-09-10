@@ -172,8 +172,7 @@ public class IRCClient
 
             // Normalize exactly like SetChannelKey/LoadChannelKeys do, so a channel
             // written without '#' (or with different casing) still matches.
-            if (!chanValue.StartsWith("#") && !chanValue.StartsWith("PM:"))
-                chanValue = "#" + chanValue.TrimStart('#');
+            chanValue = NormalizeKeyName(chanValue);
 
             if (!this.channels.Contains(chanValue, StringComparer.OrdinalIgnoreCase))
                 this.channels.Add(chanValue);
@@ -272,9 +271,9 @@ public class IRCClient
         // Global blacklist
         this.blacklist = config.GlobalBlacklist ?? new List<string>();
 
-        // Race sections enabled
-        this.raceSections = config.RaceSectionsEnabled?.ToDictionary(section => section, section => string.Empty)
-            ?? new Dictionary<string, string>();
+        // Race sections enabled. Imports can contain duplicate section names; duplicates
+        // must not crash the IRC client before it even connects.
+        this.raceSections = BuildRaceSectionDictionary(config.RaceSectionsEnabled);
 
         // Load sections and mappings (raceSections mapping)
         if (config.Sections != null)
@@ -285,9 +284,9 @@ public class IRCClient
                 {
                     foreach (var tag in section.Tags)
                     {
-                        if (!string.IsNullOrEmpty(tag.MapCbftpSection) && !string.IsNullOrEmpty(tag.TriggerRegex))
+                        if (!string.IsNullOrEmpty(tag.MapFxpBackendSection) && !string.IsNullOrEmpty(tag.TriggerRegex))
                         {
-                            this.raceSections[tag.MapCbftpSection] = tag.TriggerRegex;
+                            this.raceSections[tag.MapFxpBackendSection] = tag.TriggerRegex;
                         }
                     }
                 }
@@ -385,8 +384,7 @@ public class IRCClient
                 // Normalize the channel name the SAME way SetChannelKey (chatbox) does,
                 // so JSON/editor keys match the server's channel name regardless of a
                 // missing '#' or different casing.
-                if (!chanValue.StartsWith("#") && !chanValue.StartsWith("PM:"))
-                    chanValue = "#" + chanValue.TrimStart('#');
+                chanValue = NormalizeKeyName(chanValue);
 
                 try
                 {
@@ -409,7 +407,7 @@ public class IRCClient
             {
                 foreach (var kvp in siteSettings.ChatKeys)
                 {
-                    var channel = kvp.Key;
+                    var channel = NormalizeKeyName(kvp.Key);
                     var encKey = kvp.Value;
 
                     if (string.IsNullOrWhiteSpace(channel) || string.IsNullOrWhiteSpace(encKey))
@@ -461,10 +459,7 @@ public class IRCClient
         if (string.IsNullOrWhiteSpace(channel) || string.IsNullOrWhiteSpace(utf8Key))
             return;
 
-        channel = channel.Trim();
-
-        if (!channel.StartsWith("#") && !channel.StartsWith("PM:"))
-            channel = "#" + channel.TrimStart('#');
+        channel = NormalizeKeyName(channel);
 
         try
         {
@@ -485,7 +480,11 @@ public class IRCClient
             siteConfig.SiteSettings.ChatKeys[channel] = encKey;
 
             // Persist to JSON file
-            var siteFile = Path.Combine("sites", $"{siteConfig.SiteSettings.Sitename}.json");
+            var configKey = siteConfig.SiteSettings.ConfigKey;
+            if (string.IsNullOrWhiteSpace(configKey))
+                configKey = siteConfig.SiteSettings.Sitename;
+
+            var siteFile = Path.Combine("sites", $"{configKey}.json");
             if (!File.Exists(siteFile))
             {
                 AppendOutput($"[WARN] Site file not found when saving key: {siteFile}", Color.Yellow);
@@ -521,6 +520,8 @@ public class IRCClient
 
         try
         {
+            channel = NormalizeKeyName(channel);
+
             lock (fishLock)
             {
                 fishDecryptors[channel] = new FishDecryptor(utf8Key);
@@ -532,6 +533,45 @@ public class IRCClient
         {
             AppendOutput($"[ERROR] Failed to set Blowfish key for {channel}: {ex.Message}", Color.Red);
         }
+    }
+
+    private static string NormalizeKeyName(string channel)
+    {
+        if (string.IsNullOrWhiteSpace(channel))
+            return string.Empty;
+
+        channel = channel.Trim();
+
+        if (!channel.StartsWith("#") && !channel.StartsWith("PM:", StringComparison.OrdinalIgnoreCase))
+            channel = "#" + channel.TrimStart('#');
+
+        return channel;
+    }
+
+    private static bool IsInvalidOrTruncatedFishPayload(Exception ex)
+    {
+        if (ex is FormatException)
+            return true;
+
+        var message = ex.Message ?? string.Empty;
+        return message.IndexOf("Base-64", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               message.IndexOf("base64", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               message.IndexOf("Invalid CBC ciphertext", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static Dictionary<string, string> BuildRaceSectionDictionary(IEnumerable<string> sections)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var section in sections ?? Enumerable.Empty<string>())
+        {
+            var name = section?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            result[name] = string.Empty;
+        }
+
+        return result;
     }
 
     public async Task ConnectToZNCAsync()
@@ -793,13 +833,17 @@ public class IRCClient
                     if (IsAnnounceFromBot(line))
                     {
                         // Dispatch WITHOUT awaiting: release/IMDB/TVMaze/pretime lookups and
-                        // the cbftp spreadjob can take seconds, and awaiting them here would
+                        // the FXP backend spreadjob can take seconds, and awaiting them here would
                         // stall the read loop — PINGs go unanswered (server ping-timeout) and
                         // later announces queue up. Writes are serialized by _sendGate, and
                         // ProcessBotMessageAsync wraps its whole body in try/catch, so this is
                         // safe. Capture the line in a local for the closure.
                         string lineCopy = line;
                         _ = Task.Run(() => ProcessBotMessageAsync(lineCopy, sslStream));
+                    }
+                    else if (EngineSettings.DebugEnabled)
+                    {
+                        LogIgnoredPrivmsgFromOtherNick(line);
                     }
                 }
 
@@ -839,7 +883,7 @@ public class IRCClient
     /// Is this line an announce from the site's configured bot?
     ///
     /// This single test is what the whole racer hangs on: say no and nothing is parsed,
-    /// no race starts, and neither the Race nor the CBFTP log ever sees the release.
+    /// no race starts, and neither the Race nor the FXP backend log ever sees the release.
     /// It therefore has to stay a SUPERSET of the original substring check - never
     /// stricter. The old behaviour is tried first and is on its own enough; the extra
     /// case below only ADDS lines that the substring test cannot see.
@@ -866,6 +910,21 @@ public class IRCClient
 
         return probe.StartsWith($":{botName} ", StringComparison.OrdinalIgnoreCase) ||
                probe.StartsWith($":{botName}!", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void LogIgnoredPrivmsgFromOtherNick(string line)
+    {
+        var channelMatch = Regex.Match(line, @" PRIVMSG (#\S+)");
+        if (!channelMatch.Success)
+            return;
+
+        var channelName = channelMatch.Groups[1].Value;
+        if (!channels.Contains(channelName, StringComparer.OrdinalIgnoreCase))
+            return;
+
+        var senderMatch = Regex.Match(line, @"^(?:@\S+\s+)?:([^!\s]+)");
+        var sender = senderMatch.Success ? senderMatch.Groups[1].Value : "unknown";
+        AppendOutput($"[DEBUG] Ignoring PRIVMSG from '{sender}' on {channelName}; configured bot is '{botName}'.", Color.DimGray);
     }
 
     private async Task ProcessBotMessageAsync(string line, SslStream sslStream)
@@ -937,9 +996,25 @@ public class IRCClient
                 }
                 catch (Exception ex)
                 {
-                    var message = $"Failed to decrypt FiSH message for site '{siteName}' on {channelName}: {ex.Message}. Check the channel key; paste it without the cbc: prefix.";
-                    AppendOutput($"[ERROR] {message}", Color.Red);
-                    LogManager.LogIRC(IRCEventType.Error, message);
+                    if (IsInvalidOrTruncatedFishPayload(ex))
+                    {
+                        var message =
+                            $"Skipped FiSH message for site '{siteName}' on {channelName}: encrypted payload is invalid or truncated before decrypt ({ex.Message}). " +
+                            $"This is usually the IRC 512-byte line limit on a long encrypted announce, not a bad channel key.";
+                        AppendOutput($"[WARN] {message}", Color.Orange);
+                        LogManager.LogIRC(IRCEventType.Warning, message, channelName, siteName);
+
+                        if (EngineSettings.DebugEnabled)
+                        {
+                            AppendOutput($"[DEBUG] Skipped FiSH payload length: {encryptedMessage.Length}", Color.Orange);
+                        }
+                    }
+                    else
+                    {
+                        var message = $"Failed to decrypt FiSH message for site '{siteName}' on {channelName}: {ex.Message}. Check the channel key or FiSH mode.";
+                        AppendOutput($"[ERROR] {message}", Color.Red);
+                        LogManager.LogIRC(IRCEventType.Error, message, channelName, siteName);
+                    }
                     return;
                 }
 
@@ -1036,7 +1111,10 @@ public class IRCClient
             SiteConfig linkedSiteConfig = siteConfig;
             if (isGlobalPreBotMode)
             {
-                var linkedSiteName = siteConfig.SiteSettings.Sitename;
+                var linkedSiteName = siteConfig.SiteSettings.ConfigKey;
+                if (string.IsNullOrWhiteSpace(linkedSiteName))
+                    linkedSiteName = siteConfig.SiteSettings.Sitename;
+
                 if (EngineSettings.DebugEnabled)
                 {
                     AppendOutput($"[INFO] Using Global PreBot '{PreOrSite}' for capturing releases. Linked to site: '{linkedSiteName}'.", Color.Green);
@@ -1148,7 +1226,7 @@ public class IRCClient
                 // The pretime write stays awaited: the value is used by the pretime
                 // rules further down. The read-back exists only to log whether we
                 // were the first PreBot, so it runs off the critical path — it must
-                // never delay the cbftp command.
+                // never delay the FXP backend command.
                 await PreBotManager.StorePretimeAsync(releaseName, section);
 
                 var announceSiteName = siteName;
@@ -1226,40 +1304,39 @@ public class IRCClient
                 ? (linkedSiteConfig.SiteSettings.PreSectionSuffix ?? linkedSiteConfig.SiteSettings.SectionSuffix)
                 : linkedSiteConfig.SiteSettings.SectionSuffix;
 
-            // Map CBFTP section
-            string cbftpSection = RaceHelper.GetMappedCbftpSection(
+            // Map FXP backend section
+            string fxpBackendSection = RaceHelper.GetMappedFxpBackendSection(
                 section,
                 releaseName,
                 siteConfigJson,
                 mapSectionPrefix,
                 mapSectionSuffix);
 
-            if (string.IsNullOrEmpty(cbftpSection) || cbftpSection.StartsWith("[ERROR]"))
+            if (string.IsNullOrEmpty(fxpBackendSection) || fxpBackendSection.StartsWith("[ERROR]"))
             {
                 LogManager.Warning($"[{siteName}] IRC section [{section}] is not configured in any site.");
-                LogManager.Info($"[{siteName}] To race this section: Add [{section}] to a site's IRC sections and map it with a CBFTP mapping and enable it in Race Sections.");
+                LogManager.Info($"[{siteName}] To race this section: Add [{section}] to a site's IRC sections and map it with a FXP backend mapping and enable it in Race Sections.");
                 RaceDiagnostics.Report(releaseName, SkipReason.NoSectionMapping,
-                    $"IRC section '{section}' has no cbftp mapping on any site", null, section, siteName);
+                    $"IRC section '{section}' has no FXP backend mapping on any site", null, section, siteName);
                 return;
             }
 
-            LogManager.LogCBFTP(CBFTPEventType.Info,
-                $"[{LogColors.Magenta(siteName)}] Mapped [{LogColors.Green(section)}] → CBFTP: [{LogColors.Green(cbftpSection)}] for release: [{LogColors.Orange(releaseName)}]");
+            LogManager.LogFxpBackend(FxpBackendEventType.Info,
+                $"[{LogColors.Magenta(siteName)}] Mapped [{LogColors.Green(section)}] → FXP backend: [{LogColors.Green(fxpBackendSection)}] for release: [{LogColors.Orange(releaseName)}]");
 
             // Filter allowed sites (THIS IS WHERE PRETIME/IMDB/TVMAZE CHECKS HAPPEN NOW)
-            var raceSectionsDictionary = linkedSiteConfig.RaceSectionsEnabled
-                ?.ToDictionary(s => s, s => string.Empty) ?? new Dictionary<string, string>();
+            var raceSectionsDictionary = BuildRaceSectionDictionary(linkedSiteConfig.RaceSectionsEnabled);
 
             var filterResult = await RaceHelper.FilterAllowedSites(
                 raceSectionsDictionary,
                 mappings,
                 blacklist,
-                cbftpSection,
+                fxpBackendSection,
                 releaseName,
                 cleanMessage,
                 mapSectionPrefix,
                 mapSectionSuffix,
-                linkedSiteConfig.SiteSettings.Sitename,
+                siteName,
                 isGlobalPreBotMode ? section : null);
 
             switch (filterResult.Status)
@@ -1285,7 +1362,7 @@ public class IRCClient
             // Start transfer
             var targetSites = string.Join(",", filterResult.AllowedSites);
             LogManager.LogRace(RaceStatus.Racing, releaseName, siteName, targetSite: targetSites, quality: section, ircChannel: channelName);
-            await CbftpRacer.HandleTransferJob(cbftpSection, releaseName, filterResult, siteName, channelName);
+            await FxpBackendRacer.HandleTransferJob(fxpBackendSection, releaseName, filterResult, siteName, channelName);
         }
         catch (Exception ex)
         {

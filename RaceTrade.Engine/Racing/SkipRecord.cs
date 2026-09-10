@@ -18,12 +18,12 @@ namespace RaceTrade
         // NEW nor PRE regex. Those fire for ordinary channel chatter, many times a
         // second, and would bury the actual decisions. They stay in the debug log.
         Duplicate,           // already processed, or already in flight
-        NoSectionMapping,    // IRC section could not be mapped to a cbftp section
+        NoSectionMapping,    // IRC section could not be mapped to a FXP backend section
 
         // --- per-site stage ---
         SiteDisabled,
         SectionDisabled,     // section not in race_sections_enabled for that site
-        NoCbftpMapping,      // sitebot mode: no cbftp -> IRC section mapping on that site
+        NoFxpBackendMapping,      // sitebot mode: no FXP backend -> IRC section mapping on that site
         Skiplist,            // section skiplist pattern matched
         Blacklist,           // per-site blacklist pattern matched
         GlobalBlacklist,
