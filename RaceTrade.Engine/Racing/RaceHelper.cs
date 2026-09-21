@@ -275,12 +275,55 @@ public static class RaceHelper
         public HashSet<string> ActiveRefs { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
+    // The backend config only changes on edits, so cache the parsed index by
+    // file write time instead of re-reading and re-parsing it on every announce.
+    private static readonly object FxpBackendIndexLock = new();
+    private static FxpBackendIndex cachedFxpBackendIndex;
+    private static string cachedFxpBackendIndexPath;
+    private static DateTime cachedFxpBackendIndexWriteUtc;
+
+    private static void CacheFxpBackendIndex(FxpBackendIndex index, string configPath, DateTime writeUtc)
+    {
+        if (writeUtc == DateTime.MinValue)
+            return;
+
+        lock (FxpBackendIndexLock)
+        {
+            cachedFxpBackendIndex = index;
+            cachedFxpBackendIndexPath = configPath;
+            cachedFxpBackendIndexWriteUtc = writeUtc;
+        }
+    }
+
     private static FxpBackendIndex LoadFxpBackendIndex()
     {
         var index = new FxpBackendIndex();
 
         if (!FxpBackendConfigFiles.TryGetReadablePath(out var configPath))
             return index;
+
+        DateTime writeUtc;
+        try
+        {
+            writeUtc = File.GetLastWriteTimeUtc(configPath);
+        }
+        catch
+        {
+            writeUtc = DateTime.MinValue;
+        }
+
+        if (writeUtc != DateTime.MinValue)
+        {
+            lock (FxpBackendIndexLock)
+            {
+                if (cachedFxpBackendIndex != null &&
+                    writeUtc == cachedFxpBackendIndexWriteUtc &&
+                    string.Equals(cachedFxpBackendIndexPath, configPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return cachedFxpBackendIndex;
+                }
+            }
+        }
 
         try
         {
@@ -289,7 +332,10 @@ public static class RaceHelper
             index.ConfigLoaded = true;
 
             if (servers == null)
+            {
+                CacheFxpBackendIndex(index, configPath, writeUtc);
                 return index;
+            }
 
             foreach (var server in servers.OfType<JObject>())
             {
@@ -306,6 +352,10 @@ public static class RaceHelper
                     AddFxpBackendRef(index.ActiveRefs, name);
                 }
             }
+
+            // Cache successes only; a failed read is retried on the next call,
+            // exactly like the previous uncached behavior.
+            CacheFxpBackendIndex(index, configPath, writeUtc);
         }
         catch (Exception ex)
         {
@@ -507,7 +557,7 @@ public static class RaceHelper
     {
         if (input == null) return "";
 
-        var interesting = new[] { "group", "resolution", "source", "codec", "range", "year", "repeat" };
+        var interesting = new[] { "group", "resolution", "source", "codec", "range", "year", "language", "lang", "repeat" };
 
         return string.Join(", ", interesting
             .Where(k => input.ContainsKey(k) && !string.IsNullOrEmpty(input[k]))
@@ -608,66 +658,10 @@ public static class RaceHelper
             // Per-call engine: rules are (re)loaded per site immediately before Evaluate.
             var rulesEngine = new RulesEngine();
 
-            // ------------------------------------------------------------------
-            // Release metadata depends ONLY on the release name, so it is parsed
-            // ONCE here instead of once per site (previously ~15 regex passes over
-            // the name were repeated for every configured site).
-            // ------------------------------------------------------------------
-            string codec, sourceType, resolution, range, group, repeatTag;
-            bool isInternal, isMulti;
-
-            if (TVMazeHelper.IsTVShow(releaseName))
-            {
-                codec = TVMazeHelper.ExtractCodec(releaseName);
-                sourceType = TVMazeHelper.ExtractSource(releaseName);
-                resolution = TVMazeHelper.ExtractResolution(releaseName);
-                range = TVMazeHelper.ExtractRange(releaseName);
-                group = TVMazeHelper.ExtractGroup(releaseName);
-                repeatTag = TVMazeHelper.ExtractRepeatTag(releaseName);
-                isInternal = TVMazeHelper.IsInternal(releaseName);
-                isMulti = TVMazeHelper.IsMulti(releaseName);
-            }
-            else
-            {
-                codec = IMDBHelper.ExtractCodec(releaseName);
-                sourceType = IMDBHelper.ExtractSource(releaseName);
-                resolution = IMDBHelper.ExtractResolution(releaseName);
-                range = IMDBHelper.ExtractRange(releaseName);
-                group = IMDBHelper.ExtractGroup(releaseName);
-                repeatTag = IMDBHelper.ExtractRepeatTag(releaseName);
-                isInternal = IMDBHelper.IsInternal(releaseName);
-                isMulti = IMDBHelper.IsMulti(releaseName);
-            }
-
-            var parsedAttributes = ParseReleaseName(releaseName);
-
             // Base rule input shared by every site; the per-site copy only swaps
-            // the section. Extra keys (language/season/episode/type) mirror TRD.js'
-            // rlsname.* fields so rules can use them too.
-            var baseInput = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "release", releaseName }
-            };
-
-            if (parsedAttributes.TryGetValue("year", out var parsedYear)) baseInput["year"] = parsedYear;
-            if (parsedAttributes.TryGetValue("language", out var parsedLanguage)) baseInput["language"] = parsedLanguage;
-            if (parsedAttributes.TryGetValue("season", out var parsedSeason)) baseInput["season"] = parsedSeason;
-            if (parsedAttributes.TryGetValue("episode", out var parsedEpisode)) baseInput["episode"] = parsedEpisode;
-            if (parsedAttributes.TryGetValue("season_episode", out var parsedSeasonEpisode)) baseInput["season_episode"] = parsedSeasonEpisode;
-            if (parsedAttributes.TryGetValue("type", out var parsedType)) baseInput["type"] = parsedType;
-
-            // Use helper-extracted metadata (overrides ParseReleaseName)
-            if (!string.IsNullOrEmpty(group)) baseInput["group"] = group;
-            if (!string.IsNullOrEmpty(resolution)) baseInput["resolution"] = resolution;
-            if (!string.IsNullOrEmpty(resolution)) baseInput["quality"] = resolution; // alias
-            if (!string.IsNullOrEmpty(sourceType)) baseInput["source"] = sourceType;
-            if (!string.IsNullOrEmpty(codec)) baseInput["codec"] = codec;
-            if (!string.IsNullOrEmpty(range)) baseInput["range"] = range;
-            if (!string.IsNullOrEmpty(range)) baseInput["hdr"] = range; // alias
-            if (!string.IsNullOrEmpty(repeatTag)) baseInput["repeat"] = repeatTag;
-            if (!string.IsNullOrEmpty(repeatTag)) baseInput["proper"] = repeatTag; // alias
-            baseInput["internal"] = isInternal.ToString().ToLower();
-            baseInput["multi"] = isMulti.ToString().ToLower();
+            // the section. Built once here (see BuildRuleInput) so the Test release
+            // tools evaluate against exactly the same attributes the racer does.
+            var baseInput = BuildRuleInput(releaseName);
 
             foreach (var siteConfig in siteConfigsSnapshot)
             {
@@ -771,6 +765,24 @@ public static class RaceHelper
                         Skip(siteName, SkipReason.Skiplist,
                             $"section skiplist pattern '{skipPattern}'", ircSectionToCheck);
                         continue;
+                    }
+
+                    // Affil-only section: never race (upload) here. Only an affil-group
+                    // release is allowed, and it goes download-only via the block below.
+                    bool sectionAffilOnly = configSection?["affil_only"]?.Value<bool>() ?? false;
+                    if (sectionAffilOnly)
+                    {
+                        var affilList = siteConfig["affils"]?.ToObject<List<string>>() ?? new List<string>();
+                        if (!GroupIsAffil(releaseGroup, affilList))
+                        {
+                            var shownGroup = string.IsNullOrEmpty(releaseGroup) ? "unknown" : releaseGroup;
+                            LogManager.LogFxpBackend(
+                                FxpBackendEventType.Info,
+                                $"[{LogColors.Magenta(siteName)}] Section [{ircSectionToCheck}] is affil-only; group [{shownGroup}] is not an affil, skipping.");
+                            Skip(siteName, SkipReason.Rules,
+                                $"section '{ircSectionToCheck}' is affil-only and group '{shownGroup}' is not an affil", ircSectionToCheck);
+                            continue;
+                        }
                     }
 
                     if (configSection?["pretime"]?.Value<int?>() is int sectionPretime && sectionPretime > 0)
@@ -891,8 +903,14 @@ public static class RaceHelper
                     // "*French*" could never match anything).
                     // FirstOrDefault instead of Any: the pattern that matched is the whole
                     // point of the skip feed, and Any() threw it away.
-                    var matchedBlacklist = blacklist?.FirstOrDefault(bl =>
-                        MatchesBlacklistPattern(releaseName, bl));
+                    // The release must clear the announcing site's blacklist (passed in)
+                    // AND this target site's own Blacklist tab. Only the announcing list
+                    // was checked before, so a pattern set on the target site was ignored
+                    // and the release got raced there anyway (and nuked).
+                    var targetBlacklist = siteConfig["global_blacklist"]?.ToObject<List<string>>();
+                    var matchedBlacklist =
+                        blacklist?.FirstOrDefault(bl => MatchesBlacklistPattern(releaseName, bl))
+                        ?? targetBlacklist?.FirstOrDefault(bl => MatchesBlacklistPattern(releaseName, bl));
 
                     if (matchedBlacklist != null)
                     {
@@ -909,8 +927,7 @@ public static class RaceHelper
                     if (!string.IsNullOrEmpty(releaseGroup))
                     {
                         var affils = siteConfig["affils"]?.ToObject<List<string>>();
-                        if (affils != null &&
-                            affils.Contains(releaseGroup, StringComparer.OrdinalIgnoreCase))
+                        if (GroupIsAffil(releaseGroup, affils))
                         {
                             dlOnlySites.Add(siteName);
                         }
@@ -1195,6 +1212,12 @@ public static class RaceHelper
                 if (parsedAttributes.TryGetValue("source", out var source))
                     input["source"] = source;
 
+                if (parsedAttributes.TryGetValue("language", out var language))
+                    input["language"] = language;
+
+                if (parsedAttributes.TryGetValue("lang", out var lang))
+                    input["lang"] = lang;
+
                 var evaluationResult = rulesEngine.Evaluate(input, fxpBackendSection);
 
                 if (string.Equals(evaluationResult, "ALLOW", StringComparison.OrdinalIgnoreCase))
@@ -1240,6 +1263,34 @@ public static class RaceHelper
     /// Extracts the group name from a release name.
     /// Format: Some.Release-GROUP
     /// </summary>
+    /// <summary>
+    /// True when the release group counts as one of the site's affils. Internal
+    /// variants are matched automatically: group "GROUP_INT" matches affil "GROUP"
+    /// and vice versa, so affils only need to be listed once (no _INT duplicates).
+    /// </summary>
+    public static bool GroupIsAffil(string group, IEnumerable<string> affils)
+    {
+        if (string.IsNullOrWhiteSpace(group) || affils == null)
+            return false;
+
+        string StripInt(string g) =>
+            g.EndsWith("_INT", StringComparison.OrdinalIgnoreCase) ? g.Substring(0, g.Length - 4) : g;
+
+        var groupBase = StripInt(group.Trim());
+
+        foreach (var affil in affils)
+        {
+            if (string.IsNullOrWhiteSpace(affil))
+                continue;
+
+            var affilBase = StripInt(affil.Trim());
+            if (string.Equals(groupBase, affilBase, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
     public static string ExtractGroupFromRelease(string releaseName)
     {
         if (string.IsNullOrWhiteSpace(releaseName))
@@ -1264,6 +1315,237 @@ public static class RaceHelper
     /// Parses a release name to extract attributes like year, resolution, source, codec, etc.
     /// Expanded version based on TRD.js release name parser.
     /// </summary>
+    /// <summary>
+    /// Runs a single release against ONE site section exactly the way a race does:
+    /// mapping selection, section enabled, section skiplist, IMDB and TVMaze filters,
+    /// then the section/mapping rules. Returns a step-by-step verdict for the Test
+    /// release tools. Pretime and the cross-site blacklists are not evaluated here
+    /// because they are not a property of the section.
+    /// </summary>
+    public static async Task<SectionTestResult> TestReleaseAgainstSection(
+        JObject siteConfig, string ircSection, string releaseName)
+    {
+        var result = new SectionTestResult
+        {
+            Release = releaseName ?? "",
+            Section = ircSection ?? "",
+            Attributes = BuildRuleInput(releaseName ?? "")
+        };
+        result.Attributes["section"] = ircSection ?? "";
+
+        void Step(string stage, bool passed, string detail) =>
+            result.Steps.Add(new SectionTestStep { Stage = stage, Passed = passed, Detail = detail });
+
+        try
+        {
+            if (siteConfig == null)
+            {
+                result.Allowed = false;
+                result.Summary = "No site configuration.";
+                return result;
+            }
+
+            var prefix = siteConfig["site_settings"]?["section_prefix"]?.ToString();
+            var suffix = siteConfig["site_settings"]?["section_suffix"]?.ToString();
+
+            // 1) Mapping: which FXP backend section this release routes to.
+            var mapped = GetMappedFxpBackendSection(ircSection, releaseName, siteConfig, prefix, suffix);
+            if (string.IsNullOrEmpty(mapped) || mapped.StartsWith("[ERROR]"))
+            {
+                Step("Mapping", false, $"section '{ircSection}' has no FXP backend mapping for this release");
+                result.Allowed = false;
+                result.Summary = "No FXP backend mapping, release would not race.";
+                return result;
+            }
+            result.MappedFxpSection = mapped;
+            Step("Mapping", true, $"routes to FXP backend section '{mapped}'");
+
+            // 2) Section enabled for racing.
+            if (!IsAllowedSection(ircSection, siteConfig))
+            {
+                Step("Section enabled", false, $"'{ircSection}' is not in this site's enabled race sections");
+                result.Allowed = false;
+                result.Summary = "Section is not enabled for racing.";
+                return result;
+            }
+            Step("Section enabled", true, "section is enabled for racing");
+
+            var configSection = siteConfig["sections"]?.FirstOrDefault(s =>
+                string.Equals((string)s["irc_name"], ircSection, StringComparison.OrdinalIgnoreCase));
+
+            // 3) Section release skiplist.
+            var releaseSkiplists = configSection?["skiplists"]?.ToObject<List<string>>() ?? new List<string>();
+            if (MatchesReleaseSkiplist(releaseName, releaseSkiplists, out var skipPattern))
+            {
+                Step("Skiplist", false, $"matched skiplist pattern '{skipPattern}'");
+                result.Allowed = false;
+                result.Summary = "Blocked by the section skiplist.";
+                return result;
+            }
+            if (releaseSkiplists.Any())
+                Step("Skiplist", true, "no skiplist pattern matched");
+
+            // 3b) Affil-only section: only affil-group releases pass (download-only).
+            if (configSection?["affil_only"]?.Value<bool>() == true)
+            {
+                var affilList = siteConfig["affils"]?.ToObject<List<string>>() ?? new List<string>();
+                var grp = ExtractGroupFromRelease(releaseName);
+                if (!GroupIsAffil(grp, affilList))
+                {
+                    Step("Affil only", false, $"section is affil-only and group '{(string.IsNullOrEmpty(grp) ? "unknown" : grp)}' is not an affil");
+                    result.Allowed = false;
+                    result.Summary = "Blocked: affil-only section and the group is not an affil.";
+                    return result;
+                }
+                Step("Affil only", true, $"group '{grp}' is an affil, would be download-only");
+            }
+
+            // 4) IMDB filter (only when enabled on the section).
+            if (configSection?["imdb"] is JObject imdb && imdb["enabled"]?.Value<bool>() == true)
+            {
+                var imdbBlock = await ValidateIMDB(releaseName, imdb, ircSection);
+                if (imdbBlock != null)
+                {
+                    Step("IMDB", false, imdbBlock);
+                    result.Allowed = false;
+                    result.Summary = "Blocked by the IMDB filter.";
+                    return result;
+                }
+                Step("IMDB", true, "passed the IMDB filter");
+            }
+
+            // 5) TVMaze filter (only when enabled on the section).
+            if (configSection?["tvmaze"] is JObject tvmaze && tvmaze["enabled"]?.Value<bool>() == true)
+            {
+                var tvmazeBlock = await ValidateTVMaze(releaseName, tvmaze, ircSection);
+                if (tvmazeBlock != null)
+                {
+                    Step("TVMaze", false, tvmazeBlock);
+                    result.Allowed = false;
+                    result.Summary = "Blocked by the TVMaze filter.";
+                    return result;
+                }
+                Step("TVMaze", true, "passed the TVMaze filter");
+            }
+
+            // 6) Section + mapping rules.
+            var rulesEngine = new RulesEngine();
+            rulesEngine.LoadRulesForIrcSection(siteConfig, ircSection, mapped);
+            var evaluation = rulesEngine.EvaluateDetailed(result.Attributes, mapped);
+            result.DecidingRuleText = evaluation.DecidingRuleText;
+
+            bool allowedByRules = string.Equals(evaluation.Decision, "ALLOW", StringComparison.OrdinalIgnoreCase);
+            Step("Rules", allowedByRules,
+                evaluation.DecidingRuleText == null
+                    ? evaluation.Reason
+                    : $"{evaluation.Reason}: {evaluation.DecidingRuleText}");
+
+            if (!allowedByRules)
+            {
+                result.Allowed = false;
+                result.Summary = "Dropped by the rules.";
+                return result;
+            }
+
+            // 7) Global blacklist (Settings) and this site's own Blacklist tab.
+            if (IsGloballyBlacklisted(releaseName, out var globalPattern))
+            {
+                Step("Blacklist", false, $"global blacklist pattern '{globalPattern}'");
+                result.Allowed = false;
+                result.Summary = "Blocked by the global blacklist.";
+                return result;
+            }
+
+            var siteBlacklist = siteConfig["global_blacklist"]?.ToObject<List<string>>() ?? new List<string>();
+            var hitBlacklist = siteBlacklist.FirstOrDefault(bl => MatchesBlacklistPattern(releaseName, bl));
+            if (hitBlacklist != null)
+            {
+                Step("Blacklist", false, $"site blacklist pattern '{hitBlacklist}'");
+                result.Allowed = false;
+                result.Summary = "Blocked by this site's blacklist.";
+                return result;
+            }
+            if (siteBlacklist.Any())
+                Step("Blacklist", true, "no blacklist pattern matched");
+
+            result.Allowed = true;
+            result.Summary = $"Would race into FXP backend section '{mapped}'.";
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Step("Error", false, ex.Message);
+            result.Allowed = false;
+            result.Summary = $"Test failed: {ex.Message}";
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Builds the rule-input dictionary for a release: the exact attribute set the
+    /// rule engine sees during a real race (group, resolution, source, codec, range,
+    /// repeat, internal, multi, year, language, lang, season, episode, type, release).
+    /// The caller adds "section" for the section being evaluated. Shared by
+    /// FilterAllowedSites and the Test release tools so they never drift apart.
+    /// </summary>
+    public static Dictionary<string, string> BuildRuleInput(string releaseName)
+    {
+        string codec, sourceType, resolution, range, group, repeatTag;
+        bool isInternal, isMulti;
+
+        if (TVMazeHelper.IsTVShow(releaseName))
+        {
+            codec = TVMazeHelper.ExtractCodec(releaseName);
+            sourceType = TVMazeHelper.ExtractSource(releaseName);
+            resolution = TVMazeHelper.ExtractResolution(releaseName);
+            range = TVMazeHelper.ExtractRange(releaseName);
+            group = TVMazeHelper.ExtractGroup(releaseName);
+            repeatTag = TVMazeHelper.ExtractRepeatTag(releaseName);
+            isInternal = TVMazeHelper.IsInternal(releaseName);
+            isMulti = TVMazeHelper.IsMulti(releaseName);
+        }
+        else
+        {
+            codec = IMDBHelper.ExtractCodec(releaseName);
+            sourceType = IMDBHelper.ExtractSource(releaseName);
+            resolution = IMDBHelper.ExtractResolution(releaseName);
+            range = IMDBHelper.ExtractRange(releaseName);
+            group = IMDBHelper.ExtractGroup(releaseName);
+            repeatTag = IMDBHelper.ExtractRepeatTag(releaseName);
+            isInternal = IMDBHelper.IsInternal(releaseName);
+            isMulti = IMDBHelper.IsMulti(releaseName);
+        }
+
+        var parsedAttributes = ParseReleaseName(releaseName);
+
+        var input = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "release", releaseName }
+        };
+
+        if (parsedAttributes.TryGetValue("year", out var parsedYear)) input["year"] = parsedYear;
+        if (parsedAttributes.TryGetValue("language", out var parsedLanguage)) input["language"] = parsedLanguage;
+        if (parsedAttributes.TryGetValue("lang", out var parsedLang)) input["lang"] = parsedLang;
+        if (parsedAttributes.TryGetValue("season", out var parsedSeason)) input["season"] = parsedSeason;
+        if (parsedAttributes.TryGetValue("episode", out var parsedEpisode)) input["episode"] = parsedEpisode;
+        if (parsedAttributes.TryGetValue("season_episode", out var parsedSeasonEpisode)) input["season_episode"] = parsedSeasonEpisode;
+        if (parsedAttributes.TryGetValue("type", out var parsedType)) input["type"] = parsedType;
+
+        if (!string.IsNullOrEmpty(group)) input["group"] = group;
+        if (!string.IsNullOrEmpty(resolution)) input["resolution"] = resolution;
+        if (!string.IsNullOrEmpty(resolution)) input["quality"] = resolution; // alias
+        if (!string.IsNullOrEmpty(sourceType)) input["source"] = sourceType;
+        if (!string.IsNullOrEmpty(codec)) input["codec"] = codec;
+        if (!string.IsNullOrEmpty(range)) input["range"] = range;
+        if (!string.IsNullOrEmpty(range)) input["hdr"] = range; // alias
+        if (!string.IsNullOrEmpty(repeatTag)) input["repeat"] = repeatTag;
+        if (!string.IsNullOrEmpty(repeatTag)) input["proper"] = repeatTag; // alias
+        input["internal"] = isInternal.ToString().ToLower();
+        input["multi"] = isMulti.ToString().ToLower();
+
+        return input;
+    }
+
     public static Dictionary<string, string> ParseReleaseName(string releaseName)
     {
         var parsed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -1336,10 +1618,21 @@ public static class RaceHelper
                 parsed["multi"] = "true";
             }
 
-            // Language detection (simplified - add more if needed)
-            var languageMatch = Rx.Language.Match(releaseName);
-            if (languageMatch.Success)
-                parsed["language"] = languageMatch.Groups[1].Value.ToUpper();
+            // Language detection uses the editable Release Classifier language mapping.
+            if (ReleaseClassifier.TryDetectLanguage(releaseName, out var detectedLanguage, out var detectedLangCode))
+            {
+                parsed["language"] = detectedLanguage.ToUpperInvariant();
+                parsed["lang"] = detectedLangCode.ToUpperInvariant();
+            }
+            else
+            {
+                var languageMatch = Rx.Language.Match(releaseName);
+                if (languageMatch.Success)
+                {
+                    parsed["language"] = languageMatch.Groups[1].Value.ToUpper();
+                    parsed["lang"] = languageMatch.Groups[1].Value.ToUpper();
+                }
+            }
 
             // PROPER/REPACK/RERIP detection
             var repeatMatch = Rx.Repeat.Match(releaseName);
@@ -1501,6 +1794,15 @@ public static class RaceHelper
     {
         try
         {
+            // Bypass list: release names matching one of these patterns skip the
+            // whole IMDB filter and are allowed through. Patterns support * and ?.
+            var imdbBypass = GetStringList(config, "bypass_if_matches", "always_allow_if_matches");
+            if (imdbBypass.Any(p => MatchesReleaseNamePattern(releaseName, p)))
+            {
+                LogManager.Info($"[{siteName}] [IMDB] ✔ Release matches bypass pattern, skipping IMDB filter");
+                return null;
+            }
+
             var releaseInfo = await IMDBHelper.EnrichReleaseInfo(releaseName);
 
             if (releaseInfo?.Movie == null)
@@ -1631,6 +1933,17 @@ public static class RaceHelper
     {
         try
         {
+            // Bypass list: if the release name matches one of these patterns the
+            // whole TVMaze filter is skipped and the release is allowed through.
+            // Handy for things like ".US." versions that TVMaze mis-matches to a
+            // foreign show and would otherwise block. Patterns support * and ?.
+            var tvmazeBypass = GetStringList(config, "bypass_if_matches", "always_allow_if_matches");
+            if (tvmazeBypass.Any(p => MatchesReleaseNamePattern(releaseName, p)))
+            {
+                LogManager.Info($"[{siteName}] [TVMaze] ✔ Release matches bypass pattern, skipping TVMaze filter");
+                return null;
+            }
+
             var cacheDays = config["cache_duration_days"]?.Value<int>() ?? 7;
             if (cacheDays < 1) cacheDays = 7;
 
@@ -1654,6 +1967,69 @@ public static class RaceHelper
             {
                 LogManager.Warning($"[{siteName}] [TVMaze] ❌ Show has ended");
                 return $"Show has ended";
+            }
+
+            // Series premiere year filter. Unlike the [year] rule (which reads the
+            // year out of the release NAME and is unreliable for series), this uses
+            // the actual premiere date TVMaze reports for the show.
+            int minYear = config["min_year"]?.Value<int>() ?? 0;
+            int maxYear = config["max_year"]?.Value<int>() ?? 0;
+            if (minYear > 0 || maxYear > 0)
+            {
+                int premiereYear = 0;
+                var premiered = show.Premiered ?? "";
+                if (premiered.Length >= 4)
+                {
+                    int.TryParse(premiered.Substring(0, 4), out premiereYear);
+                }
+
+                if (premiereYear <= 0)
+                {
+                    LogManager.Warning($"[{siteName}] [TVMaze] ❌ No premiere year available while a year filter is configured");
+                    return "No premiere year available while a year filter is configured";
+                }
+                if (minYear > 0 && premiereYear < minYear)
+                {
+                    LogManager.Warning($"[{siteName}] [TVMaze] ❌ Premiere year {premiereYear} < {minYear}");
+                    return $"Premiere year {premiereYear} < {minYear}";
+                }
+                if (maxYear > 0 && premiereYear > maxYear)
+                {
+                    LogManager.Warning($"[{siteName}] [TVMaze] ❌ Premiere year {premiereYear} > {maxYear}");
+                    return $"Premiere year {premiereYear} > {maxYear}";
+                }
+            }
+
+            // Same idea as the IMDB "English only" filter: TVMaze reports one
+            // language per show, so a non-English show is blocked outright.
+            if (config["only_english"]?.Value<bool>() == true)
+            {
+                var showLanguage = show.Language ?? "";
+                if (!showLanguage.Equals("English", StringComparison.OrdinalIgnoreCase))
+                {
+                    var shown = string.IsNullOrWhiteSpace(showLanguage) ? "unknown" : showLanguage;
+                    LogManager.Warning($"[{siteName}] [TVMaze] ❌ Not English ({shown})");
+                    return $"Not English ({shown})";
+                }
+            }
+
+            // Optional allow-list for setups that want more than English,
+            // for example English plus Japanese for anime sections.
+            var allowedLanguages = GetStringList(config, "allowed_languages", "languages");
+            if (allowedLanguages.Any())
+            {
+                var showLanguage = show.Language ?? "";
+                if (string.IsNullOrWhiteSpace(showLanguage))
+                {
+                    LogManager.Warning($"[{siteName}] [TVMaze] ❌ No language data available while a language allow-list is configured");
+                    return "No language data available while a language allow-list is configured";
+                }
+
+                if (!allowedLanguages.Contains(showLanguage, StringComparer.OrdinalIgnoreCase))
+                {
+                    LogManager.Warning($"[{siteName}] [TVMaze] ❌ Language '{showLanguage}' not allowed");
+                    return $"Language '{showLanguage}' not allowed";
+                }
             }
 
             double minRating = config["min_rating"]?.Value<double>() ?? 0;
@@ -1758,6 +2134,31 @@ public static class RaceHelper
 /// <summary>
 /// Represents a mapped tag with precompiled regex for performance.
 /// </summary>
+/// <summary>
+/// One stage of a section release test (mapping, skiplist, IMDB, TVMaze, rules).
+/// </summary>
+public sealed class SectionTestStep
+{
+    public string Stage { get; set; }
+    public bool Passed { get; set; }
+    public string Detail { get; set; }
+}
+
+/// <summary>
+/// Full result of testing one release against one site section.
+/// </summary>
+public sealed class SectionTestResult
+{
+    public string Release { get; set; }
+    public string Section { get; set; }
+    public string MappedFxpSection { get; set; }
+    public bool Allowed { get; set; }
+    public string Summary { get; set; }
+    public string DecidingRuleText { get; set; }
+    public Dictionary<string, string> Attributes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<SectionTestStep> Steps { get; } = new();
+}
+
 public class MappedTag
 {
     public string FxpBackendSection { get; set; }

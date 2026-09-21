@@ -13,7 +13,7 @@
         <label>Announcing site</label>
         <select value="@_site" @onchange="SelectSite">
             <option value="">-- pick a site --</option>
-            <option value="*">* (any site / prebot)</option>
+            <option value="*">* (any site / prespam bot)</option>
             @foreach (var s in _siteNames)
             {
                 <option value="@s">@s</option>
@@ -185,20 +185,33 @@
 
             Add($"Site: {_site}   Section: {_section}   Release: {_release}");
             var isGlobalPreBotMode = IsConfiguredGlobalPreBotMode(cfg.SiteSettings?.PreOrSite);
+            var effectiveSection = _section;
+            var classifier = ReleaseClassifier.Classify(_release, _section, cfg.SiteSettings?.SectionDetectionMode);
+            if (!string.Equals(classifier.FinalSection, _section, StringComparison.OrdinalIgnoreCase))
+            {
+                effectiveSection = classifier.FinalSection;
+                Add($"Classifier changed section: {_section} -> {effectiveSection}", "success");
+                foreach (var step in classifier.Steps)
+                    Add($"   pass {step.Pass}: {step.FromSection} -> {step.ToSection} ({step.RuleName})", "info");
+            }
+            else
+            {
+                Add($"Detected section: {effectiveSection}", "info");
+            }
 
             // 1. section -> FXP backend mapping
             var fxpBackendSection = RaceHelper.GetMappedFxpBackendSection(
-                _section, _release, json,
+                effectiveSection, _release, json,
                 cfg.SiteSettings?.SectionPrefix,
                 cfg.SiteSettings?.SectionSuffix);
 
             if (string.IsNullOrEmpty(fxpBackendSection) || fxpBackendSection.StartsWith("[ERROR]"))
             {
-                Add($"No FXP backend mapping for IRC section '{_section}'. Add it under the site's Sections tab.", "error");
+                Add($"No FXP backend mapping for IRC section '{effectiveSection}'. Add it under the site's Sections tab.", "error");
                 return;
             }
 
-            Add($"Mapped to FXP backend section: {fxpBackendSection}", "success");
+            Add($"Final FXP backend section: {fxpBackendSection}", "success");
 
             // 2. which sites would race it
             var raceSections = BuildRaceSectionDictionary(cfg.RaceSectionsEnabled);
@@ -213,7 +226,7 @@
                 cfg.SiteSettings?.SectionPrefix,
                 cfg.SiteSettings?.SectionSuffix,
                 _site,
-                isGlobalPreBotMode ? _section : null);
+                isGlobalPreBotMode ? effectiveSection : null);
 
             switch (result.Status)
             {

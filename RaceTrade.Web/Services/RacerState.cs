@@ -24,6 +24,12 @@ public sealed class RacerState
 
     public IReadOnlyCollection<string> ConnectedSites => _host.ConnectedSites;
 
+    public int ConnectedPrespamBotCount => _host.ConnectedPrespamBotCount;
+
+    public int ConnectedSiteBotCount => _host.ConnectedSiteBotCount;
+
+    public int EnabledTargetSiteCount => _host.EnabledTargetSiteCount;
+
     public async Task ToggleAsync()
     {
         // Guard against double-clicks and against two browsers toggling at once: without

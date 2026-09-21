@@ -14,7 +14,7 @@
             <p>
                 RaceTrade is now one executable: the racing engine runs inside the same
                 process as this local web UI. You configure it in the browser, but your
-                sites, FXP backends, prebots, sections and databases are still normal files
+                sites, FXP backends, prespam bots, sections and databases are still normal files
                 in the data folder shown under Settings.
             </p>
         </div>
@@ -109,7 +109,12 @@
         <div class="doc-grid compact">
             <article class="doc-card">
                 <h3>General</h3>
-                <p>Site name, bot nick, mode, max pretime and basic site flags.</p>
+                <p>
+                    Site name, bot nick, mode, section detection, max pretime and basic site
+                    flags. Mode <strong>Target only</strong> keeps the site as a race target
+                    fed by all prespam bots, without its own IRC announce connection. It is
+                    the same as Site with IRC source off.
+                </p>
             </article>
             <article class="doc-card">
                 <h3>ZNC</h3>
@@ -151,6 +156,15 @@
             <code>{id}</code>, <code>{name}</code>, <code>{user}</code>,
             <code>{release}</code> and <code>{sitename}</code>.
         </p>
+        <p>
+            The poller needs no IRC connection. While the trader runs, every poll interval
+            (default 300 seconds, configurable per site) it sends the request list command
+            through the FXP backend raw interface, searches the requested release on your
+            other sites with <code>SITE SEARCH</code>, fills it with an FXP job, and sends
+            <code>REQFILLED</code>. It only runs for sites with auto-fill enabled. The
+            request line parsing was written against drftpd output; other daemons may need
+            their own request line regex.
+        </p>
     </section>
 
     <section class="doc-section">
@@ -179,6 +193,7 @@
             <li>Add <strong>Section Rules</strong> when every mapping in this IRC section should use the same filter.</li>
             <li>Enable IMDB or TVMaze filters only when that section needs lookup checks; their genre, network and show type lists are under <strong>Lookup filters</strong>.</li>
             <li>Save the site after changing routing or filters.</li>
+            <li><strong>Affil only</strong>: for a section the site does not let you upload to, turn on Affil only. RaceTrade then never races (uploads) there and only accepts a release whose group is one of the site's affils, as download-only. Internal releases count automatically, so <code>GROUP_INT</code> matches the affil <code>GROUP</code> and you do not list <code>_INT</code> names separately. The affils come from the Affils tab (filled by the site import).</li>
         </ol>
         <p>
             Core terms: <strong>IRC section</strong> is what the announce says, for example
@@ -251,6 +266,24 @@ FRENCH|GERMAN|ITA     foreign language releases</pre>
     </section>
 
     <section class="doc-section">
+        <h2>Release Classifier</h2>
+        <p>
+            The <a href="classifier">Release Classifier</a> can rewrite messy or missing
+            announce sections before routing. Each site picks a mode under
+            <strong>Section detection</strong> in the site editor: trust the announce
+            section, run the classifier after it, or ignore the announce section and
+            classify from scratch.
+        </p>
+        <ul class="doc-list">
+            <li>Classifier rules run per group, top to bottom, at most 5 passes. Use <code>continue</code> to hop through groups like <code>GENERAL -&gt; GAMES -&gt; DOX</code>.</li>
+            <li>The Language Mapping tab defines the codes and aliases behind <code>[lang]</code> and the <code>{lang}</code> section template.</li>
+            <li><strong>Strict detection</strong> only scans after the episode token (TV) or the year (movies) and never inside the group name, so a title like <code>Made.In.China</code> or a group called <code>RUS</code> cannot register as a language. It is off by default; existing configs keep their exact behavior.</li>
+            <li>Combine conditions with <code>&amp;&amp;</code> and <code>||</code>, with spaces around them: <code>[group] equals RUNE &amp;&amp; [release] contains UPDATE</code>. Without the spaces the condition never matches.</li>
+            <li>The classifier page has its own Help tab with the exact match syntax and a live test box.</li>
+        </ul>
+    </section>
+
+    <section class="doc-section">
         <h2>Rule format</h2>
         <p>
             Section Rules and FXP backend Mapping Rules use the same syntax:
@@ -285,8 +318,16 @@ FRENCH|GERMAN|ITA     foreign language releases</pre>
                 <h3>Lists and patterns</h3>
                 <ul class="doc-list">
                     <li><code>isin</code> exact membership in a comma or pipe separated list.</li>
+                    <li><code>containsany</code> true when any entry of a comma or pipe list appears as a substring.</li>
                     <li><code>iswm</code> wildcard match with <code>*</code> and <code>?</code>.</li>
                     <li><code>matches</code> regex match. Regex is evaluated case-insensitive with a safety timeout.</li>
+                </ul>
+            </article>
+            <article class="doc-card">
+                <h3>Numbers and negation</h3>
+                <ul class="doc-list">
+                    <li><code>&gt;=</code> <code>&lt;=</code> <code>&gt;</code> <code>&lt;</code> numeric compare, for example <code>[year] &gt;= 2020</code>. A value that is not a number never matches.</li>
+                    <li>Prefix <code>!</code> negates an operator: <code>!isin</code>, <code>!contains</code>, <code>!containsany</code>, <code>!iswm</code>, <code>!matches</code>.</li>
                 </ul>
             </article>
         </div>
@@ -323,6 +364,15 @@ FRENCH|GERMAN|ITA     foreign language releases</pre>
                     <li><code>[range]</code> or <code>[hdr]</code>, for example <code>HDR</code>, <code>DV</code> or <code>HLG</code>.</li>
                     <li><code>[repeat]</code> or <code>[proper]</code>, for <code>PROPER</code>, <code>REPACK</code> and similar tags.</li>
                     <li><code>[internal]</code> and <code>[multi]</code>, boolean strings <code>true</code> or <code>false</code>.</li>
+                </ul>
+            </article>
+            <article class="doc-card">
+                <h3>Language and episodes</h3>
+                <ul class="doc-list">
+                    <li><code>[language]</code> the tag as written in the release name, for example <code>GERMAN</code> or <code>NLSUBBED</code>.</li>
+                    <li><code>[lang]</code> the mapped code from the Release Classifier language mapping, for example <code>DE</code> or <code>NL</code>. Prefer this in rules: one code covers all aliases of a language.</li>
+                    <li><code>[season]</code> and <code>[episode]</code> parsed numbers when present.</li>
+                    <li><code>[type]</code> is <code>tv</code> or <code>movie</code>.</li>
                 </ul>
             </article>
         </div>
@@ -424,6 +474,29 @@ Fallback mapping trigger: empty</pre>
                     Put the specific mapping triggers first and the empty fallback last.
                 </p>
             </article>
+            <article class="doc-card">
+                <h3>Year, type and quality</h3>
+<pre class="code">[year] &lt; 2015 DROP
+[year] &gt;= 2020 ALLOW
+[type] == tv DROP
+[resolution] !isin 720P,1080P DROP
+[hdr] isin DV,DV.HDR DROP</pre>
+                <p>
+                    Numeric compares only fire when the value parses as a number.
+                    <code>[type] == tv DROP</code> in a movie section blocks episodes.
+                </p>
+            </article>
+            <article class="doc-card">
+                <h3>Language codes</h3>
+<pre class="code">[lang] isin DE,FR,PL DROP
+[lang] !isin NL,EN DROP
+[language] == NLSUBBED DROP
+[multi] == true DROP</pre>
+                <p>
+                    <code>[lang]</code> uses the Release Classifier language mapping, so
+                    one code covers every alias of that language.
+                </p>
+            </article>
         </div>
     </section>
 
@@ -456,10 +529,16 @@ Site Beta:
         <article class="doc-card">
             <div class="card-title">PREBOTS</div>
             <p>
-                PreBots have their own page. <strong>Add prebot</strong> creates the ZNC and parsing
+                Prespam Bots have their own page. <strong>Add prespam bot</strong> creates the ZNC and parsing
                 config. Paste a real pre line into <strong>Test parsing</strong> to confirm the
                 captured section and release before saving. <strong>Import releases</strong> imports
                 the latest 100 releases from predb.club into the pretime database.
+            </p>
+            <p>
+                All prespam bots run as announce sources at the same time and every enabled
+                site is a target, so the fastest bot wins and duplicates are ignored. One
+                enabled site is enough to connect the bots, but an actual race always needs
+                at least two enabled sites: a source and a destination.
             </p>
         </article>
 

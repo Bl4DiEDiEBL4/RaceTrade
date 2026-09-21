@@ -1,0 +1,461 @@
+@page "/classifier"
+
+<PageTitle>Release Classifier - RaceTrade</PageTitle>
+
+<div class="page-head">
+    <h1><Icon Name="test" Size="18" />Release Classifier</h1>
+    <div class="head-actions">
+        <button class="btn primary" @onclick="Save"><Icon Name="save" Size="13" /><span>Save</span></button>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <p class="hint err">@_error</p>
+}
+@if (_status is not null)
+{
+    <p class="hint ok">@_status</p>
+}
+
+<div class="tabs classifier-tabs">
+    <button type="button" class="tab @(_tab == "Rules" ? "active" : "")" @onclick='() => SetTab("Rules")'>Rules</button>
+    <button type="button" class="tab @(_tab == "Language" ? "active" : "")" @onclick='() => SetTab("Language")'>Language Mapping</button>
+    <button type="button" class="tab @(_tab == "Help" ? "active" : "")" @onclick='() => SetTab("Help")'>Help</button>
+</div>
+
+@if (_tab == "Rules")
+{
+    <div class="callout">
+        <strong>Classify messy prespam/site sections.</strong> Rules run top to bottom for the current section.
+        Use <code>continue</code> to jump through groups like <code>GENERAL -> GAMES -> DOX</code>.
+    </div>
+
+    <div class="panel classifier-rule-search">
+        <label>
+            <span>Find rules</span>
+            <input type="text" @bind="_ruleSearch" @bind:event="oninput" placeholder="Search group, name, condition or target section..." />
+        </label>
+        @if (!string.IsNullOrWhiteSpace(_ruleSearch))
+        {
+            <button type="button" class="btn sm" @onclick="ClearRuleSearch"><Icon Name="close" Size="12" /><span>Clear</span></button>
+        }
+    </div>
+
+    <div class="classifier-layout">
+        <aside class="panel classifier-groups">
+            <div class="section-block-head compact">
+                <h2>GROUPS</h2>
+                <button class="btn sm" @onclick="AddGroup"><Icon Name="plus" Size="12" /><span>Add</span></button>
+            </div>
+            <label class="classifier-group-rename">
+                <span>Rename selected group</span>
+                <input type="text" value="@_selectedGroup" @onchange="RenameSelectedGroup" placeholder="GENERAL" />
+            </label>
+            @foreach (var group in VisibleGroups)
+            {
+                <button type="button" class="classifier-group @(IsSelectedGroup(group) ? "active" : "")" @onclick="() => _selectedGroup = group">
+                    <strong>@group</strong>
+                    <span>@VisibleRulesFor(group).Count rule(s)</span>
+                </button>
+            }
+        </aside>
+
+        <section class="panel classifier-rules">
+            <div class="section-block-head compact">
+                <h2>@_selectedGroup RULES</h2>
+                <button class="btn primary sm" @onclick="AddRule"><Icon Name="plus" Size="12" /><span>Add rule</span></button>
+            </div>
+
+            @if (!VisibleRulesFor(_selectedGroup).Any())
+            {
+                <div class="empty compact">@(string.IsNullOrWhiteSpace(_ruleSearch) ? "No rules for this group yet." : "No rules match the current search.")</div>
+            }
+            else
+            {
+                <div class="classifier-rule-list">
+                    @foreach (var item in VisibleRulesFor(_selectedGroup).Select((Rule, Index) => new { Rule, Index }))
+                    {
+                        var rule = item.Rule;
+                        <div class="classifier-rule-row"
+                             @ondragenter:preventDefault="true"
+                             @ondragover:preventDefault="true"
+                             @ondrop:preventDefault="true"
+                             @ondrop="() => DropClassifierRule(rule)">
+                            <span class="drag-grip"
+                                  title="Drag to reorder"
+                                  draggable="true"
+                                  @onpointerdown="() => BeginClassifierRuleDrag(rule)">::</span>
+                            <div class="rule-order">@(item.Index + 1)</div>
+                            <label>
+                                <span>Name</span>
+                                <input type="text" draggable="false" @bind="rule.Name" @bind:event="oninput" placeholder="Rune games" />
+                            </label>
+                            <label class="wide">
+                                <span>If</span>
+                                <input type="text" draggable="false" @bind="rule.Match" @bind:event="oninput" placeholder="[group] equals RUNE" />
+                            </label>
+                            <label>
+                                <span>Set section</span>
+                                <input type="text" draggable="false" @bind="rule.SetSection" @bind:event="oninput" placeholder="GAMES" />
+                            </label>
+                            <label class="check-inline continue-check">
+                                <input type="checkbox" @bind="rule.Continue" />
+                                <span>continue</span>
+                            </label>
+                            <div class="row-actions tight">
+                                <button class="btn icon-only" title="Move up" @onclick="() => MoveRule(rule, -1)"><Icon Name="up" Size="13" /></button>
+                                <button class="btn icon-only" title="Move down" @onclick="() => MoveRule(rule, 1)"><Icon Name="down" Size="13" /></button>
+                                <button class="btn danger icon-only" title="Delete" @onclick="() => DeleteRule(rule)"><Icon Name="trash" Size="13" /></button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <aside class="panel classifier-test">
+            <h2>TEST</h2>
+            <label>Release name</label>
+            <input type="text" @bind="_testRelease" @bind:event="oninput" placeholder="Some.Game.Update.v1.2.GERMAN-RUNE" />
+            <label>Initial section</label>
+            <input type="text" @bind="_testSection" @bind:event="oninput" placeholder="GENERAL" />
+            <label>Mode</label>
+            <select @bind="_testMode">
+                <option value="@SectionDetectionModes.UseParsed">Use parsed section</option>
+                <option value="@SectionDetectionModes.ParsedThenClassifier">Use parsed section + classifier</option>
+                <option value="@SectionDetectionModes.ClassifierOnly">Ignore parsed section, use classifier</option>
+            </select>
+            <button class="btn primary" @onclick="Test"><Icon Name="test" Size="13" /><span>Test classifier</span></button>
+
+            @if (_testResult is not null)
+            {
+                <div class="classifier-result">
+                    <strong>Final section: @_testResult.FinalSection</strong>
+                    <small>Start: @_testResult.StartSection</small>
+                    @if (!_testResult.Steps.Any())
+                    {
+                        <div class="empty compact">No classifier rule matched.</div>
+                    }
+                    else
+                    {
+                        @foreach (var step in _testResult.Steps)
+                        {
+                            <div class="classifier-step">
+                                <span>@step.Pass</span>
+                                <code>@step.FromSection -> @step.ToSection</code>
+                                <small>@step.RuleName</small>
+                            </div>
+                        }
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_testResult.StopReason))
+                    {
+                        <div class="empty compact">@_testResult.StopReason</div>
+                    }
+                </div>
+            }
+        </aside>
+    </div>
+}
+else if (_tab == "Language")
+{
+    <div class="panel classifier-language-map">
+        <div class="section-block-head compact">
+            <div>
+                <h2>LANGUAGE MAPPING</h2>
+                <p class="fh">Code is the output used by <code>[lang]</code> and <code>{lang}</code>. Detection uses aliases only. Use plain aliases like <code>NORWEGiAN</code>, or exact raw aliases like <code>-NO-</code> when a short code must only match a dashed token.</p>
+            </div>
+            <button class="btn sm" @onclick="AddLanguageMapping"><Icon Name="plus" Size="12" /><span>Add language</span></button>
+        </div>
+        <label class="check-inline">
+            <input type="checkbox" @bind="_config.StrictLanguageDetection" />
+            <span>Strict detection (skip title &amp; group)</span>
+        </label>
+        <p class="fh">
+            Strict: aliases are only detected <em>after</em> the episode token (TV) or the year (movies),
+            and never inside the group name. Titles like <code>Made.In.China</code> or groups like
+            <code>RUS</code> then no longer register as a language. Note: tags placed <em>before</em>
+            the year (old style <code>Title.German.2019</code>) are not detected in strict mode.
+            Off = current behavior, nothing changes for existing sites.
+        </p>
+        <div class="language-map-list">
+            @foreach (var item in _config.LanguageMappings.Select((Mapping, Index) => new { Mapping, Index }))
+            {
+                <div class="language-map-row">
+                    <span class="rule-order">@(item.Index + 1)</span>
+                    <label>
+                        <span>Code</span>
+                        <input class="language-code" type="text" @bind="item.Mapping.Code" @bind:event="oninput" placeholder="FR" />
+                    </label>
+                    <label class="wide">
+                        <span>Aliases</span>
+                        <input type="text" value="@AliasesText(item.Mapping)" @onchange="e => SetAliases(item.Mapping, e.Value?.ToString())" placeholder="FRENCH,TRUEFRENCH,SUBFRENCH,-FR-" />
+                    </label>
+                    <button class="btn danger icon-only" title="Delete language" @onclick="() => DeleteLanguageMapping(item.Mapping)"><Icon Name="trash" Size="13" /></button>
+                </div>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="panel classifier-reference">
+        <div>
+            <h2>WHAT YOU CAN USE</h2>
+            <p class="fh">Rules use <code>[key] operator value</code>. Combine checks with <code>&amp;&amp;</code> or <code>||</code>.</p>
+        </div>
+        <div class="classifier-reference-grid">
+            <div>
+                <strong>Keys</strong>
+                <code>[release]</code>
+                <code>[section]</code>
+                <code>[group]</code>
+                <code>[language]</code>
+                <code>[lang]</code>
+                <span><code>[lang]</code> comes from the language code. The code itself is not detected unless it is also in aliases.</span>
+            </div>
+            <div>
+                <strong>Operators</strong>
+                <code>contains</code>
+                <code>notcontains</code>
+                <code>equals</code>
+                <code>in</code>
+                <code>notin</code>
+                <code>exists</code>
+                <code>notexists</code>
+                <code>regex</code>
+            </div>
+            <div>
+                <strong>Examples</strong>
+                <code>[release] contains UPDATE</code>
+                <code>[group] equals RUNE</code>
+                <code>[language] exists</code>
+                <code>[release] regex (?i)(UPDATE|DLC)</code>
+                <code>[release] regex (^|[-._])PS5($|[-._])</code>
+                <code>[language] in GERMAN,FRENCH DROP</code>
+                <code>alias -NO- detects WEB-NO- but not .No.</code>
+            </div>
+            <div>
+                <strong>Section templates</strong>
+                <code>GAMES</code>
+                <code>DOX</code>
+                <code>SD-MOVIES-{lang}</code>
+                <code>{section}-{lang}</code>
+                <span>Use <code>continue</code> when the new section should run through the next group. Use <code>regex</code>, not <code>contains</code>, for delimiter checks like PS5.</span>
+            </div>
+        </div>
+    </div>
+}
+@code {
+    private ReleaseClassifierConfig _config = new();
+    private string _selectedGroup = "GENERAL";
+    private string _tab = "Rules";
+    private string? _error;
+    private string? _status;
+    private string _testRelease = "";
+    private string _ruleSearch = "";
+    private string _testSection = "GENERAL";
+    private string _testMode = SectionDetectionModes.ClassifierOnly;
+    private ReleaseClassifierResult? _testResult;
+
+    private IReadOnlyList<string> Groups => _config.Rules
+        .Select(r => string.IsNullOrWhiteSpace(r.FromSection) ? "GENERAL" : r.FromSection.Trim())
+        .Append("GENERAL")
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(g => g, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    protected override void OnInitialized()
+    {
+        _config = ReleaseClassifier.Load();
+        _selectedGroup = Groups.FirstOrDefault() ?? "GENERAL";
+    }
+
+    private List<ReleaseClassifierRule> RulesFor(string group) => _config.Rules
+        .Where(r => string.Equals(NormalizeGroup(r.FromSection), NormalizeGroup(group), StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    private IReadOnlyList<string> VisibleGroups => Groups
+        .Where(GroupMatchesSearch)
+        .ToList();
+
+    private List<ReleaseClassifierRule> VisibleRulesFor(string group) => RulesFor(group)
+        .Where(RuleMatchesSearch)
+        .ToList();
+
+    private bool GroupMatchesSearch(string group) =>
+        string.IsNullOrWhiteSpace(_ruleSearch) ||
+        group.Contains(_ruleSearch, StringComparison.OrdinalIgnoreCase) ||
+        RulesFor(group).Any(RuleMatchesSearch);
+
+    private bool RuleMatchesSearch(ReleaseClassifierRule rule)
+    {
+        if (string.IsNullOrWhiteSpace(_ruleSearch))
+            return true;
+
+        var q = _ruleSearch.Trim();
+        return (rule.Name ?? "").Contains(q, StringComparison.OrdinalIgnoreCase) ||
+               (rule.FromSection ?? "").Contains(q, StringComparison.OrdinalIgnoreCase) ||
+               (rule.Match ?? "").Contains(q, StringComparison.OrdinalIgnoreCase) ||
+               (rule.SetSection ?? "").Contains(q, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ClearRuleSearch() => _ruleSearch = "";
+
+    private bool IsSelectedGroup(string group) => string.Equals(group, _selectedGroup, StringComparison.OrdinalIgnoreCase);
+
+    private void SetTab(string tab) => _tab = tab;
+
+    private void AddGroup()
+    {
+        var baseName = "NEW-GROUP";
+        var name = baseName;
+        for (var i = 2; Groups.Contains(name, StringComparer.OrdinalIgnoreCase); i++)
+            name = $"{baseName}-{i}";
+        _selectedGroup = name;
+        _config.Rules.Add(new ReleaseClassifierRule { Name = "New rule", FromSection = name, Match = "[release] contains ", SetSection = name });
+    }
+
+    private void RenameSelectedGroup(ChangeEventArgs e)
+    {
+        var oldGroup = NormalizeGroup(_selectedGroup);
+        var newGroup = NormalizeGroup(e.Value?.ToString());
+        if (string.IsNullOrWhiteSpace(newGroup) || string.Equals(oldGroup, newGroup, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        foreach (var rule in _config.Rules.Where(r => string.Equals(NormalizeGroup(r.FromSection), oldGroup, StringComparison.OrdinalIgnoreCase)))
+            rule.FromSection = newGroup;
+
+        _selectedGroup = newGroup;
+    }
+
+    private void AddRule()
+    {
+        _config.Rules.Add(new ReleaseClassifierRule
+        {
+            Name = "New rule",
+            FromSection = _selectedGroup,
+            Match = "[release] contains ",
+            SetSection = _selectedGroup,
+            Continue = false
+        });
+    }
+
+    private void DeleteRule(ReleaseClassifierRule rule) => _config.Rules.Remove(rule);
+
+    private void AddLanguageMapping() => _config.LanguageMappings.Add(new ReleaseLanguageMapping
+    {
+        Code = "XX",
+        Aliases = new List<string> { "ALIAS" }
+    });
+
+    private void DeleteLanguageMapping(ReleaseLanguageMapping mapping) => _config.LanguageMappings.Remove(mapping);
+
+    private static string AliasesText(ReleaseLanguageMapping mapping) =>
+        string.Join(",", mapping.Aliases ?? new List<string>());
+
+    private static void SetAliases(ReleaseLanguageMapping mapping, string? value) =>
+        mapping.Aliases = (value ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private ReleaseClassifierRule? _dragClassifierRule;
+
+    private void BeginClassifierRuleDrag(ReleaseClassifierRule rule) => _dragClassifierRule = rule;
+
+    private void DropClassifierRule(ReleaseClassifierRule target)
+    {
+        var dragged = _dragClassifierRule;
+        _dragClassifierRule = null;
+
+        if (dragged is null || ReferenceEquals(dragged, target))
+            return;
+
+        // Only reorder within the same group; the flat list interleaves all groups.
+        if (!string.Equals(NormalizeGroup(dragged.FromSection), NormalizeGroup(target.FromSection), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var from = _config.Rules.IndexOf(dragged);
+        var origTo = _config.Rules.IndexOf(target);
+        if (from < 0 || origTo < 0)
+            return;
+
+        _config.Rules.RemoveAt(from);
+        var to = _config.Rules.IndexOf(target);
+        _config.Rules.Insert(from < origTo ? to + 1 : to, dragged);
+    }
+
+    private void MoveRule(ReleaseClassifierRule rule, int delta)
+    {
+        // The flat rules list interleaves every group, so a plain +/-1 move often
+        // swapped with a rule of ANOTHER group - invisible in the per-group view
+        // until it had hopped over all of them (the "press up 5 times" bug).
+        // Swap with the neighbouring rule of the SAME group instead.
+        var group = NormalizeGroup(rule.FromSection);
+        var groupIndices = new List<int>();
+        for (var i = 0; i < _config.Rules.Count; i++)
+        {
+            if (string.Equals(NormalizeGroup(_config.Rules[i].FromSection), group, StringComparison.OrdinalIgnoreCase))
+                groupIndices.Add(i);
+        }
+
+        var position = groupIndices.IndexOf(_config.Rules.IndexOf(rule));
+        var nextPosition = position + delta;
+        if (position < 0 || nextPosition < 0 || nextPosition >= groupIndices.Count)
+            return;
+
+        var a = groupIndices[position];
+        var b = groupIndices[nextPosition];
+        (_config.Rules[a], _config.Rules[b]) = (_config.Rules[b], _config.Rules[a]);
+    }
+
+    private void Save()
+    {
+        try
+        {
+            _error = null;
+            foreach (var rule in _config.Rules)
+                rule.FromSection = NormalizeGroup(rule.FromSection);
+
+            _config.LanguageMappings = (_config.LanguageMappings ?? new List<ReleaseLanguageMapping>())
+                .Where(m => !string.IsNullOrWhiteSpace(m.Code))
+                .GroupBy(m => m.Code.Trim().ToUpperInvariant(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => new ReleaseLanguageMapping
+                {
+                    Code = g.Key,
+                    Aliases = g
+                        .SelectMany(m => m.Aliases ?? new List<string>())
+                        .Select(a => (a ?? "").Trim())
+                        .Where(a => !string.IsNullOrWhiteSpace(a))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList()
+                })
+                .OrderBy(m => m.Code, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            ReleaseClassifier.Save(_config);
+            _status = "Release classifier saved.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Test()
+    {
+        try
+        {
+            _error = null;
+            ReleaseClassifier.Save(_config);
+            _testResult = ReleaseClassifier.Classify(_testRelease, _testSection, _testMode);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static string NormalizeGroup(string? group) => string.IsNullOrWhiteSpace(group) ? "GENERAL" : group.Trim();
+}

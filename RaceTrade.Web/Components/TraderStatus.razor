@@ -20,7 +20,8 @@
 
     @if (Racer.IsRunning && Racer.ConnectedSites.Count > 0)
     {
-        <div class="status-sites">@Racer.ConnectedSites.Count site(s) connected</div>
+        <div class="status-sites">@ConnectedSourcesLabel</div>
+        <div class="status-sites muted">@Racer.EnabledTargetSiteCount racing site(s) enabled</div>
     }
 
     <button class="btn-run @(Racer.IsRunning ? "stop" : "")"
@@ -32,11 +33,59 @@
 </div>
 
 @code {
-    protected override void OnInitialized() => Racer.Changed += OnChanged;
+    private CancellationTokenSource? _refreshCts;
+
+    protected override void OnInitialized()
+    {
+        Racer.Changed += OnChanged;
+        _refreshCts = new CancellationTokenSource();
+        _ = RefreshWhileRunningAsync(_refreshCts.Token);
+    }
 
     private void OnChanged() => InvokeAsync(StateHasChanged);
 
+    private string ConnectedSourcesLabel
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (Racer.ConnectedPrespamBotCount > 0)
+                parts.Add(FormatCount(Racer.ConnectedPrespamBotCount, "Prespam Bot"));
+            if (Racer.ConnectedSiteBotCount > 0)
+                parts.Add(FormatCount(Racer.ConnectedSiteBotCount, "sitebot"));
+
+            return parts.Count == 0
+                ? "No IRC sources connected"
+                : $"{string.Join(" + ", parts)} connected";
+        }
+    }
+
+    private static string FormatCount(int count, string label) =>
+        count == 1 ? $"1 {label}" : $"{count} {label}s";
+
+    private async Task RefreshWhileRunningAsync(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), token);
+                if (Racer.IsRunning || Racer.IsBusy)
+                    await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal when the component is disposed.
+        }
+    }
+
     private Task Toggle() => Racer.ToggleAsync();
 
-    public void Dispose() => Racer.Changed -= OnChanged;
+    public void Dispose()
+    {
+        Racer.Changed -= OnChanged;
+        _refreshCts?.Cancel();
+        _refreshCts?.Dispose();
+    }
 }

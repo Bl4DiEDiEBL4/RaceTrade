@@ -55,7 +55,7 @@
         <div class="card-title">PRE</div>
         <div class="card-actions">
             <a class="btn" href="pre"><Icon Name="flag" Size="13" /><span>Pre manager</span></a>
-            <a class="btn" href="prebots"><Icon Name="prebots" Size="13" /><span>Manage prebots</span></a>
+            <a class="btn" href="prebots"><Icon Name="prebots" Size="13" /><span>Manage prespam bots</span></a>
         </div>
     </div>
     <div class="card dashboard-tools-card">
@@ -137,7 +137,7 @@
                             <td class="site">@e.Site</td>
                             <td>@e.Section</td>
                             <td class="release-name">@e.Release</td>
-                            <td class="dim">@HistoryDetail(e)</td>
+                            <td class="dim detail-cell" title="@HistoryDetail(e)">@HistoryDetail(e)</td>
                         </tr>
                     }
                 </tbody>

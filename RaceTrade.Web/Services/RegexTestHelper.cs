@@ -15,25 +15,33 @@ public static class RegexTestHelper
         string? input,
         string? sectionRegex,
         string? releaseRegex,
+        string? sectionDetectionMode,
         string? sectionPrefix,
         string? sectionSuffix)
     {
         if (string.IsNullOrWhiteSpace(input))
-            return Fail("Enter a prebot line to test.");
+            return Fail("Enter a prespam line to test.");
 
-        if (string.IsNullOrWhiteSpace(sectionRegex) || string.IsNullOrWhiteSpace(releaseRegex))
-            return Fail("Section regex and name regex are required for a useful test.");
+        var classifierOnly = SectionDetectionModes.Normalize(sectionDetectionMode) == SectionDetectionModes.ClassifierOnly;
+
+        if (string.IsNullOrWhiteSpace(releaseRegex) || (!classifierOnly && string.IsNullOrWhiteSpace(sectionRegex)))
+            return Fail(classifierOnly
+                ? "Name regex is required for classifier-only prespam parsing."
+                : "Section regex and name regex are required for a useful test.");
 
         try
         {
-            var section = Match(input, sectionRegex);
+            var section = classifierOnly
+                ? (Success: false, FullMatch: "", Group1: "")
+                : Match(input, sectionRegex!);
             var release = Match(input, releaseRegex);
-            var trimmedSection = TrimPrefixSuffix(section.Group1, sectionPrefix, sectionSuffix);
+            var trimmedSection = classifierOnly ? "GENERAL" : TrimPrefixSuffix(section.Group1, sectionPrefix, sectionSuffix);
 
             var lines = new List<RegexTestLine>
             {
                 new("Input", input),
-                new("Section match", section.Success ? "matched" : "no match", section.Success ? "ok" : "bad"),
+                new("Section mode", classifierOnly ? "classifier only - starts from GENERAL" : "parsed from line", "ok"),
+                new("Section match", classifierOnly ? "skipped" : (section.Success ? "matched" : "no match"), classifierOnly || section.Success ? "ok" : "bad"),
                 new("Section full match", section.FullMatch),
                 new("Section group 1", section.Group1),
                 new("Final section", trimmedSection),
@@ -42,8 +50,8 @@ public static class RegexTestHelper
                 new("Release group 1", release.Group1)
             };
 
-            var ok = section.Success && release.Success;
-            return new RegexTestResult(ok, ok ? "PreBot line parsed" : "PreBot line did not parse", lines);
+            var ok = release.Success && (classifierOnly || section.Success);
+            return new RegexTestResult(ok, ok ? "Prespam line parsed" : "Prespam line did not parse", lines);
         }
         catch (ArgumentException ex)
         {

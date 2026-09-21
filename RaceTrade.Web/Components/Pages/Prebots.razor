@@ -1,14 +1,14 @@
-﻿@page "/prebots"
+@page "/prebots"
 @inject PreBotStore Store
 
-<PageTitle>PreBots - RaceTrade</PageTitle>
+<PageTitle>Prespam Bots - RaceTrade</PageTitle>
 
 <div class="page-head">
-    <h1><Icon Name="prebots" Size="18" />PreBots</h1>
+    <h1><Icon Name="prebots" Size="18" />Prespam Bots</h1>
     <div class="head-actions">
         @if (_editing is null)
         {
-            <button class="btn primary" @onclick="AddNew"><Icon Name="plus" Size="13" /><span>Add prebot</span></button>
+            <button class="btn primary" @onclick="AddNew"><Icon Name="plus" Size="13" /><span>Add prespam bot</span></button>
             <button class="btn" @onclick="ImportPretimes" disabled="@_importingPretimes">
                 <Icon Name="download" Size="13" />
                 <span>@(_importingPretimes ? "Importing..." : "Import releases")</span>
@@ -37,7 +37,7 @@
         @if (_rows.Count == 0)
         {
             <div class="empty">
-                No prebots configured. A prebot feeds pre announces into the racer so
+                No prespam bots configured. A prespam bot reads pre spam lines so
                 pretime rules can be applied.
             </div>
         }
@@ -69,7 +69,7 @@ else
     <div class="panel form">
         <div class="editor-with-aside prebot-editor">
             <div class="editor-main">
-                <h2>@(_isNew ? "NEW PREBOT" : $"EDIT {_originalName}")</h2>
+                <h2>@(_isNew ? "NEW PRESPAM BOT" : $"EDIT {_originalName}")</h2>
 
                 <div class="form-grid">
                     <label>Name</label>
@@ -99,11 +99,17 @@ else
 
                 <h2>PARSING</h2>
                 <div class="form-grid wide">
+                    <label>Section detection</label>
+                    <select @bind="_editing.SiteSettings.SectionDetectionMode">
+                        <option value="@SectionDetectionModes.UseParsed">Use prespam section</option>
+                        <option value="@SectionDetectionModes.ParsedThenClassifier">Use prespam section + classifier</option>
+                        <option value="@SectionDetectionModes.ClassifierOnly">Ignore prespam section, use classifier</option>
+                    </select>
                     <label>Section regex</label>
                     <input type="text" @bind="_editing.SiteSettings.SectionRegex" placeholder="\[([^\]]+)\]" @bind:event="oninput" />
 
                     <label>Name regex</label>
-                    <input type="text" @bind="_editing.SiteSettings.NameRegex" placeholder="(\S+-\w+)$" @bind:event="oninput" />
+                    <input type="text" @bind="_editing.SiteSettings.NameRegex" placeholder="(\S+-\w+)$ or ^\S+\s+\S+\s+-\s+(.+?-\w+)\s+-\s+" @bind:event="oninput" />
 
                     <label>Section prefix</label>
                     <input type="text" @bind="_editing.SiteSettings.SectionPrefix" @bind:event="oninput" />
@@ -114,7 +120,7 @@ else
 
                 <h2>TEST PARSING</h2>
                 <div class="regex-test-row">
-                    <input type="text" @bind="_prebotTestInput" placeholder="Paste a prebot announce line here" @bind:event="oninput" />
+                    <input type="text" @bind="_prebotTestInput" placeholder="Paste a prespam announce line here" @bind:event="oninput" />
                     <button type="button" class="btn primary" @onclick="TestPreBotRegex"><Icon Name="test" Size="13" /><span>Test</span></button>
                 </div>
 
@@ -134,23 +140,31 @@ else
             </div>
 
             <aside class="regex-help-panel">
-                <h2>PREBOT EXAMPLES</h2>
+                <h2>PRESPAM BOT EXAMPLES</h2>
                 <p class="fh">
-                    Paste a real line from the pre channel and test before saving. The first capture group
+                    Paste a real line from the prespam channel and test before saving. The first capture group
                     from each regex is what RaceTrade uses.
                 </p>
                 <div class="regex-example-list">
                     <div>
-                        <span>Section regex</span>
+                        <span>Bracket section regex</span>
                         <code>\[([^\]]+)\]</code>
                     </div>
                     <div>
-                        <span>Name regex</span>
+                        <span>Release at end regex</span>
                         <code>(\S+-\w+)$</code>
                     </div>
                     <div>
+                        <span>Dash-separated release regex</span>
+                        <code>^\S+\s+\S+\s+-\s+(.+?-\w+)\s+-\s+</code>
+                    </div>
+                    <div>
+                        <span>Dash-separated section regex</span>
+                        <code>^\S+\s+\S+\s+-\s+.+?-\w+\s+-\s+([A-Z0-9-]+)\s+-\s+</code>
+                    </div>
+                    <div>
                         <span>Example line</span>
-                        <code>PRE: [TV-1080P] Show.Name.S01E01.1080p-GROUP</code>
+                        <code>-SiTEPRE SENPAI - One.Piece.S24E1178.1080p.WEB.H264-SENPAI - TV-HD - SheepNet</code>
                     </div>
                 </div>
                 <p class="fh">
@@ -234,6 +248,7 @@ else
             _prebotTestInput,
             s.SectionRegex,
             s.NameRegex,
+            s.SectionDetectionMode,
             s.SectionPrefix,
             s.SectionSuffix);
     }

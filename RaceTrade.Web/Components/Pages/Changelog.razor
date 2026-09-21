@@ -10,7 +10,7 @@
     <section class="doc-hero">
         <div>
             <span class="doc-kicker">Current branch</span>
-            <h2>v2.1.4</h2>
+            <h2>v2.1.5</h2>
             <p>
                 This page tracks user-facing RaceTrade changes for the new web build.
             </p>
@@ -19,8 +19,32 @@
 
     <section class="timeline">
         <article class="timeline-item current">
+            <div class="timeline-version">v2.1.5</div>
+            <div class="timeline-date">September 2026</div>
+            <ul>
+                <li>Added the Release Classifier with tabbed setup, rule groups, language mapping, section templates, rule search and a test panel for prespam/sitebot section detection.</li>
+                <li>Improved Prespam Bot handling so configured prespam bots start globally as announce sources and can use enabled racing sites as targets.</li>
+                <li>Added classifier-only prespam parsing for bots with unreliable section names, including updated regex testing and clearer examples.</li>
+                <li>Improved Site IRC source controls so sites can stay enabled for racing while their own sitebot IRC announce source is switched off.</li>
+                <li>Improved Trader Status to show connected Prespam Bots and sitebots separately, refresh live, and show enabled racing sites clearly.</li>
+                <li>Fixed Dashboard Races Seen so duplicate announces from multiple Prespam Bots count as one detected release while history still keeps both source events.</li>
+                <li>Cleaned up default input styling and Release Classifier spacing so dark/light mode forms stay consistent.</li>
+                <li>Fixed language detection so language codes are used for output only and aliases decide what is detected, including exact aliases like -NO-.</li>
+                <li>Added a Site Rules tab in the site editor that caches SITE RULES output from the FXP backend on disk, with a last fetched date, so rules stay readable while setting up sections.</li>
+                <li>Added a Target only mode to the site Mode dropdown for sites that are pure race targets fed by prespam bots, kept in sync with the IRC source toggle.</li>
+                <li>Added optional strict language detection to the Release Classifier: aliases are only detected after the episode token or year and never in the group name, so titles like Made.In.China or groups like RUS no longer register as a language. Off by default.</li>
+                <li>Added TVMaze English only and Allowed languages lookup filters, matching the IMDB filter, so shows in unwanted languages are skipped.</li>
+                <li>Added affil groups to Import sites from FXP backend, so imported sites automatically race releases from affiliated groups as download only.</li>
+                <li>Fixed rule sorting in the Release Classifier: the arrows now move within the selected group with one press, and rules can also be reordered by dragging.</li>
+                <li>Fixed the trigger regex help on the Sections tab being cut off with no way to scroll on smaller screens.</li>
+                <li>Fixed tray notification floods: a burst of races now folds into a single summary notification instead of a popup per race.</li>
+                <li>Improved racing performance and robustness: announce patterns compile once with a safety timeout, classifier and backend configs are cached instead of re-read per announce, job stat polling reuses connections, and spreadjobs no longer send a null profile to the backend.</li>
+                <li>Expanded the Help page with a Release Classifier chapter, the newer rule operators and keys (containsany, numeric compares, negation, language, lang, season, episode, type) and more copy-paste rule examples.</li>
+            </ul>
+        </article>
+        <article class="timeline-item">
             <div class="timeline-version">v2.1.4</div>
-            <div class="timeline-date">August 2026</div>
+            <div class="timeline-date">September 2026</div>
             <ul>
                 <li>Renamed the CBFTP-specific UI and services to FXP Backends and added WeaveFXP-ready backend handling.</li>
                 <li>Added the FXP Sections matrix to manage backend section names and per-site paths from one overview.</li>

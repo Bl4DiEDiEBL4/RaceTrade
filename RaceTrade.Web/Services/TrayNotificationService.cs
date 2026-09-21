@@ -276,8 +276,31 @@ public sealed class TrayNotificationService : IHostedService, IDisposable
         {
             try
             {
-                while (_queue.TryDequeue(out var notification))
-                    ShowBalloon(notification);
+                // Burst protection: when many races land at once (busy prespam
+                // feed, or Windows releasing a held-back backlog), don't fire a
+                // balloon per race — show the first few and fold the rest into
+                // one summary so the desktop is not flooded with popups.
+                if (_queue.TryDequeue(out var first))
+                {
+                    var backlog = new List<TrayNotification>();
+                    while (_queue.TryDequeue(out var more))
+                        backlog.Add(more);
+
+                    ShowBalloon(first);
+
+                    if (backlog.Count <= 2)
+                    {
+                        foreach (var notification in backlog)
+                            ShowBalloon(notification);
+                    }
+                    else
+                    {
+                        ShowBalloon(new TrayNotification(
+                            $"{backlog.Count} more notifications",
+                            "Several races/messages arrived at once. See the Dashboard for the full list.",
+                            BalloonIconFlags.Info));
+                    }
+                }
 
                 await Task.Delay(350, cancellationToken);
             }

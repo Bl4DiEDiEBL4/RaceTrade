@@ -236,7 +236,7 @@
         <div class="card-title">DATA FOLDER</div>
         <p class="path">@DataRoot</p>
         <p class="fh">
-            All sites, FXP backend servers, prebots, sections and databases are read from here.
+            All sites, FXP backend servers, prespam bots, sections and databases are read from here.
             Copy your existing folders <strong>into</strong> this directory - not next to
             the exe - then restart.
         </p>
@@ -336,7 +336,7 @@ RaceTrade.exe --bind 0.0.0.0 --port 8420</pre>
 <div class="panel form">
     <div class="callout">
         Clearing is immediate and cannot be undone. None of this touches your sites,
-        FXP backend servers, prebots or sections — only collected data.
+        FXP backend servers, prespam bots or sections — only collected data.
     </div>
 
     <div class="reset-list">
@@ -514,7 +514,7 @@ sudo systemctl enable --now racetrade</pre>
             () => SQLiteHelper.ClearProcessedReleases()),
 
         new ResetItem("pretimes", "Pretime cache",
-            "Stored pretimes from the prebots. Refills by itself from new announces.",
+            "Stored pretimes from the prespam bots. Refills by itself from new announces.",
             SQLiteHelper.CountPretimes,
             () => SQLiteHelper.ClearPretimes()),
     };

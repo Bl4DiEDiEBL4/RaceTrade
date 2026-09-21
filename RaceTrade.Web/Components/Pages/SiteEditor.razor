@@ -57,25 +57,38 @@
 
         <label>Mode</label>
         <div>
-            <select @bind="S.PreOrSite">
+            <select @bind="ModeSelection">
                 <option value="Site">Site - own sitebot announces</option>
-                <option value="PreBot">PreBot</option>
+                <option value="@TargetOnlyMode">Target only - feed from prespam bots (no own IRC source)</option>
+                <option value="PreBot">Inline prespam bot (legacy)</option>
                 @foreach (var prebot in _preBotNames)
                 {
-                    <option value="@GlobalPreBotMode(prebot)">Global PreBot (@prebot)</option>
+                    <option value="@GlobalPreBotMode(prebot)">Scoped prespam bot (@prebot, legacy)</option>
                 }
             </select>
             <div class="fh">
-                With a <strong>Global PreBot</strong>, this site uses the selected PreBot feed from
-                <code>pre_bots</code>. The PreBot parser lives on the PreBots page; this site still
-                controls which IRC sections race and how they map to FXP backend.
+                Use <strong>Site</strong> for normal sitebot announces. <strong>Target only</strong> keeps this site as a race target fed by all Prespam Bots from the Prespam Bots page, without its own IRC announce connection (same as Site + IRC source off). The inline/scoped prespam modes are legacy compatibility options.
             </div>
         </div>
 
+        <label>Section detection</label>
+        <div>
+            <select @bind="S.SectionDetectionMode">
+                <option value="@SectionDetectionModes.UseParsed">Use announce section</option>
+                <option value="@SectionDetectionModes.ParsedThenClassifier">Use announce section + classifier</option>
+                <option value="@SectionDetectionModes.ClassifierOnly">Ignore announce section, use classifier</option>
+            </select>
+            <div class="fh">Controls whether RaceTrade trusts this site/prespam section or lets the Release Classifier rewrite it.</div>
+        </div>
         <label>Disabled</label>
         <div>
-            <input type="checkbox" @bind="S.DisableSite" />
-            <span class="fh inline">Skip this site entirely - no IRC connection, no racing.</span>
+            <div class="inline-control-row">
+                <input type="checkbox" @bind="S.DisableSite" />
+                <button type="button" class="btn compact-toggle @(IrcAnnounceEnabled ? "on" : "off")" @onclick="ToggleIrcAnnounce">
+                    IRC source @(IrcAnnounceEnabled ? "on" : "off")
+                </button>
+            </div>
+            <span class="fh inline">Disabled skips the whole site. IRC source off keeps it as a target only and stops auto IRC announce connections.</span>
         </div>
 
         <label>Download only</label>
@@ -267,7 +280,7 @@
 
             <h2>PRE ANNOUNCE</h2>
             <p class="fh">
-                Only used when this site also announces pres, or when it is a PreBot. If left empty the
+                Only used when this site also announces pres, or when it is a Prespam Bot. If left empty the
                 normal patterns above are used for pre lines too.
             </p>
             <div class="form-grid wide">
@@ -482,6 +495,8 @@
     <div class="sections-topbar">
         <h2>SECTION ROUTING</h2>
         <span class="fh">Pick an IRC section, then map it to FXP backend sections.</span>
+        <button class="btn sm" @onclick="SyncFxpBackendSections" disabled="@_syncingFxpSections"><Icon Name="refresh" Size="12" /><span>@(_syncingFxpSections ? "Refreshing" : "Refresh from backend")</span></button>
+        <button class="btn sm" @onclick="OpenSectionTester" disabled="@(_cfg.Sections.Count == 0)"><Icon Name="test" Size="12" /><span>Test release</span></button>
         <button class="btn primary sm" @onclick="AddSection"><Icon Name="plus" Size="12" /><span>Add section</span></button>
     </div>
 
@@ -614,6 +629,21 @@
                                        @oninput="e => selected.Pretime = ParseNullableInt(e.Value?.ToString())"
                                        placeholder="inherit" />
                             </label>
+
+                            <label class="control-card toggle-card @(selected.AffilOnly ? "on" : "")">
+                                <input type="checkbox"
+                                       checked="@selected.AffilOnly"
+                                       @onchange="e => selected.AffilOnly = (bool)(e.Value ?? false)" />
+                                <span class="switch-track"></span>
+                                <span class="control-text">
+                                    <strong>Affil only</strong>
+                                    <em>
+                                        @(selected.AffilOnly
+                                            ? "Never upload here. Only affil-group releases pass, download-only. Group_INT counts as the affil automatically."
+                                            : "Race normally. Turn on for sections where the site only accepts its affils.")
+                                    </em>
+                                </span>
+                            </label>
                         </div>
 
                         @* Counters left, lookup toggles right. The lookup block used to be a
@@ -660,6 +690,13 @@
                                             <label>Min votes</label>
                                             <div><input type="text" value='@Get(selected.Imdb, "min_votes")'
                                                         @oninput='e => Set(selected.Imdb, "min_votes", e.Value?.ToString())' placeholder="1000" /></div>
+
+                                            <label>Bypass if matches</label>
+                                            <div>
+                                                <input type="text" value='@GetListText(selected.Imdb, "bypass_if_matches")'
+                                                       @oninput='e => SetListText(selected.Imdb, "bypass_if_matches", e.Value?.ToString())' placeholder="*.US.*, *.AU.*" />
+                                                <div class="fh">Release names matching any of these skip the whole IMDB filter and are allowed. Supports * and ?.</div>
+                                            </div>
 
                                             <label>Restrictions</label>
                                             <div class="chk-row">
@@ -742,6 +779,27 @@
                                             <label>Min rating</label>
                                             <div><input type="text" value='@Get(selected.Tvmaze, "min_rating")'
                                                         @oninput='e => Set(selected.Tvmaze, "min_rating", e.Value?.ToString())' placeholder="7.0" /></div>
+
+                                            <label>Min year</label>
+                                            <div>
+                                                <input type="number" value='@Get(selected.Tvmaze, "min_year")'
+                                                       @oninput='e => Set(selected.Tvmaze, "min_year", e.Value?.ToString())' placeholder="2000" />
+                                                <div class="fh">Series premiere year from TVMaze, not the release name. Empty = no minimum.</div>
+                                            </div>
+
+                                            <label>Max year</label>
+                                            <div>
+                                                <input type="number" value='@Get(selected.Tvmaze, "max_year")'
+                                                       @oninput='e => Set(selected.Tvmaze, "max_year", e.Value?.ToString())' placeholder="" />
+                                                <div class="fh">Empty = no maximum.</div>
+                                            </div>
+
+                                            <label>Bypass if matches</label>
+                                            <div>
+                                                <input type="text" value='@GetListText(selected.Tvmaze, "bypass_if_matches")'
+                                                       @oninput='e => SetListText(selected.Tvmaze, "bypass_if_matches", e.Value?.ToString())' placeholder="*.US.*, *.AU.*" />
+                                                <div class="fh">Release names matching any of these skip the whole TVMaze filter and are allowed. Supports * and ?.</div>
+                                            </div>
 
                                             <label>Cache days</label>
                                             <div>
@@ -845,8 +903,34 @@
                                                 <div class="fh">e.g. Scripted, Reality, Documentary.</div>
                                             </div>
 
+                                            <label>Allowed languages</label>
+                                            <div>
+                                                <input type="text" value='@GetListText(selected.Tvmaze, "allowed_languages")'
+                                                       @oninput='e => SetListText(selected.Tvmaze, "allowed_languages", e.Value?.ToString())' placeholder="English, Japanese" />
+                                                <div class="lookup-actions">
+                                                    <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_languages", TvmazeLanguages)'>All</button>
+                                                    <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_languages", Array.Empty<string>())'>None</button>
+                                                    <span class="fh inline">Empty = allow all. Uses the show language from TVMaze.</span>
+                                                </div>
+                                                <div class="check-chip-list compact">
+                                                    @foreach (var languageOption in OptionsWithSelected(TvmazeLanguages, selected.Tvmaze, "allowed_languages"))
+                                                    {
+                                                        var option = languageOption;
+                                                        var isChecked = ListContains(selected.Tvmaze, "allowed_languages", option);
+                                                        <label class="check-chip @(isChecked ? "checked" : "")">
+                                                            <input type="checkbox"
+                                                                   checked="@isChecked"
+                                                                   @onchange='e => SetListItem(selected.Tvmaze, "allowed_languages", option, (bool)(e.Value ?? false))' />
+                                                            <span>@option</span>
+                                                        </label>
+                                                    }
+                                                </div>
+                                            </div>
+
                                             <label>Options</label>
                                             <div class="chk-row">
+                                                <label class="chk"><input type="checkbox" checked='@GetBool(selected.Tvmaze, "only_english")'
+                                                    @onchange='e => SetBool(selected.Tvmaze, "only_english", e)' /> English only</label>
                                                 <label class="chk"><input type="checkbox" checked='@GetBool(selected.Tvmaze, "skip_ended_shows")'
                                                     @onchange='e => SetBool(selected.Tvmaze, "skip_ended_shows", e)' /> Skip ended shows</label>
                                                 <label class="chk"><input type="checkbox" checked='@GetBool(selected.Tvmaze, "fallback_on_error")'
@@ -938,9 +1022,14 @@
                                                     <strong>Mapping rules <span class="count-badge">@(tag.Rules?.Count ?? 0)</span></strong>
                                                     <span>DROP runs before ALLOW. These apply only to this mapping.</span>
                                                 </div>
-                                                <button class="btn sm" @onclick="() => AddTagRule(tag)">
-                                                    <Icon Name="plus" Size="12" /><span>Add rule</span>
-                                                </button>
+                                                <div class="rule-head-actions">
+                                                    <button class="btn sm" @onclick="() => OpenRuleBuilderForTag(tag)">
+                                                        <Icon Name="edit" Size="12" /><span>Build</span>
+                                                    </button>
+                                                    <button class="btn sm" @onclick="() => AddTagRule(tag)">
+                                                        <Icon Name="plus" Size="12" /><span>Add rule</span>
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             @if ((tag.Rules?.Count ?? 0) == 0)
@@ -1050,9 +1139,14 @@
                                 <h2>Section rules <span class="count-badge">@sectionRuleCount</span></h2>
                                 <p class="fh">Global filters for this IRC section. Section DROP takes priority over ALLOW.</p>
                             </div>
-                            <button class="btn" @onclick="() => AddSectionRule(selected)">
-                                <Icon Name="plus" Size="13" /><span>Add rule</span>
-                            </button>
+                            <div class="rule-head-actions">
+                                <button class="btn" @onclick="() => OpenRuleBuilderForSection(selected)">
+                                    <Icon Name="edit" Size="13" /><span>Build rule</span>
+                                </button>
+                                <button class="btn" @onclick="() => AddSectionRule(selected)">
+                                    <Icon Name="plus" Size="13" /><span>Add rule</span>
+                                </button>
+                            </div>
                         </div>
 
                         <div class="rules-box section-rules-box">
@@ -1119,6 +1213,13 @@
                                     <label>Min votes</label>
                                     <div><input type="text" value='@Get(selected.Imdb, "min_votes")'
                                                 @oninput='e => Set(selected.Imdb, "min_votes", e.Value?.ToString())' placeholder="1000" /></div>
+
+                                    <label>Bypass if matches</label>
+                                    <div>
+                                        <input type="text" value='@GetListText(selected.Imdb, "bypass_if_matches")'
+                                               @oninput='e => SetListText(selected.Imdb, "bypass_if_matches", e.Value?.ToString())' placeholder="*.US.*, *.AU.*" />
+                                        <div class="fh">Release names matching any of these skip the whole IMDB filter and are allowed. Supports * and ?.</div>
+                                    </div>
 
                                     <label>Restrictions</label>
                                     <div class="chk-row">
@@ -1201,6 +1302,27 @@
                                     <label>Min rating</label>
                                     <div><input type="text" value='@Get(selected.Tvmaze, "min_rating")'
                                                 @oninput='e => Set(selected.Tvmaze, "min_rating", e.Value?.ToString())' placeholder="7.0" /></div>
+
+                                    <label>Min year</label>
+                                    <div>
+                                        <input type="number" value='@Get(selected.Tvmaze, "min_year")'
+                                               @oninput='e => Set(selected.Tvmaze, "min_year", e.Value?.ToString())' placeholder="2000" />
+                                        <div class="fh">Series premiere year from TVMaze, not the release name. Empty = no minimum.</div>
+                                    </div>
+
+                                    <label>Max year</label>
+                                    <div>
+                                        <input type="number" value='@Get(selected.Tvmaze, "max_year")'
+                                               @oninput='e => Set(selected.Tvmaze, "max_year", e.Value?.ToString())' placeholder="" />
+                                        <div class="fh">Empty = no maximum.</div>
+                                    </div>
+
+                                    <label>Bypass if matches</label>
+                                    <div>
+                                        <input type="text" value='@GetListText(selected.Tvmaze, "bypass_if_matches")'
+                                               @oninput='e => SetListText(selected.Tvmaze, "bypass_if_matches", e.Value?.ToString())' placeholder="*.US.*, *.AU.*" />
+                                        <div class="fh">Release names matching any of these skip the whole TVMaze filter and are allowed. Supports * and ?.</div>
+                                    </div>
 
                                     <label>Cache days</label>
                                     <div>
@@ -1484,6 +1606,34 @@
     </div>
 }
 
+@if (_tab == "Site Rules")
+{
+    <div class="site-rules-tab">
+        <div class="callout">
+            <strong>Rules from the FXP backend site.</strong> Fetched with <code>SITE RULES</code>
+            and cached on disk, so you can peek at them while setting up sections and filters.
+        </div>
+        <div class="head-actions">
+            <button class="btn primary" @onclick="RefreshCachedSiteRules" disabled="@_loadingRules">
+                <Icon Name="logs" Size="13" />
+                <span>@(_loadingRules ? "Fetching..." : "Fetch site rules")</span>
+            </button>
+            @if (_cachedRulesFetchedUtc is not null)
+            {
+                <span class="fh inline">Last fetched: @_cachedRulesFetchedUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+            }
+        </div>
+        @if (string.IsNullOrWhiteSpace(_cachedRulesText))
+        {
+            <div class="empty compact">No cached rules yet. Fetch them once and they stay on this tab.</div>
+        }
+        else
+        {
+            <pre class="code">@_cachedRulesText</pre>
+        }
+    </div>
+}
+
 </div>
 
 @if (_showRules)
@@ -1499,11 +1649,286 @@
     </div>
 }
 
+@if (_showRuleBuilder)
+{
+    <div class="modal-backdrop" @onclick="CloseRuleBuilder">
+        <div class="modal-card rule-builder-modal" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2>Build rule@(string.IsNullOrEmpty(_rbTargetLabel) ? "" : $" - {_rbTargetLabel}")</h2>
+                <button class="btn icon-only" @onclick="CloseRuleBuilder" aria-label="Close"><Icon Name="close" Size="15" /></button>
+            </div>
+            <div class="modal-body rule-builder-body">
+                <div class="form-grid compact">
+                    <label>Action</label>
+                    <div>
+                        <select @bind="_rbAction">
+                            <option value="DROP">DROP - block it</option>
+                            <option value="ALLOW">ALLOW - keep it (rarely needed, default is allow)</option>
+                            <option value="EXCEPT">EXCEPT - always keep, overrides a DROP</option>
+                        </select>
+                    </div>
+
+                    <label>Field</label>
+                    <div>
+                        <select @bind="_rbKey">
+                            @foreach (var k in RuleKeys)
+                            {
+                                <option value="@k">[@k]</option>
+                            }
+                        </select>
+                    </div>
+
+                    <label>Operator</label>
+                    <div>
+                        <select @bind="_rbOp">
+                            @foreach (var op in RuleOperators)
+                            {
+                                <option value="@op.Value">@op.Label</option>
+                            }
+                        </select>
+                        <label class="chk"><input type="checkbox" @bind="_rbNegate" /> negate (!) - invert the match</label>
+                    </div>
+
+                    <label>Value</label>
+                    <div>
+                        <input type="text" @bind="_rbValue" @bind:event="oninput" placeholder="@RuleValuePlaceholder" />
+                        <div class="fh">@RuleValueHint</div>
+                    </div>
+                </div>
+
+                <div class="rule-builder-preview">
+                    <span>Result</span>
+                    <code>@RuleBuilderPreview</code>
+                </div>
+
+                <div class="head-actions">
+                    <button class="btn primary" @onclick="AddBuiltRule" disabled="@(string.IsNullOrWhiteSpace(_rbValue) && _rbOp != "exists" && _rbOp != "notexists")">
+                        <Icon Name="plus" Size="13" /><span>Add rule</span>
+                    </button>
+                    <button class="btn" @onclick="CloseRuleBuilder"><Icon Name="close" Size="13" /><span>Close</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showSectionTester)
+{
+    <div class="modal-backdrop" @onclick="CloseSectionTester">
+        <div class="modal-card section-tester-modal" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2>Test release</h2>
+                <button class="btn icon-only" @onclick="CloseSectionTester" aria-label="Close"><Icon Name="close" Size="15" /></button>
+            </div>
+            <div class="modal-body section-tester-body">
+                <div class="callout">
+                    Enter a release name and pick the IRC section. This runs the real race gate for
+                    this site: mapping, skiplist, IMDB, TVMaze and the section/mapping rules. IMDB and
+                    TVMaze do a live lookup, so those can take a moment. Uses your current unsaved edits.
+                </div>
+                <div class="form-grid compact">
+                    <label>Release</label>
+                    <div><input type="text" @bind="_testRelease" @bind:event="oninput" placeholder="Some.Show.S01E01.GERMAN.1080p.WEB.x264-GRP" /></div>
+
+                    <label>Section</label>
+                    <div>
+                        <select @bind="_testSection">
+                            @foreach (var s in _cfg.Sections.Where(s => !string.IsNullOrWhiteSpace(s.IrcName)).OrderBy(s => s.IrcName, StringComparer.OrdinalIgnoreCase))
+                            {
+                                <option value="@s.IrcName">@s.IrcName</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="head-actions">
+                    <button class="btn primary" @onclick="RunSectionTest" disabled="@(_testRunning || string.IsNullOrWhiteSpace(_testRelease) || string.IsNullOrWhiteSpace(_testSection))">
+                        <Icon Name="test" Size="13" /><span>@(_testRunning ? "Testing..." : "Test")</span>
+                    </button>
+                </div>
+
+                @if (_testResult is not null)
+                {
+                    <div class="section-tester-result @(_testResult.Allowed ? "ok" : "blocked")">
+                        <div class="tester-verdict">
+                            <span class="pill @(_testResult.Allowed ? "on" : "warn")">@(_testResult.Allowed ? "WOULD RACE" : "BLOCKED")</span>
+                            <strong>@_testResult.Summary</strong>
+                        </div>
+
+                        <div class="tester-steps">
+                            @foreach (var step in _testResult.Steps)
+                            {
+                                <div class="tester-step @(step.Passed ? "pass" : "fail")">
+                                    <span class="tester-step-icon">@(step.Passed ? "✓" : "✗")</span>
+                                    <span class="tester-step-stage">@step.Stage</span>
+                                    <span class="tester-step-detail">@step.Detail</span>
+                                </div>
+                            }
+                        </div>
+
+                        <details class="tester-attributes">
+                            <summary>Detected attributes</summary>
+                            <div class="tester-attr-grid">
+                                @foreach (var kv in _testResult.Attributes.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+                                {
+                                    <div><code>[@kv.Key]</code><span>@kv.Value</span></div>
+                                }
+                            </div>
+                        </details>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public string? Name { get; set; }
 
     private static readonly string[] Tabs =
-        { "General", "ZNC", "Channels", "Announce", "Incomplete", "Sections", "Affils", "Blacklist", "Requests", "FXP Backend Site" };
+        { "General", "ZNC", "Channels", "Announce", "Incomplete", "Sections", "Affils", "Blacklist", "Requests", "Site Rules", "FXP Backend Site" };
+
+    // ---- Rule builder + section release tester ----
+
+    private static readonly string[] RuleKeys =
+    {
+        "release", "group", "year", "resolution", "quality", "source", "codec",
+        "range", "hdr", "repeat", "proper", "internal", "multi",
+        "language", "lang", "season", "episode", "type", "section"
+    };
+
+    private static readonly (string Label, string Value)[] RuleOperators =
+    {
+        ("contains (substring)", "contains"),
+        ("== (exact, case-insensitive)", "=="),
+        ("!= (not equal)", "!="),
+        ("isin (in comma list)", "isin"),
+        ("containsany (any of a list)", "containsany"),
+        ("startswith", "startswith"),
+        ("endswith", "endswith"),
+        ("iswm (wildcards * and ?)", "iswm"),
+        ("matches (regex)", "matches"),
+        (">= (number)", ">="),
+        ("<= (number)", "<="),
+        ("> (number)", ">"),
+        ("< (number)", "<")
+    };
+
+    private bool _showRuleBuilder;
+    private List<string>? _rbTarget;
+    private string _rbTargetLabel = "";
+    private string _rbAction = "DROP";
+    private string _rbKey = "release";
+    private string _rbOp = "contains";
+    private bool _rbNegate;
+    private string _rbValue = "";
+
+    private bool _showSectionTester;
+    private string _testRelease = "";
+    private string _testSection = "";
+    private bool _testRunning;
+    private SectionTestResult? _testResult;
+
+    private string RuleValuePlaceholder => _rbOp switch
+    {
+        "matches" => @"(?i)\bFRENCH\b",
+        "iswm" => "*.SUBFRENCH.*",
+        "isin" or "containsany" => "GRP1,GRP2,GRP3",
+        ">=" or "<=" or ">" or "<" => "2020",
+        "exists" or "notexists" => "(no value needed)",
+        _ => "INTERNAL"
+    };
+
+    private string RuleValueHint => _rbOp switch
+    {
+        "matches" => @"Regex, case-insensitive. Use \b for word boundaries and | for OR. Example: \b(LINUX|MACOS)\b",
+        "iswm" => "Wildcards: * matches anything, ? matches one character. It matches the whole string, so wrap it with * to mean contains.",
+        "isin" => "Exact membership in a comma or pipe separated list. GRP1 matches GRP1, not MYGRP1.",
+        "containsany" => "True when any entry of a comma or pipe list appears as a substring.",
+        ">=" or "<=" or ">" or "<" => "Numeric compare. Only fires when the field is a number, for example year or season.",
+        "exists" => "Matches when the field was detected from the release name.",
+        "notexists" => "Matches when the field could not be detected.",
+        _ => "Plain text, case-insensitive."
+    };
+
+    private string RuleBuilderPreview
+    {
+        get
+        {
+            var op = _rbNegate && _rbOp != "==" && _rbOp != "!=" ? "!" + _rbOp : _rbOp;
+            var value = _rbOp is "exists" or "notexists" ? "" : (_rbValue ?? "").Trim();
+            return string.IsNullOrEmpty(value)
+                ? $"[{_rbKey}] {op} {_rbAction}".Replace("  ", " ").Trim()
+                : $"[{_rbKey}] {op} {value} {_rbAction}";
+        }
+    }
+
+    private void OpenRuleBuilderForSection(Section sec)
+    {
+        sec.Rules ??= new List<string>();
+        OpenRuleBuilder(sec.Rules, $"section {DisplaySectionName(sec)}");
+    }
+
+    private void OpenRuleBuilderForTag(Tag tag)
+    {
+        tag.Rules ??= new List<string>();
+        OpenRuleBuilder(tag.Rules, $"mapping {tag.MapFxpBackendSection}");
+    }
+
+    private void OpenRuleBuilder(List<string> target, string label)
+    {
+        _rbTarget = target;
+        _rbTargetLabel = label;
+        _rbAction = "DROP";
+        _rbKey = "release";
+        _rbOp = "contains";
+        _rbNegate = false;
+        _rbValue = "";
+        _showRuleBuilder = true;
+    }
+
+    private void CloseRuleBuilder() => _showRuleBuilder = false;
+
+    private void AddBuiltRule()
+    {
+        _rbTarget?.Add(RuleBuilderPreview);
+        _showRuleBuilder = false;
+    }
+
+    private void OpenSectionTester()
+    {
+        _testResult = null;
+        var current = SelectedSection;
+        _testSection = current?.IrcName
+            ?? _cfg.Sections.FirstOrDefault(s => !string.IsNullOrWhiteSpace(s.IrcName))?.IrcName
+            ?? "";
+        _showSectionTester = true;
+    }
+
+    private void CloseSectionTester() => _showSectionTester = false;
+
+    private async Task RunSectionTest()
+    {
+        if (string.IsNullOrWhiteSpace(_testRelease) || string.IsNullOrWhiteSpace(_testSection))
+            return;
+
+        try
+        {
+            _testRunning = true;
+            _testResult = null;
+
+            // Serialize the current in-memory config so unsaved edits are tested too.
+            var jconfig = JObject.Parse(JsonConvert.SerializeObject(_cfg));
+            _testResult = await RaceHelper.TestReleaseAgainstSection(jconfig, _testSection.Trim(), _testRelease.Trim());
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _testRunning = false;
+        }
+    }
 
     private static readonly string[] ImdbGenres =
     {
@@ -1538,6 +1963,13 @@
         "Game Show", "News", "Sports", "Variety", "Award Show", "Panel Show"
     };
 
+    private static readonly string[] TvmazeLanguages =
+    {
+        "English", "German", "French", "Spanish", "Italian", "Dutch",
+        "Japanese", "Korean", "Chinese", "Portuguese", "Swedish", "Danish",
+        "Norwegian", "Finnish", "Polish", "Russian", "Turkish"
+    };
+
     private static bool RenderLegacyLookupBlock => false;
 
     private SiteConfig _cfg = SiteStore.NewSite();
@@ -1552,6 +1984,8 @@
     private bool _loadingRules;
     private bool _showRules;
     private string _rulesText = "";
+    private string? _cachedRulesText;
+    private DateTime? _cachedRulesFetchedUtc;
     private IReadOnlyList<string> _preBotNames = Array.Empty<string>();
     private IReadOnlyList<FxpBackend> _fxpBackendServers = Array.Empty<FxpBackend>();
     private IReadOnlyList<string> _knownFxpBackendSections = Array.Empty<string>();
@@ -1578,6 +2012,38 @@
     private RegexTestResult? _preAnnounceTestResult;
     private RegexTestResult? _incompleteTestResult;
 
+    private bool IrcAnnounceEnabled => S.IrcAnnounceEnabled != false;
+
+    private void ToggleIrcAnnounce() => S.IrcAnnounceEnabled = !IrcAnnounceEnabled;
+
+    private const string TargetOnlyMode = "TargetOnly";
+
+    // "Target only" is not a stored mode: it maps onto the existing pair
+    // Site + IRC source off, so the saved config keeps using values the
+    // engine already understands and existing sites are unaffected.
+    // With IRC source off, whatever mode is stored is inert, so the dropdown
+    // always shows Target only then; picking any real mode turns the IRC
+    // source back on, keeping the dropdown and the toggle in sync.
+    private string ModeSelection
+    {
+        get => !IrcAnnounceEnabled
+            ? TargetOnlyMode
+            : (string.IsNullOrWhiteSpace(S.PreOrSite) ? "Site" : S.PreOrSite);
+        set
+        {
+            if (string.Equals(value, TargetOnlyMode, StringComparison.OrdinalIgnoreCase))
+            {
+                S.PreOrSite = "Site";
+                S.IrcAnnounceEnabled = false;
+            }
+            else
+            {
+                S.PreOrSite = value;
+                S.IrcAnnounceEnabled = true;
+            }
+        }
+    }
+
     private IReadOnlyList<string> KnownFxpBackendSections
     {
         get
@@ -1592,6 +2058,7 @@
             return sections.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
         }
     }
+
 
     private IReadOnlyList<string> KnownFxpBackendSectionsFor(string? current)
     {
@@ -1622,11 +2089,14 @@
             _hasStoredPassword = !string.IsNullOrEmpty(Sv.Password);
         }
 
+        (_cachedRulesText, _cachedRulesFetchedUtc) = SiteRulesCache.Load(_isNew ? null : _originalName);
+
         _cfg.Sections ??= new List<Section>();
         _cfg.Affils ??= new List<string>();
         _cfg.GlobalBlacklist ??= new List<string>();
         _cfg.RaceSectionsEnabled ??= new List<string>();
         NormalizeLegacyPreBotMode();
+        if (string.IsNullOrWhiteSpace(S.PreOrSite)) S.PreOrSite = "Site";
         foreach (var section in _cfg.Sections)
         {
             section.Tags ??= new List<Tag>();
@@ -1793,7 +2263,11 @@
     {
         get
         {
-            var all = _cfg.Sections.Select((s, i) => (Index: i, Section: s));
+            // Display order is alphabetical; the stored order in the config file is
+            // untouched, so a manually added section no longer dangles at the bottom.
+            var all = _cfg.Sections
+                .Select((s, i) => (Index: i, Section: s))
+                .OrderBy(e => DisplaySectionName(e.Section), StringComparer.OrdinalIgnoreCase);
             var q = _sectionFilter.Trim();
 
             if (q.Length == 0) return all.ToList();
@@ -2038,7 +2512,56 @@
                 .ToList();
 
             _knownFxpBackendSections = sections.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
-            _status = $"Synced {_knownFxpBackendSections.Count} FXP backend section(s) from backend site '{model.Name}'.";
+
+            // Also refresh the affils from the backend (source of truth), so the Affils
+            // tab and the affil-only sections stay in sync with what cb has.
+            var affils = (model.Affils ?? new List<string>())
+                .Where(a => !string.IsNullOrWhiteSpace(a))
+                .Select(a => a.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(a => a, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _cfg.Affils = affils;
+
+            // Auto-create any backend section that isn't in the editor yet, so a
+            // section that was deleted (or a brand-new backend section) comes back
+            // ready to race without hand-adding it plus its mapping. Existing
+            // sections are left untouched. New ones get a match-all trigger and a
+            // 1:1 backend mapping (the "bookmark"); tweak or delete after review.
+            _cfg.Sections ??= new List<Section>();
+            var existingSectionNames = new HashSet<string>(
+                _cfg.Sections
+                    .Select(s => s.IrcName)
+                    .Where(n => !string.IsNullOrWhiteSpace(n))
+                    .Select(n => n!.Trim()),
+                StringComparer.OrdinalIgnoreCase);
+
+            int addedSections = 0;
+            foreach (var name in sections)
+            {
+                if (existingSectionNames.Contains(name)) continue;
+                _cfg.Sections.Add(new Section
+                {
+                    IrcName = name,
+                    Rules = new List<string>(),
+                    Tags = new List<Tag>
+                    {
+                        new Tag
+                        {
+                            MapFxpBackendSection = name,
+                            TriggerRegex = ".*",
+                            Rules = new List<string>()
+                        }
+                    }
+                });
+                existingSectionNames.Add(name);
+                addedSections++;
+            }
+
+            var addedNote = addedSections > 0
+                ? $"{addedSections} missing section(s) auto-created (match-all trigger, review before Save). "
+                : "";
+            _status = $"Refreshed from backend site '{model.Name}': {_knownFxpBackendSections.Count} section(s) known for mapping, {addedSections} auto-created, {affils.Count} affil(s) updated. {addedNote}Review, then Save.";
         }
         catch (Exception ex)
         {
@@ -2218,6 +2741,7 @@
             var rules = await FxpBackendRacer.GetSiteRulesTextAsync(siteName, S.FxpBackendId);
             _rulesText = string.IsNullOrWhiteSpace(rules) ? "No rules returned from FXP backend." : rules;
             _showRules = true;
+            CacheFetchedRules(_rulesText);
             _status = $"Loaded FXP backend site rules for {siteName}.";
         }
         catch (Exception ex)
@@ -2228,6 +2752,40 @@
         {
             _loadingRules = false;
         }
+    }
+
+    private async Task RefreshCachedSiteRules()
+    {
+        try
+        {
+            _loadingRules = true;
+            _error = null;
+            var siteName = S.Sitename?.Trim();
+            if (string.IsNullOrWhiteSpace(siteName))
+            {
+                _error = "Enter a site name before loading FXP backend site rules.";
+                return;
+            }
+
+            var rules = await FxpBackendRacer.GetSiteRulesTextAsync(siteName, S.FxpBackendId);
+            CacheFetchedRules(string.IsNullOrWhiteSpace(rules) ? "No rules returned from FXP backend." : rules);
+            _status = $"Fetched FXP backend site rules for {siteName}.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loadingRules = false;
+        }
+    }
+
+    private void CacheFetchedRules(string text)
+    {
+        _cachedRulesText = text;
+        var cacheKey = !string.IsNullOrWhiteSpace(_originalName) ? _originalName : S.Sitename?.Trim();
+        _cachedRulesFetchedUtc = SiteRulesCache.Save(cacheKey, text) ?? DateTime.UtcNow;
     }
 
     private void CloseRules() => _showRules = false;

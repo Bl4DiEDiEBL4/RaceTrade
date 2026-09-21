@@ -93,6 +93,13 @@ public class FxpBackendSync
                         Password = siteDetail["password"]?.ToString(),
                         BasePath = siteDetail["base_path"]?.ToString() ?? "/",
                         Disabled = siteDetail["disabled"]?.ToObject<bool>() ?? false,
+                        // Affil groups configured on the backend site; the site import
+                        // writes these into the RaceTrade site config.
+                        Affils = siteDetail["affils"]?
+                            .Select(a => a?.ToString())
+                            .Where(a => !string.IsNullOrWhiteSpace(a))
+                            .Select(a => a.Trim())
+                            .ToList() ?? new List<string>(),
                         Sections = new List<FxpBackendSection>()
                     };
 
@@ -236,6 +243,7 @@ public class FxpBackendSite
     public string Password { get; set; }
     public string BasePath { get; set; }
     public bool Disabled { get; set; }
+    public List<string> Affils { get; set; } = new List<string>();
     public List<FxpBackendSection> Sections { get; set; }
 
     /// <summary>

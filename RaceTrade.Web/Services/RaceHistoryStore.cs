@@ -56,10 +56,14 @@ public sealed class RaceHistoryStore : IDisposable
     {
         lock (_gate)
         {
-            var detected = _entries.Count(e => e.Status.Equals("Detected", StringComparison.OrdinalIgnoreCase));
+            var detected = _entries
+                .Where(e => e.Status.Equals("Detected", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(e.Release))
+                .Select(e => e.Release.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
             var unique = _entries
                 .Where(e => !string.IsNullOrWhiteSpace(e.Release))
-                .Select(e => e.Release)
+                .Select(e => e.Release.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count();
 

@@ -71,44 +71,52 @@
                             <td class="dim">@r.Channels</td>
                             <td class="dim">@r.Sections</td>
                             <td class="site-status">
-                                @if (r.EffectiveDisabled)
-                                {
+                                <div class="site-status-row">
+                                    @if (r.EffectiveDisabled)
+                                    {
+                                        <button type="button"
+                                                class="pill status-toggle off"
+                                                title="Enable this site"
+                                                @onclick="() => ToggleDisabled(r.Key)">
+                                            @if (r.ServerMissing)
+                                            {
+                                                <text>mapping missing</text>
+                                            }
+                                            else if (r.LinkedServerDisabled)
+                                            {
+                                                <text>server disabled</text>
+                                            }
+                                            else
+                                            {
+                                                <text>disabled</text>
+                                            }
+                                        </button>
+                                    }
+                                    else if (r.DlOnly)
+                                    {
+                                        <button type="button"
+                                                class="pill status-toggle dl"
+                                                title="Disable this site"
+                                                @onclick="() => ToggleDisabled(r.Key)">
+                                            dl-only
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                class="pill status-toggle on"
+                                                title="Disable this site"
+                                                @onclick="() => ToggleDisabled(r.Key)">
+                                            enabled
+                                        </button>
+                                    }
                                     <button type="button"
-                                            class="pill status-toggle off"
-                                            title="Enable this site"
-                                            @onclick="() => ToggleDisabled(r.Key)">
-                                        @if (r.ServerMissing)
-                                        {
-                                            <text>mapping missing</text>
-                                        }
-                                        else if (r.LinkedServerDisabled)
-                                        {
-                                            <text>server disabled</text>
-                                        }
-                                        else
-                                        {
-                                            <text>disabled</text>
-                                        }
+                                            class="pill status-toggle irc-source-pill @(r.IrcSourceEnabled ? "on" : "off")"
+                                            title="@(r.IrcSourceEnabled ? "Disable IRC announce source" : "Enable IRC announce source")"
+                                            @onclick="() => ToggleIrcSource(r.Key)">
+                                        IRC @(r.IrcSourceEnabled ? "on" : "off")
                                     </button>
-                                }
-                                else if (r.DlOnly)
-                                {
-                                    <button type="button"
-                                            class="pill status-toggle dl"
-                                            title="Disable this site"
-                                            @onclick="() => ToggleDisabled(r.Key)">
-                                        dl-only
-                                    </button>
-                                }
-                                else
-                                {
-                                    <button type="button"
-                                            class="pill status-toggle on"
-                                            title="Disable this site"
-                                            @onclick="() => ToggleDisabled(r.Key)">
-                                        enabled
-                                    </button>
-                                }
+                                </div>
                             </td>
                             <td class="site-actions">
                                 <div class="site-action-row">
@@ -130,7 +138,7 @@
                                     </button>
                                     <a class="btn" href="@($"sites/edit/{Uri.EscapeDataString(r.Key)}")"><Icon Name="edit" Size="13" /><span>Edit</span></a>
                                     <a class="btn" href="@($"fxp-backend-site/{Uri.EscapeDataString(r.Name)}")"><Icon Name="servers" Size="13" /><span>Edit FXP Backend Site</span></a>
-                                    <button class="btn danger" disabled="@IsBusy" @onclick="() => Delete(r.Key)"><Icon Name="trash" Size="13" /><span>Delete</span></button>
+                                    <button class="btn danger" disabled="@IsBusy" @onclick="() => AskDelete(r.Key)"><Icon Name="trash" Size="13" /><span>Delete</span></button>
                                 </div>
                             </td>
                         </tr>
@@ -140,6 +148,29 @@
         </div>
     }
 </div>
+
+@if (_deleteSiteName is not null)
+{
+    <div class="modal-backdrop" @onclick="CancelDelete">
+        <div class="modal-card duplicate-modal" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2>Delete site</h2>
+                <button class="btn icon-only" @onclick="CancelDelete" aria-label="Close"><Icon Name="close" Size="15" /></button>
+            </div>
+            <div class="modal-body duplicate-body">
+                <p>
+                    Are you sure you want to delete <strong>@_deleteSiteName</strong>?
+                    This removes the RaceTrade site config from disk and cannot be undone.
+                    The site on the FXP backend itself is not touched.
+                </p>
+                <div class="head-actions">
+                    <button class="btn danger" @onclick="ConfirmDelete"><Icon Name="trash" Size="13" /><span>Yes, delete</span></button>
+                    <button class="btn" @onclick="CancelDelete"><Icon Name="close" Size="13" /><span>Cancel</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
 @if (_duplicateSiteSource is not null)
 {
@@ -219,7 +250,8 @@
 @code {
     private sealed record Row(string Key, string Name, string FxpBackend, string Host, string Network,
                               int Channels, int Sections, bool Disabled, bool DlOnly,
-                              bool LinkedServerDisabled, bool ServerMissing, bool EffectiveDisabled);
+                              bool LinkedServerDisabled, bool ServerMissing, bool EffectiveDisabled,
+                              bool IrcSourceEnabled);
 
     private List<Row> _rows = new();
     private List<FxpBackend> _duplicateFxpBackends = new();
@@ -274,7 +306,8 @@
                     c.SiteSettings?.DlOnlySite ?? false,
                     linkedServerDisabled,
                     serverMissing,
-                    effectiveDisabled);
+                    effectiveDisabled,
+                    c.SiteSettings?.IrcAnnounceEnabled != false);
             }).ToList();
         }
         catch (Exception ex)
@@ -283,8 +316,23 @@
         }
     }
 
-    private void Delete(string name)
+    private string? _deleteSiteName;
+
+    private void AskDelete(string name)
     {
+        _error = null;
+        _deleteSiteName = name;
+    }
+
+    private void CancelDelete() => _deleteSiteName = null;
+
+    private void ConfirmDelete()
+    {
+        var name = _deleteSiteName;
+        _deleteSiteName = null;
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+
         try { Store.Delete(name); Reload(); }
         catch (Exception ex) { _error = ex.Message; }
     }
@@ -460,6 +508,23 @@
         {
             var cfg = Store.Load(name);
             cfg.SiteSettings.DisableSite = !cfg.SiteSettings.DisableSite;
+            Store.Save(cfg, name);
+            Reload();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void ToggleIrcSource(string name)
+    {
+        try
+        {
+            var cfg = Store.Load(name);
+            cfg.SiteSettings ??= new SiteSettings();
+            var isEnabled = cfg.SiteSettings.IrcAnnounceEnabled != false;
+            cfg.SiteSettings.IrcAnnounceEnabled = !isEnabled;
             Store.Save(cfg, name);
             Reload();
         }

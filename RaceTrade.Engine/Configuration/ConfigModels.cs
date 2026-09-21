@@ -118,6 +118,13 @@ namespace RaceTrade
         [JsonProperty("disable_site")]
         public bool DisableSite { get; set; }
 
+        [JsonProperty("irc_announce_enabled", NullValueHandling = NullValueHandling.Ignore)]
+        public bool? IrcAnnounceEnabled { get; set; }
+
+
+        [JsonProperty("section_detection_mode", NullValueHandling = NullValueHandling.Ignore)]
+        public string SectionDetectionMode { get; set; }
+
         [JsonProperty("chan1")]
         public string Chan1 { get; set; }
 
@@ -343,6 +350,11 @@ namespace RaceTrade
 
         [JsonProperty("skiplists")]
         public List<string> Skiplists { get; set; } = new();
+
+        // Affil-only section: never upload here. A release only passes when its group is
+        // one of the site's affils (then it goes download-only); everything else is dropped.
+        [JsonProperty("affil_only")]
+        public bool AffilOnly { get; set; }
 
         [JsonProperty("dupeRules")]
         public DupeRules DupeRules { get; set; }

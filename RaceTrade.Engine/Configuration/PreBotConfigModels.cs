@@ -36,6 +36,8 @@ namespace RaceTrade
         /// <summary>Stored encrypted (see <see cref="SecureConfig"/>); decrypt before use.</summary>
         public string BlowfishKey1 { get; set; }
 
+        public string SectionDetectionMode { get; set; }
+
         public string SectionRegex { get; set; }
         public string SectionPrefix { get; set; }
         public string SectionSuffix { get; set; }

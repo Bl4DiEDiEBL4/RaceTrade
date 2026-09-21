@@ -43,6 +43,7 @@ public sealed class SiteStore
         cfg.Server ??= new ServerSettings();
         cfg.SiteSettings ??= new SiteSettings();
         cfg.SiteSettings.ConfigKey = name;
+        if (string.IsNullOrWhiteSpace(cfg.SiteSettings.PreOrSite)) cfg.SiteSettings.PreOrSite = "Site";
         NormalizeRaceSectionsEnabled(cfg);
         return cfg;
     }
@@ -53,6 +54,7 @@ public sealed class SiteStore
         SiteSettings = new SiteSettings
         {
             Sitename = name,
+            PreOrSite = "Site",
             IncompleteMarkerRegex = @"WARN:\s+AUTONUKE\s+INCOMPLETE",
             IncompleteSectionRegex = @"INCOMPLETE\s+\[([^\]]+)\]",
             IncompleteReleaseRegex = @"INCOMPLETE\s+\[[^\]]+\]\s+(\S+)",
@@ -212,6 +214,11 @@ public sealed class SiteStore
                                             .Distinct(StringComparer.OrdinalIgnoreCase)
                                             .ToList()
                                             ?? new List<string>(),
+                    affils = (site.Affils ?? new List<string>())
+                             .Where(a => !string.IsNullOrWhiteSpace(a))
+                             .Select(a => a.Trim())
+                             .Distinct(StringComparer.OrdinalIgnoreCase)
+                             .ToList(),
                     sections = (site.Sections ?? new List<FxpBackendSection>())
                         .Where(s => !string.IsNullOrWhiteSpace(s.Name))
                         .Select(s => new

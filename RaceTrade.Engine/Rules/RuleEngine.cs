@@ -210,32 +210,27 @@ public class RulesEngine
     /// <param name="fxpBackendSection">The FXP backend section name to evaluate rules for</param>
     /// <returns>"ALLOW" or "DROP" based on the evaluation</returns>
     public string Evaluate(Dictionary<string, string> input, string fxpBackendSection = null)
+        => EvaluateDetailed(input, fxpBackendSection).Decision;
+
+    /// <summary>
+    /// Same evaluation as <see cref="Evaluate"/>, but returns which rule decided and in
+    /// which phase, so the Test release tools can explain the outcome. Evaluate() is a
+    /// thin wrapper over this, so the two can never disagree.
+    /// </summary>
+    public RuleEvaluation EvaluateDetailed(Dictionary<string, string> input, string fxpBackendSection = null)
     {
         if (input == null)
         {
             LogManager.Error("[ERROR] Input dictionary is null in Evaluate");
-            return ACTION_DROP;
+            return new RuleEvaluation(ACTION_DROP, null, "input was null");
         }
 
-        if (EngineSettings.DebugEnabled)
-        {
-            LogManager.Debug($"[DEBUG] Evaluating rules for FXP backend section '{fxpBackendSection}'");
-        }
-
-        // --------------------------------------------------------------------------------
-        // 0) EXCEPT rules (highest priority): an explicit carve-out that forces ALLOW,
-        //    overriding any DROP that would otherwise match. ("drop these, EXCEPT when...")
-        //    Evaluated global-first, then tag-specific for this FXP backend section.
-        // --------------------------------------------------------------------------------
+        // 0) EXCEPT rules (highest priority): force ALLOW, overriding any DROP.
         foreach (var rule in _sectionRules.Where(r =>
                      string.Equals(r.Action, ACTION_EXCEPT, StringComparison.OrdinalIgnoreCase)))
         {
             if (EvaluateRule(input, rule))
-            {
-                if (EngineSettings.DebugEnabled)
-                    LogManager.Success($"[EXCEPT] Global EXCEPT rule matched: {rule.Key} {rule.Operator} {rule.Value}. Forcing ALLOW.");
-                return ACTION_ALLOW;
-            }
+                return new RuleEvaluation(ACTION_ALLOW, rule, "section EXCEPT rule matched, forcing allow");
         }
 
         if (!string.IsNullOrEmpty(fxpBackendSection) &&
@@ -245,89 +240,47 @@ public class RulesEngine
                          string.Equals(r.Action, ACTION_EXCEPT, StringComparison.OrdinalIgnoreCase)))
             {
                 if (EvaluateRule(input, rule))
-                {
-                    if (EngineSettings.DebugEnabled)
-                        LogManager.Success($"[EXCEPT] FXP backend EXCEPT rule matched: {rule.Key} {rule.Operator} {rule.Value}. Forcing ALLOW.");
-                    return ACTION_ALLOW;
-                }
+                    return new RuleEvaluation(ACTION_ALLOW, rule, "mapping EXCEPT rule matched, forcing allow");
             }
         }
 
-        // --------------------------------------------------------------------------------
-        // 1) GLOBAL DROP rules
-        // --------------------------------------------------------------------------------
+        // 1) GLOBAL (section) DROP rules
         foreach (var rule in _sectionRules.Where(r =>
                      string.Equals(r.Action, ACTION_DROP, StringComparison.OrdinalIgnoreCase)))
         {
             if (EvaluateRule(input, rule))
-            {
-                if (EngineSettings.DebugEnabled)
-                {
-                    var inputValue = input.ContainsKey(rule.Key) ? input[rule.Key] : "N/A";
-                    LogManager.Error($"[DROP] Global DROP rule matched: {rule.Key} {rule.Operator} {rule.Value}. Input: {inputValue}");
-                }
-                return ACTION_DROP;
-            }
+                return new RuleEvaluation(ACTION_DROP, rule, "section DROP rule matched");
         }
 
-        // --------------------------------------------------------------------------------
-        // 2) TAG-SPECIFIC RULES for this FXP backend section
-        //    2a) Tag DROP rules first
-        //    2b) Then Tag ALLOW rules
-        // --------------------------------------------------------------------------------
+        // 2) TAG-SPECIFIC rules for this FXP backend section
         if (!string.IsNullOrEmpty(fxpBackendSection) &&
             _tagRules.TryGetValue(fxpBackendSection, out var tagSpecificRules))
         {
-            // 2a) Tag DROP rules
             foreach (var rule in tagSpecificRules.Where(r =>
                          string.Equals(r.Action, ACTION_DROP, StringComparison.OrdinalIgnoreCase)))
             {
                 if (EvaluateRule(input, rule))
-                {
-                    LogManager.Debug($"[DROP] FXP backend rule matched: {rule.Key} {rule.Operator} {rule.Value}");
-                    return ACTION_DROP;
-                }
+                    return new RuleEvaluation(ACTION_DROP, rule, "mapping DROP rule matched");
             }
 
-            // 2b) Tag ALLOW rules
             foreach (var rule in tagSpecificRules.Where(r =>
                          string.Equals(r.Action, ACTION_ALLOW, StringComparison.OrdinalIgnoreCase)))
             {
                 if (EvaluateRule(input, rule))
-                {
-                    LogManager.Debug($"[ALLOW] FXP backend rule matched: {rule.Key} {rule.Operator} {rule.Value}");
-                    return ACTION_ALLOW;
-                }
+                    return new RuleEvaluation(ACTION_ALLOW, rule, "mapping ALLOW rule matched");
             }
-
-            // EXCEPT rules are handled up-front (step 0) as allow-overrides.
         }
 
-        // --------------------------------------------------------------------------------
-        // 3) GLOBAL ALLOW rules (fall-back allow layer)
-        // --------------------------------------------------------------------------------
+        // 3) GLOBAL (section) ALLOW rules
         foreach (var rule in _sectionRules.Where(r =>
                      string.Equals(r.Action, ACTION_ALLOW, StringComparison.OrdinalIgnoreCase)))
         {
             if (EvaluateRule(input, rule))
-            {
-                if (EngineSettings.DebugEnabled)
-                {
-                    LogManager.Success($"[ALLOW] Global ALLOW rule matched: {rule.Key} {rule.Operator} {rule.Value}");
-                }
-                return ACTION_ALLOW;
-            }
+                return new RuleEvaluation(ACTION_ALLOW, rule, "section ALLOW rule matched");
         }
 
-        // --------------------------------------------------------------------------------
-        // 4) DEFAULT: ALLOW if nothing matched
-        // --------------------------------------------------------------------------------
-        if (EngineSettings.DebugEnabled)
-        {
-            LogManager.Success("[ALLOW] No rules matched. Default: ALLOW");
-        }
-
-        return ACTION_ALLOW;
+        // 4) DEFAULT: ALLOW when nothing matched
+        return new RuleEvaluation(ACTION_ALLOW, null, "no rule matched, default allow");
     }
 
 
@@ -530,4 +483,26 @@ public class Rule
     public string Operator { get; set; }
     public string Value { get; set; }
     public string Action { get; set; } // ALLOW, DROP, EXCEPT
+}
+
+/// <summary>
+/// Outcome of a rule evaluation: the decision, the rule that decided it (null for the
+/// default), and a short human explanation. Used by the Test release tools.
+/// </summary>
+public sealed class RuleEvaluation
+{
+    public RuleEvaluation(string decision, Rule decidingRule, string reason)
+    {
+        Decision = decision;
+        DecidingRule = decidingRule;
+        Reason = reason;
+    }
+
+    public string Decision { get; }
+    public Rule DecidingRule { get; }
+    public string Reason { get; }
+
+    public string DecidingRuleText => DecidingRule == null
+        ? null
+        : $"[{DecidingRule.Key}] {DecidingRule.Operator} {DecidingRule.Value} {DecidingRule.Action}".Trim();
 }

@@ -1,4 +1,4 @@
-﻿using RaceTrade.Engine.Logging;
+using RaceTrade.Engine.Logging;
 // RequestAutoFillRunner/RequestAutoFillManager live in the RaceTrader namespace, a
 // leftover from the WinForms build.
 using RaceTrader;
@@ -24,6 +24,7 @@ public sealed class EngineHost : IAsyncDisposable
     private CancellationTokenSource? _cts;
     private readonly List<Task> _siteTasks = new();
     private readonly Dictionary<string, IRCClient> _clients = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, bool> _clientIsPrespamBot = new(StringComparer.OrdinalIgnoreCase);
 
     public EngineHost(WebIrcOutput output, PreBotStore preBots)
     {
@@ -33,11 +34,23 @@ public sealed class EngineHost : IAsyncDisposable
 
     public bool IsRunning { get; private set; }
 
-    /// <summary>Sites that are connecting/connected, for the UI.</summary>
+    /// <summary>IRC clients that are connecting/connected, for the UI.</summary>
     public IReadOnlyCollection<string> ConnectedSites
     {
         get { lock (_clients) return _clients.Keys.ToList(); }
     }
+
+    public int ConnectedPrespamBotCount
+    {
+        get { lock (_clients) return _clientIsPrespamBot.Values.Count(isPrespamBot => isPrespamBot); }
+    }
+
+    public int ConnectedSiteBotCount
+    {
+        get { lock (_clients) return _clients.Count - _clientIsPrespamBot.Values.Count(isPrespamBot => isPrespamBot); }
+    }
+
+    public int EnabledTargetSiteCount => CollectEnabledTargetSites().Count();
 
     public async Task StartAsync()
     {
@@ -48,7 +61,11 @@ public sealed class EngineHost : IAsyncDisposable
 
             _cts = new CancellationTokenSource();
             _siteTasks.Clear();
-            lock (_clients) _clients.Clear();
+            lock (_clients)
+            {
+                _clients.Clear();
+                _clientIsPrespamBot.Clear();
+            }
 
             SiteConfigManager.Invalidate();
             RaceHelper.LoadAllSiteConfigs();
@@ -73,6 +90,7 @@ public sealed class EngineHost : IAsyncDisposable
                 var name = siteName;
                 var config = cfg;
                 var monitoredChannels = string.Join(", ", ConfiguredChannels(config.SiteSettings));
+                var isPrespamBot = IsPrespamBotMode(config.SiteSettings?.PreOrSite);
 
                 LogManager.Info(
                     $"Racer monitoring site [{LogColors.Magenta(name)}]: bot [{LogColors.Cyan(config.SiteSettings?.BotName)}], " +
@@ -88,7 +106,11 @@ public sealed class EngineHost : IAsyncDisposable
                     try
                     {
                         client = new IRCClient(config, name, _output, token);
-                        lock (_clients) _clients[name] = client;
+                        lock (_clients)
+                        {
+                            _clients[name] = client;
+                            _clientIsPrespamBot[name] = isPrespamBot;
+                        }
 
                         LogManager.Info($"Connecting to ZNC for site '{name}'...");
                         LogManager.LogIRC(IRCEventType.Connection, $"Connecting to ZNC for site '{name}'.", server: name);
@@ -109,7 +131,11 @@ public sealed class EngineHost : IAsyncDisposable
                     {
                         if (client is not null)
                         {
-                            lock (_clients) _clients.Remove(name);
+                            lock (_clients)
+                            {
+                                _clients.Remove(name);
+                                _clientIsPrespamBot.Remove(name);
+                            }
                         }
                     }
                 }, token));
@@ -179,7 +205,11 @@ public sealed class EngineHost : IAsyncDisposable
             catch { }
 
             _siteTasks.Clear();
-            lock (_clients) _clients.Clear();
+            lock (_clients)
+            {
+                _clients.Clear();
+                _clientIsPrespamBot.Clear();
+            }
 
             _cts?.Dispose();
             _cts = null;
@@ -280,6 +310,9 @@ public sealed class EngineHost : IAsyncDisposable
             if (IsGlobalPreBotMode(cfg.SiteSettings?.PreOrSite))
                 continue;
 
+            if (cfg.SiteSettings?.IrcAnnounceEnabled == false)
+                continue;
+
             // Same preconditions IRCClient enforces before dialling out. Keep this in
             // sync so the Start button does not reject a site the actual client accepts.
             if (string.IsNullOrWhiteSpace(cfg.Server?.Host))
@@ -303,8 +336,29 @@ public sealed class EngineHost : IAsyncDisposable
 
     private IEnumerable<(string Name, SiteConfig Config)> CollectGlobalPreBotClients(bool logSkips)
     {
-        var sitesByPreBot = new Dictionary<string, List<SiteConfig>>(StringComparer.OrdinalIgnoreCase);
+        var enabledTargetSites = CollectEnabledTargetSites().ToList();
+        var availablePreBots = _preBots.ListNames();
 
+        foreach (var prebotName in availablePreBots)
+        {
+            if (enabledTargetSites.Count == 0)
+            {
+                if (logSkips)
+                    LogIrcStartupWarning($"Skipping Prespam Bot '{prebotName}': no enabled target sites are available.", prebotName);
+                continue;
+            }
+
+            var prebotConfig = _preBots.Load(prebotName);
+            if (!TryBuildGlobalPreBotConfig(prebotName, prebotConfig, enabledTargetSites, logSkips, out var mergedConfig))
+                continue;
+
+            LogManager.Info($"Prespam Bot '{prebotName}' using all {enabledTargetSites.Count} enabled target site(s).");
+            yield return (prebotName, mergedConfig);
+        }
+    }
+
+    private static IEnumerable<SiteConfig> CollectEnabledTargetSites()
+    {
         foreach (var siteName in EnumerateSiteNames())
         {
             if (!SiteConfigManager.TryGetSiteConfig(siteName, out var cfg) || cfg is null)
@@ -313,46 +367,7 @@ public sealed class EngineHost : IAsyncDisposable
             if (cfg.SiteSettings?.DisableSite == true)
                 continue;
 
-            var mode = cfg.SiteSettings?.PreOrSite;
-            if (!IsGlobalPreBotMode(mode))
-                continue;
-
-            var prebotName = ExtractGlobalPreBotName(mode);
-            if (string.IsNullOrWhiteSpace(prebotName))
-            {
-                if (logSkips)
-                    LogIrcStartupWarning($"Site '{siteName}' uses Global PreBot, but no PreBot name is selected.", siteName);
-                continue;
-            }
-
-            if (!sitesByPreBot.TryGetValue(prebotName, out var sites))
-            {
-                sites = new List<SiteConfig>();
-                sitesByPreBot[prebotName] = sites;
-            }
-
-            sites.Add(cfg);
-        }
-
-        var availablePreBots = _preBots.ListNames();
-
-        foreach (var pair in sitesByPreBot)
-        {
-            var prebotName = pair.Key;
-            var linkedSites = pair.Value;
-
-            if (!availablePreBots.Contains(prebotName, StringComparer.OrdinalIgnoreCase))
-            {
-                if (logSkips)
-                    LogIrcStartupWarning($"PreBot '{prebotName}' is selected by a site, but pre_bots\\{prebotName}.json was not found.", prebotName);
-                continue;
-            }
-
-            var prebotConfig = _preBots.Load(prebotName);
-            if (!TryBuildGlobalPreBotConfig(prebotName, prebotConfig, linkedSites, logSkips, out var mergedConfig))
-                continue;
-
-            yield return (prebotName, mergedConfig);
+            yield return cfg;
         }
     }
 
@@ -426,7 +441,8 @@ public sealed class EngineHost : IAsyncDisposable
                 SectionPrefix = settings.SectionPrefix,
                 SectionSuffix = settings.SectionSuffix,
                 ReleaseRegexPattern = settings.NameRegex,
-                PreOrSite = $"Global PreBot ({prebotName})"
+                PreOrSite = $"Global PreBot ({prebotName})",
+                SectionDetectionMode = settings.SectionDetectionMode
             },
             RaceSectionsEnabled = enabledSections.ToList(),
             Sections = mergedSections,
@@ -444,13 +460,11 @@ public sealed class EngineHost : IAsyncDisposable
         LogManager.LogIRC(IRCEventType.Warning, message, server: site);
     }
 
-    private static bool RequiresPassword(SiteConfig cfg)
-    {
-        var mode = cfg.SiteSettings?.PreOrSite;
-        var isGlobalPrebot = IsGlobalPreBotMode(mode);
-        var isPrebot = string.Equals(mode, "PreBot", StringComparison.OrdinalIgnoreCase);
-        return !isGlobalPrebot && !isPrebot;
-    }
+    private static bool RequiresPassword(SiteConfig cfg) =>
+        !IsPrespamBotMode(cfg.SiteSettings?.PreOrSite);
+
+    private static bool IsPrespamBotMode(string? mode) =>
+        IsGlobalPreBotMode(mode) || string.Equals(mode, "PreBot", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsGlobalPreBotMode(string? mode) =>
         !string.IsNullOrWhiteSpace(ExtractGlobalPreBotName(mode));

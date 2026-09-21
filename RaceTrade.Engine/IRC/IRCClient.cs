@@ -669,6 +669,11 @@ public class IRCClient
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Regex> AnnounceRegexCache =
         new System.Collections.Concurrent.ConcurrentDictionary<string, Regex>();
 
+    // Guard against catastrophic backtracking in user-supplied announce patterns:
+    // without a timeout one pathological pattern can hang the announce path
+    // (same 250ms guard as RaceHelper.RegexSafeTimeout).
+    private static readonly TimeSpan AnnounceRegexTimeout = TimeSpan.FromMilliseconds(250);
+
     private static Regex GetCachedRegex(string pattern)
     {
         if (string.IsNullOrEmpty(pattern))
@@ -678,15 +683,30 @@ public class IRCClient
         {
             try
             {
-                return new Regex(p, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+                return new Regex(p, RegexOptions.IgnoreCase | RegexOptions.Compiled, AnnounceRegexTimeout);
             }
             catch
             {
                 // Invalid user pattern: fall back to interpreted so a bad regex
                 // surfaces as a normal match failure instead of crashing.
-                return new Regex(Regex.Escape(p), RegexOptions.IgnoreCase);
+                return new Regex(Regex.Escape(p), RegexOptions.IgnoreCase, AnnounceRegexTimeout);
             }
         });
+    }
+
+    // A timed-out match counts as "no match" so one slow pattern skips the line
+    // instead of taking down the announce handler.
+    private static Match SafeMatch(Regex regex, string input)
+    {
+        try
+        {
+            return regex.Match(input);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            LogManager.Warning($"Announce regex timed out (>{AnnounceRegexTimeout.TotalMilliseconds:F0}ms), treating as no match: {regex}");
+            return Match.Empty;
+        }
     }
 
     // Returns the ZNC network to attach to: explicit configured network first,
@@ -1162,29 +1182,36 @@ public class IRCClient
                 AppendOutput($"[DEBUG] Using ReleaseRegexPattern: {releasePattern}", Color.Cyan);
             }
 
-            if (effectiveSectionRegex == null || effectiveReleaseRegex == null)
+            var sectionDetectionMode = SectionDetectionModes.Normalize(siteConfig.SiteSettings.SectionDetectionMode);
+            var needsParsedSection = sectionDetectionMode != SectionDetectionModes.ClassifierOnly;
+
+            if (effectiveReleaseRegex == null || (needsParsedSection && effectiveSectionRegex == null))
             {
                 if (EngineSettings.DebugEnabled)
                 {
-                    AppendOutput("[WARN] Section or release regex not configured; skipping line.", Color.Yellow);
+                    AppendOutput(needsParsedSection
+                        ? "[WARN] Section or release regex not configured; skipping line."
+                        : "[WARN] Release regex not configured; skipping line.", Color.Yellow);
                 }
                 return;
             }
 
-            var releaseMatch = effectiveReleaseRegex.Match(cleanMessage);
-            var sectionMatch = effectiveSectionRegex.Match(cleanMessage);
+            var releaseMatch = SafeMatch(effectiveReleaseRegex, cleanMessage);
+            var sectionMatch = effectiveSectionRegex != null ? SafeMatch(effectiveSectionRegex, cleanMessage) : null;
 
-            if (!releaseMatch.Success || !sectionMatch.Success)
+            if (!releaseMatch.Success || (needsParsedSection && sectionMatch?.Success != true))
             {
                 if (EngineSettings.DebugEnabled)
                 {
-                    AppendOutput($"[WARN] Failed to extract release or section from: {cleanMessage}", Color.Yellow);
+                    AppendOutput(needsParsedSection
+                        ? $"[WARN] Failed to extract release or section from: {cleanMessage}"
+                        : $"[WARN] Failed to extract release from: {cleanMessage}", Color.Yellow);
                 }
                 return;
             }
 
             string releaseName = releaseMatch.Groups[1].Value.Trim();
-            string section = sectionMatch.Groups[1].Value.Trim();
+            string section = sectionMatch?.Success == true ? sectionMatch.Groups[1].Value.Trim() : "GENERAL";
 
             // If PRE line, trim with PRE prefix/suffix
             if (isPreLine)
@@ -1206,6 +1233,16 @@ public class IRCClient
                 {
                     AppendOutput($"[DEBUG] PRE line → normalized section: {section}", Color.Cyan);
                 }
+            }
+
+            var classification = ReleaseClassifier.Classify(releaseName, section, siteConfig.SiteSettings.SectionDetectionMode);
+            if (!string.Equals(classification.FinalSection, section, StringComparison.OrdinalIgnoreCase))
+            {
+                LogManager.LogIRC(IRCEventType.Announce,
+                    $"Classifier changed section for '{releaseName}': {classification.StartSection} -> {classification.FinalSection}",
+                    channelName,
+                    siteName);
+                section = classification.FinalSection;
             }
 
             AppendOutput($"[{siteName}] [{botName}] [{section}] {releaseName}", Color.LightBlue);

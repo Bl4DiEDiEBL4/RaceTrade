@@ -83,15 +83,9 @@ public class FxpBackendRacer
                 endpoint = $"https://{config.Host}:{config.Port}";
             }
 
-            using var handler = new HttpClientHandler
-            {
-                ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
-            };
-
-            using var client = new HttpClient(handler);
-            var byteArray = Encoding.ASCII.GetBytes(":" + config.Password);
-            client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Basic", Convert.ToBase64String(byteArray));
+            // Reused keep-alive client (see GetFxpBackendStatsClient): creating a
+            // new HttpClient per poll paid TCP+TLS setup on every stats call.
+            var client = GetFxpBackendStatsClient(endpoint, (string)config.Password);
 
             var encodedName = Uri.EscapeDataString(releaseName);
 
@@ -385,15 +379,9 @@ public class FxpBackendRacer
                 endpoint = $"https://{config.Host}:{config.Port}";
             }
 
-            using var handler = new HttpClientHandler
-            {
-                ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
-            };
-
-            using var client = new HttpClient(handler);
-            var byteArray = Encoding.ASCII.GetBytes(":" + config.Password);
-            client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Basic", Convert.ToBase64String(byteArray));
+            // Reused keep-alive client (see GetFxpBackendStatsClient): creating a
+            // new HttpClient per poll paid TCP+TLS setup on every stats call.
+            var client = GetFxpBackendStatsClient(endpoint, (string)config.Password);
 
             var encodedName = Uri.EscapeDataString(releaseName);
 
@@ -1006,6 +994,31 @@ public class FxpBackendRacer
         });
     }
 
+    // Stats/poll clients (transferjobs/spreadjobs): same keep-alive rationale as
+    // FxpBackendClients above. Kept as a separate cache on purpose: these calls
+    // have always accepted any certificate and use the default HttpClient timeout,
+    // and moving them onto the stricter race client would change that behavior.
+    private static readonly ConcurrentDictionary<string, HttpClient> FxpBackendStatsClients =
+        new ConcurrentDictionary<string, HttpClient>();
+
+    private static HttpClient GetFxpBackendStatsClient(string endpoint, string password)
+    {
+        var key = endpoint + "\n" + password;
+        return FxpBackendStatsClients.GetOrAdd(key, _ =>
+        {
+            var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
+            };
+
+            var c = new HttpClient(handler);
+            var byteArray = Encoding.ASCII.GetBytes(":" + password);
+            c.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Basic", Convert.ToBase64String(byteArray));
+            return c;
+        });
+    }
+
     private static bool ShouldHardResetForTransferFailure(TransferResult result)
     {
         if (result == null || result.Success) return false;
@@ -1270,7 +1283,8 @@ public class FxpBackendRacer
         {
             LogManager.LogFxpBackend(
                 FxpBackendEventType.Error,
-                $"Request timeout ({SpreadjobTimeoutSeconds} seconds)",
+                $"Request timeout ({SpreadjobTimeoutSeconds} seconds): the backend accepted the request but never answered. " +
+                $"Check that the backend build supports POST /spreadjobs, and that section '{section}' and the target sites exist on the backend under exactly these names.",
                 releaseName: release,
                 targetSite: serverName
             );
@@ -1439,9 +1453,17 @@ public class FxpBackendRacer
                 {
                     { "section", section },
                     { "name", release },
-                    { "sites", targetSites },
-                    { "profile", config.Profile }
+                    { "sites", targetSites }
                 };
+
+                // Only send a profile when one is configured. A literal "profile": null
+                // in the JSON can confuse the backend parser; omitting the key lets the
+                // backend use its own default profile.
+                string profile = config.Profile;
+                if (!string.IsNullOrWhiteSpace(profile))
+                {
+                    payload.Add("profile", profile);
+                }
 
                 // Add sites_dlonly array (not string)
                 var sitesDlOnlyForServer = sitesDlOnly
