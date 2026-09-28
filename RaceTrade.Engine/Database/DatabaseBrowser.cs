@@ -25,6 +25,9 @@ public static class DatabaseBrowser
         double? Rating,
         int? Votes,
         string Genre,
+        string Language,
+        string Country,
+        string Type,
         string LastUpdated);
 
     public sealed record TvMazeCacheEntry(
@@ -58,13 +61,15 @@ public static class DatabaseBrowser
             using var connection = Open(Path.Combine("db", "imdb.db"));
             using var command = connection.CreateCommand();
             command.CommandText = @"
-                SELECT imdb_id, title, year, imdb_rating, imdb_votes, genre, last_updated
+                SELECT imdb_id, title, year, imdb_rating, imdb_votes, genre, language, country, type, last_updated
                 FROM imdb_movies
                 WHERE @query = ''
                    OR imdb_id LIKE @like
                    OR title LIKE @like
                    OR year LIKE @like
                    OR genre LIKE @like
+                   OR language LIKE @like
+                   OR country LIKE @like
                 ORDER BY last_updated DESC
                 LIMIT @limit;";
             AddSearchParameters(command, query, limit);
@@ -79,7 +84,10 @@ public static class DatabaseBrowser
                     reader.IsDBNull(3) ? null : reader.GetDouble(3),
                     reader.IsDBNull(4) ? null : reader.GetInt32(4),
                     reader.IsDBNull(5) ? "" : reader.GetString(5),
-                    reader.IsDBNull(6) ? "" : reader.GetString(6)));
+                    reader.IsDBNull(6) ? "" : reader.GetString(6),
+                    reader.IsDBNull(7) ? "" : reader.GetString(7),
+                    reader.IsDBNull(8) ? "" : reader.GetString(8),
+                    reader.IsDBNull(9) ? "" : reader.GetString(9)));
             }
         }
         catch (Exception ex)

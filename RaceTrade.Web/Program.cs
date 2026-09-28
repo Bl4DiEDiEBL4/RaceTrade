@@ -565,6 +565,15 @@ static void LoadEngineSettings()
                 LegacyBackendSetting("hard_reset_lookback_hours"),
                 LegacyBackendTitle() + "HardResetLookbackHours"))
             EngineSettings.FxpBackendHardResetLookbackHours = resetLookback is 0 or 1 or 6 or 12 or 24 ? resetLookback : 0;
+
+        if (TryReadInt(root, out var pollInterval, "fxp_backend_poll_interval_seconds", "FxpBackendPollIntervalSeconds"))
+            EngineSettings.FxpBackendPollIntervalSeconds = Math.Clamp(pollInterval, 2, 60);
+
+        if (TryReadBool(root, out var pollSlowdown, "fxp_backend_poll_slowdown_when_busy", "FxpBackendPollSlowdownWhenBusy"))
+            EngineSettings.FxpBackendPollSlowdownWhenBusy = pollSlowdown;
+
+        if (TryReadInt(root, out var pollMax, "fxp_backend_poll_max_interval_seconds", "FxpBackendPollMaxIntervalSeconds"))
+            EngineSettings.FxpBackendPollMaxIntervalSeconds = Math.Clamp(pollMax, 5, 120);
     }
     catch
     {

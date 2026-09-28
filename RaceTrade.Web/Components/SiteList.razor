@@ -1,0 +1,48 @@
+@* Compact renderer for a comma-joined list of sites (or sections).
+
+   One entry prints as plain text. Several collapse to an "N sites" toggle that
+   expands inline on click. A race that hits 30+ sites used to put the whole list
+   on one unbreakable line: in auto table layout that column takes everything and
+   the release name next to it ends up one letter per row. Now the closed cell is
+   a few characters wide no matter how many sites there are.
+
+   Pure <details>/<summary>, no JavaScript, so it works in every table in the app. *@
+
+@if (_items.Count == 0)
+{
+}
+else if (_items.Count == 1)
+{
+    <span class="site-list-single">@_items[0]</span>
+}
+else
+{
+    <details class="site-list">
+        <summary title="@(Value ?? "")">@_items.Count @Label</summary>
+        <div class="site-list-panel">
+            @foreach (var item in _items)
+            {
+                <span class="site-chip">@item</span>
+            }
+        </div>
+    </details>
+}
+
+@code {
+    /// <summary>Raw comma/pipe separated list as stored in the log or database.</summary>
+    [Parameter] public string? Value { get; set; }
+
+    /// <summary>Noun shown after the count in the collapsed state, e.g. "sites".</summary>
+    [Parameter] public string Label { get; set; } = "sites";
+
+    private List<string> _items = new();
+
+    protected override void OnParametersSet()
+    {
+        _items = (Value ?? "")
+            .Split(new[] { ',', '|', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .ToList();
+    }
+}

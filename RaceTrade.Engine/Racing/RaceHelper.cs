@@ -1819,7 +1819,23 @@ public static class RaceHelper
             var ratingText = movie.ImdbRating.HasValue ? movie.ImdbRating.Value.ToString("F1") : "N/A";
             var votesText = movie.ImdbVotes.HasValue ? movie.ImdbVotes.Value.ToString("N0") : "N/A";
             var sourceText = string.IsNullOrWhiteSpace(movie.DataSource) ? "IMDb" : movie.DataSource;
-            LogManager.Info($"[{siteName}] [IMDB] {movie.Title} ({movie.Year}) - Rating: {ratingText}/10 ({votesText} votes) - Source: {sourceText}");
+
+            // Log everything the filters below decide on, so a nuke can be traced back
+            // to exactly what RaceTrade saw (country, language, genre, type, page).
+            var countryText = movie.Countries != null && movie.Countries.Any()
+                ? string.Join(", ", movie.Countries)
+                : (string.IsNullOrWhiteSpace(movie.Country) ? "unknown" : movie.Country);
+            var languageText = movie.Languages != null && movie.Languages.Any()
+                ? string.Join(", ", movie.Languages)
+                : (string.IsNullOrWhiteSpace(movie.Language) ? "unknown" : movie.Language);
+            var genreText = movie.Genres != null && movie.Genres.Any()
+                ? string.Join(", ", movie.Genres)
+                : (string.IsNullOrWhiteSpace(movie.Genre) ? "unknown" : movie.Genre);
+            var typeText = string.IsNullOrWhiteSpace(movie.Type) ? "unknown" : movie.Type;
+            var pageText = string.IsNullOrWhiteSpace(movie.ImdbID) ? "" : $" | https://www.imdb.com/title/{movie.ImdbID}/";
+            LogManager.Info(
+                $"[{siteName}] [IMDB] {movie.Title} ({movie.Year}) | Rating {ratingText}/10 ({votesText} votes)" +
+                $" | Country: {countryText} | Language: {languageText} | Genre: {genreText} | Type: {typeText}{pageText} | Source: {sourceText}");
 
             double minRating = config["min_rating"]?.Value<double>() ?? 0;
             if (minRating > 0 && !movie.ImdbRating.HasValue)
@@ -1961,7 +1977,16 @@ public static class RaceHelper
 
             var show = releaseInfo.Show;
             var rating = show.Rating?.Average?.ToString("F1") ?? "N/A";
-            LogManager.Info($"[{siteName}] [TVMaze] {show.Name} - {show.Status} - Rating: {rating}");
+            var showCountry = show.Network?.Country ?? show.WebChannel?.Country;
+            var countryLabel = showCountry == null ? "unknown"
+                : string.IsNullOrWhiteSpace(showCountry.Code) ? (showCountry.Name ?? "unknown")
+                : $"{showCountry.Code} ({showCountry.Name})";
+            var networkLabel = show.Network?.Name ?? show.WebChannel?.Name ?? "unknown";
+            var genresLabel = show.Genres != null && show.Genres.Any() ? string.Join(", ", show.Genres) : "unknown";
+            LogManager.Info(
+                $"[{siteName}] [TVMaze] {show.Name} | {show.Status} | Rating {rating}" +
+                $" | Type: {show.Type ?? "unknown"} | Language: {show.Language ?? "unknown"} | Country: {countryLabel}" +
+                $" | Network: {networkLabel} | Premiered: {show.Premiered ?? "unknown"} | Genres: {genresLabel}");
 
             if (config["skip_ended_shows"]?.Value<bool>() == true && show.Status == "Ended")
             {
@@ -2078,6 +2103,35 @@ public static class RaceHelper
                 {
                     LogManager.Warning($"[{siteName}] [TVMaze] ❌ Network '{network}' not allowed");
                     return $"Network '{network}' not allowed";
+                }
+            }
+
+            // Country of the show's network / web channel. This is the reliable way to
+            // enforce "native English spoken" rules: TVMaze lists only one language per
+            // show, so a dual-audio South African show still reads as "English", but its
+            // network country is ZA. Accepts ISO codes (US, GB) or names (United States).
+            var allowedCountries = GetStringList(config, "allowed_countries", "countries");
+            if (allowedCountries.Any())
+            {
+                var country = show.Network?.Country ?? show.WebChannel?.Country;
+                var code = country?.Code ?? "";
+                var countryName = country?.Name ?? "";
+
+                if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(countryName))
+                {
+                    LogManager.Warning($"[{siteName}] [TVMaze] ❌ No country data available while a country allow-list is configured");
+                    return "No country data available while a country allow-list is configured";
+                }
+
+                bool countryAllowed = allowedCountries.Any(c =>
+                    c.Equals(code, StringComparison.OrdinalIgnoreCase) ||
+                    c.Equals(countryName, StringComparison.OrdinalIgnoreCase));
+
+                if (!countryAllowed)
+                {
+                    var shown = string.IsNullOrWhiteSpace(code) ? countryName : $"{code} ({countryName})";
+                    LogManager.Warning($"[{siteName}] [TVMaze] ❌ Country '{shown}' not allowed");
+                    return $"Country '{shown}' not allowed";
                 }
             }
 

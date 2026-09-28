@@ -69,6 +69,7 @@
                         <thead>
                             <tr>
                                 <th>PROCESSED</th>
+                                <th>SOURCE</th>
                                 <th>SITE(S)</th>
                                 <th>SECTION</th>
                                 <th>RELEASE</th>
@@ -77,13 +78,14 @@
                         <tbody>
                             @if (_processed.Count == 0)
                             {
-                                <tr><td colspan="4" class="empty-cell">No processed releases found.</td></tr>
+                                <tr><td colspan="5" class="empty-cell">No processed releases found.</td></tr>
                             }
                             @foreach (var row in _processed)
                             {
                                 <tr>
                                     <td class="ts">@FromUnixSeconds(row.DateProcessed)</td>
-                                    <td class="site">@row.SiteName</td>
+                                    <td class="site">@(string.IsNullOrWhiteSpace(row.Source) ? "-" : row.Source)</td>
+                                    <td class="site site-list-cell"><SiteList Value="@row.SiteName" /></td>
                                     <td class="section">@row.Category</td>
                                     <td class="release-name">@row.ReleaseName</td>
                                 </tr>
@@ -101,13 +103,16 @@
                                 <th>YEAR</th>
                                 <th>RATING</th>
                                 <th>VOTES</th>
+                                <th>TYPE</th>
+                                <th>LANGUAGE</th>
+                                <th>COUNTRY</th>
                                 <th>GENRES</th>
                             </tr>
                         </thead>
                         <tbody>
                             @if (_imdb.Count == 0)
                             {
-                                <tr><td colspan="7" class="empty-cell">No IMDB cache entries found.</td></tr>
+                                <tr><td colspan="10" class="empty-cell">No IMDB cache entries found.</td></tr>
                             }
                             @foreach (var row in _imdb)
                             {
@@ -118,6 +123,9 @@
                                     <td>@row.Year</td>
                                     <td>@Rating(row.Rating)</td>
                                     <td>@Votes(row.Votes)</td>
+                                    <td>@row.Type</td>
+                                    <td>@row.Language</td>
+                                    <td>@row.Country</td>
                                     <td class="dim">@row.Genre</td>
                                 </tr>
                             }

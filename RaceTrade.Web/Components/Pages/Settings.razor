@@ -136,6 +136,42 @@
             </span>
         </label>
 
+        <label class="opt">
+            <span></span>
+            <span>
+                <span class="opt-name">Race status poll interval</span>
+                <select class="setting-inline-select" @bind="_fxpBackendPollIntervalSeconds" @bind:after="ApplyEngine">
+                    @foreach (var seconds in FxpBackendPollIntervalOptions)
+                    {
+                        <option value="@seconds">@seconds seconds</option>
+                    }
+                </select>
+                <span class="fh">How often a running race is asked for its status (files, speed, done/failed). Only affects races already sent. New races are always submitted immediately.</span>
+            </span>
+        </label>
+
+        <label class="opt">
+            <input type="checkbox" @bind="_fxpBackendPollSlowdownWhenBusy" @bind:after="ApplyEngine" />
+            <span>
+                <span class="opt-name">Slow down polling when many races run</span>
+                <span class="fh">Up to 5 races at once poll at the interval above. Beyond that the interval stretches (every 10 extra races add one interval) so a busy FXP backend is not hammered with status requests. Capped by the max below.</span>
+            </span>
+        </label>
+
+        <label class="opt">
+            <span></span>
+            <span>
+                <span class="opt-name">Max poll interval when busy</span>
+                <select class="setting-inline-select" @bind="_fxpBackendPollMaxIntervalSeconds" @bind:after="ApplyEngine" disabled="@(!_fxpBackendPollSlowdownWhenBusy)">
+                    @foreach (var seconds in FxpBackendPollMaxIntervalOptions)
+                    {
+                        <option value="@seconds">@seconds seconds</option>
+                    }
+                </select>
+                <span class="fh">The stretched interval never goes above this.</span>
+            </span>
+        </label>
+
         <div class="card-actions">
             <button class="btn primary" @onclick="SaveEngine">
                 <Icon Name="save" Size="13" /><span>Save</span>
@@ -544,12 +580,23 @@ sudo systemctl enable --now racetrade</pre>
     private int _fxpBackendHardResetCooldownMinutes = EngineSettings.FxpBackendHardResetCooldownMinutes;
     private int _fxpBackendHardResetMaxAttempts = EngineSettings.FxpBackendHardResetMaxAttempts;
     private int _fxpBackendHardResetLookbackHours = EngineSettings.FxpBackendHardResetLookbackHours;
+    private int _fxpBackendPollIntervalSeconds = EngineSettings.FxpBackendPollIntervalSeconds;
+    private bool _fxpBackendPollSlowdownWhenBusy = EngineSettings.FxpBackendPollSlowdownWhenBusy;
+    private int _fxpBackendPollMaxIntervalSeconds = EngineSettings.FxpBackendPollMaxIntervalSeconds;
     private string _engineMessage = "";
     private bool _engineMessageIsError;
 
     private static readonly int[] FxpBackendResetCooldownOptions = { 5, 10, 15, 20 };
     private static readonly int[] FxpBackendResetAttemptOptions = { 1, 2, 3, 5 };
     private static readonly int[] FxpBackendResetLookbackOptions = { 0, 1, 6, 12, 24 };
+    private static readonly int[] FxpBackendPollIntervalOptions = { 2, 3, 5, 8, 10, 15, 20, 30 };
+    private static readonly int[] FxpBackendPollMaxIntervalOptions = { 10, 15, 20, 30, 45, 60 };
+
+    private static int NormalizePollInterval(int seconds) =>
+        FxpBackendPollIntervalOptions.Contains(seconds) ? seconds : 5;
+
+    private static int NormalizePollMaxInterval(int seconds) =>
+        FxpBackendPollMaxIntervalOptions.Contains(seconds) ? seconds : 30;
     private bool _checkForUpdates = true;
     private string _updatesMessage = "";
     private bool _updatesMessageIsError;
@@ -647,6 +694,12 @@ sudo systemctl enable --now racetrade</pre>
         _fxpBackendHardResetCooldownMinutes = EngineSettings.FxpBackendHardResetCooldownMinutes;
         _fxpBackendHardResetMaxAttempts = EngineSettings.FxpBackendHardResetMaxAttempts;
         _fxpBackendHardResetLookbackHours = EngineSettings.FxpBackendHardResetLookbackHours;
+
+        EngineSettings.FxpBackendPollIntervalSeconds = NormalizePollInterval(_fxpBackendPollIntervalSeconds);
+        EngineSettings.FxpBackendPollSlowdownWhenBusy = _fxpBackendPollSlowdownWhenBusy;
+        EngineSettings.FxpBackendPollMaxIntervalSeconds = NormalizePollMaxInterval(_fxpBackendPollMaxIntervalSeconds);
+        _fxpBackendPollIntervalSeconds = EngineSettings.FxpBackendPollIntervalSeconds;
+        _fxpBackendPollMaxIntervalSeconds = EngineSettings.FxpBackendPollMaxIntervalSeconds;
     }
 
     private void LoadEngine()
@@ -696,6 +749,19 @@ sudo systemctl enable --now racetrade</pre>
                         LegacyBackendTitle() + "HardResetLookbackHours")
                     ?? EngineSettings.FxpBackendHardResetLookbackHours
                 );
+            _fxpBackendPollIntervalSeconds =
+                NormalizePollInterval(
+                    ReadInt(o, "fxp_backend_poll_interval_seconds", "FxpBackendPollIntervalSeconds")
+                    ?? EngineSettings.FxpBackendPollIntervalSeconds
+                );
+            _fxpBackendPollSlowdownWhenBusy =
+                ReadBool(o, "fxp_backend_poll_slowdown_when_busy", "FxpBackendPollSlowdownWhenBusy")
+                ?? EngineSettings.FxpBackendPollSlowdownWhenBusy;
+            _fxpBackendPollMaxIntervalSeconds =
+                NormalizePollMaxInterval(
+                    ReadInt(o, "fxp_backend_poll_max_interval_seconds", "FxpBackendPollMaxIntervalSeconds")
+                    ?? EngineSettings.FxpBackendPollMaxIntervalSeconds
+                );
 
             ApplyEngine();
         }
@@ -724,6 +790,9 @@ sudo systemctl enable --now racetrade</pre>
             o["fxp_backend_hard_reset_cooldown_minutes"] = NormalizeFxpBackendResetCooldown(_fxpBackendHardResetCooldownMinutes);
             o["fxp_backend_hard_reset_max_attempts"] = NormalizeFxpBackendResetMaxAttempts(_fxpBackendHardResetMaxAttempts);
             o["fxp_backend_hard_reset_lookback_hours"] = NormalizeFxpBackendResetLookbackHours(_fxpBackendHardResetLookbackHours);
+            o["fxp_backend_poll_interval_seconds"] = NormalizePollInterval(_fxpBackendPollIntervalSeconds);
+            o["fxp_backend_poll_slowdown_when_busy"] = _fxpBackendPollSlowdownWhenBusy;
+            o["fxp_backend_poll_max_interval_seconds"] = NormalizePollMaxInterval(_fxpBackendPollMaxIntervalSeconds);
 
             AtomicFile.WriteAllText(SettingsFile, o.ToString(Newtonsoft.Json.Formatting.Indented));
 

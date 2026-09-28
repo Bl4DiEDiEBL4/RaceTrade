@@ -28,6 +28,10 @@
 {
     <p class="hint">@_status</p>
 }
+@if (Engine.IsRunning)
+{
+    <p class="hint warn">Trader is running. Saved changes (rules, filters, sections, affils) only take effect after you Stop and Start the trader.</p>
+}
 
 <div class="tabs">
     @foreach (var t in Tabs)
@@ -879,6 +883,30 @@
                                                 <div class="fh">Comma separated. Empty = allow all.</div>
                                             </div>
 
+                                            <label>Allowed countries</label>
+                                            <div>
+                                                <input type="text" value='@GetListText(selected.Tvmaze, "allowed_countries")'
+                                                       @oninput='e => SetListText(selected.Tvmaze, "allowed_countries", e.Value?.ToString())' placeholder="US, GB, CA, AU" />
+                                                <div class="lookup-actions">
+                                                    <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_countries", EnglishSpeakingCountries)'>English speaking</button>
+                                                    <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_countries", Array.Empty<string>())'>None</button>
+                                                </div>
+                                                <div class="check-chip-list">
+                                                    @foreach (var countryOption in OptionsWithSelected(TvmazeCountries, selected.Tvmaze, "allowed_countries"))
+                                                    {
+                                                        var option = countryOption;
+                                                        var isChecked = ListContains(selected.Tvmaze, "allowed_countries", option);
+                                                        <label class="check-chip @(isChecked ? "checked" : "")">
+                                                            <input type="checkbox"
+                                                                   checked="@isChecked"
+                                                                   @onchange='e => SetListItem(selected.Tvmaze, "allowed_countries", option, (bool)(e.Value ?? false))' />
+                                                            <span>@option</span>
+                                                        </label>
+                                                    }
+                                                </div>
+                                                <div class="fh">Country of the show's network or web channel (ISO code). The reliable way to enforce "native English spoken": TVMaze only lists one language per show, so a dual-audio South African show still says English, but its country is ZA. Empty = allow all.</div>
+                                            </div>
+
                                             <label>Show types</label>
                                             <div>
                                                 <input type="text" value='@GetListText(selected.Tvmaze, "allowed_show_types")'
@@ -1400,6 +1428,30 @@
                                             }
                                         </div>
                                         <div class="fh">Comma separated. Empty = allow all.</div>
+                                    </div>
+
+                                    <label>Allowed countries</label>
+                                    <div>
+                                        <input type="text" value='@GetListText(selected.Tvmaze, "allowed_countries")'
+                                               @oninput='e => SetListText(selected.Tvmaze, "allowed_countries", e.Value?.ToString())' placeholder="US, GB, CA, AU" />
+                                        <div class="lookup-actions">
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_countries", EnglishSpeakingCountries)'>English speaking</button>
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "allowed_countries", Array.Empty<string>())'>None</button>
+                                        </div>
+                                        <div class="check-chip-list">
+                                            @foreach (var countryOption in OptionsWithSelected(TvmazeCountries, selected.Tvmaze, "allowed_countries"))
+                                            {
+                                                var option = countryOption;
+                                                var isChecked = ListContains(selected.Tvmaze, "allowed_countries", option);
+                                                <label class="check-chip @(isChecked ? "checked" : "")">
+                                                    <input type="checkbox"
+                                                           checked="@isChecked"
+                                                           @onchange='e => SetListItem(selected.Tvmaze, "allowed_countries", option, (bool)(e.Value ?? false))' />
+                                                    <span>@option</span>
+                                                </label>
+                                            }
+                                        </div>
+                                        <div class="fh">Country of the show's network or web channel (ISO code). The reliable way to enforce "native English spoken": TVMaze only lists one language per show, so a dual-audio South African show still says English, but its country is ZA. Empty = allow all.</div>
                                     </div>
 
                                     <label>Show types</label>
@@ -1961,6 +2013,16 @@
     {
         "Scripted", "Animation", "Reality", "Talk Show", "Documentary",
         "Game Show", "News", "Sports", "Variety", "Award Show", "Panel Show"
+    };
+
+    // ISO country codes as TVMaze reports them on a show's network / web channel.
+    private static readonly string[] EnglishSpeakingCountries = { "US", "GB", "CA", "AU", "NZ", "IE" };
+
+    private static readonly string[] TvmazeCountries =
+    {
+        "US", "GB", "CA", "AU", "NZ", "IE",
+        "DE", "FR", "ES", "IT", "NL", "BE", "SE", "DK", "NO", "FI",
+        "JP", "KR", "CN", "IN", "BR", "MX", "ZA", "PL", "TR", "RU"
     };
 
     private static readonly string[] TvmazeLanguages =

@@ -82,7 +82,7 @@
                             <td class="race-status @StatusClass(e.Status)">@e.Status</td>
                             <td class="section">@((MarkupString)FormatSection(e.Section))</td>
                             <td class="rel">@((MarkupString)FormatRelease(e.Release))</td>
-                            <td class="targets">@((MarkupString)FormatSites(e.TargetSite, e.Reason))</td>
+                            <td class="targets"><SiteList Value="@e.TargetSite" />@((MarkupString)FormatReason(e.Reason))</td>
                             <td class="msg">@((MarkupString)FormatMessage(e))</td>
                         </tr>
                     }
@@ -212,13 +212,14 @@
     private static string FormatRelease(string? release) =>
         IrcMarkup.ToHtml(LogColors.Orange(release ?? ""));
 
-    private static string FormatSites(string? sites, string? reason)
+    // The site list itself is rendered by the SiteList component (collapsed count that
+    // expands on click); only the reason is still formatted here.
+    private static string FormatReason(string? reason)
     {
-        var text = IrcMarkup.ToHtml(LogColors.Magenta(sites ?? ""));
-        if (!string.IsNullOrWhiteSpace(reason))
-            text += $" <span class=\"log-reason\">({IrcMarkup.ToHtml(LogColors.Red(reason))})</span>";
+        if (string.IsNullOrWhiteSpace(reason))
+            return "";
 
-        return text;
+        return $" <span class=\"log-reason\">({IrcMarkup.ToHtml(LogColors.Red(reason))})</span>";
     }
 
     private static string FormatMessage(LogEvent e)

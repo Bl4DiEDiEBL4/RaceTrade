@@ -21,7 +21,8 @@ public static class SQLiteHelper
         string Category,
         string SiteName,
         long DateProcessed,
-        long? Pretime);
+        long? Pretime,
+        string Source);
 
     public sealed record PretimeEntry(
         int Id,
@@ -75,10 +76,33 @@ public static class SQLiteHelper
                 Category TEXT NOT NULL,
                 SiteName TEXT NOT NULL,
                 DateProcessed INTEGER NOT NULL,
-                Pretime INTEGER
+                Pretime INTEGER,
+                Source TEXT
             );
         ";
         command.ExecuteNonQuery();
+
+        // Existing databases predate the Source column (announce site or prespam bot
+        // the release came from). Add it in place; rows written before this stay NULL.
+        EnsureColumn(connection, "ProcessedReleases", "Source", "TEXT");
+    }
+
+    private static void EnsureColumn(SqliteConnection connection, string table, string column, string type)
+    {
+        using (var check = connection.CreateCommand())
+        {
+            check.CommandText = $"PRAGMA table_info({table});";
+            using var reader = check.ExecuteReader();
+            while (reader.Read())
+            {
+                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+        }
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {type};";
+        alter.ExecuteNonQuery();
     }
 
     private static void InitializePredbDatabase()
@@ -207,7 +231,7 @@ public static class SQLiteHelper
         return logEntries;
     }
 
-    public static void LogProcessedRelease(string releaseName, string category, string siteName, long dateProcessed, long pretime)
+    public static void LogProcessedRelease(string releaseName, string category, string siteName, long dateProcessed, long pretime, string source = null)
     {
         try
         {
@@ -217,14 +241,15 @@ public static class SQLiteHelper
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-                INSERT INTO ProcessedReleases (ReleaseName, Category, SiteName, DateProcessed, Pretime)
-                VALUES (@ReleaseName, @Category, @SiteName, @DateProcessed, @Pretime);
+                INSERT INTO ProcessedReleases (ReleaseName, Category, SiteName, DateProcessed, Pretime, Source)
+                VALUES (@ReleaseName, @Category, @SiteName, @DateProcessed, @Pretime, @Source);
             ";
             command.Parameters.AddWithValue("@ReleaseName", releaseName);
             command.Parameters.AddWithValue("@Category", category);
             command.Parameters.AddWithValue("@SiteName", siteName);
             command.Parameters.AddWithValue("@DateProcessed", dateProcessed);
             command.Parameters.AddWithValue("@Pretime", pretime);
+            command.Parameters.AddWithValue("@Source", (object)source ?? DBNull.Value);
 
             command.ExecuteNonQuery();
         }
@@ -246,12 +271,13 @@ public static class SQLiteHelper
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-                SELECT Id, ReleaseName, Category, SiteName, DateProcessed, Pretime
+                SELECT Id, ReleaseName, Category, SiteName, DateProcessed, Pretime, Source
                 FROM ProcessedReleases
                 WHERE @query = ''
                    OR ReleaseName LIKE @like
                    OR Category LIKE @like
                    OR SiteName LIKE @like
+                   OR Source LIKE @like
                 ORDER BY Id DESC
                 LIMIT @limit;
             ";
@@ -268,7 +294,8 @@ public static class SQLiteHelper
                     reader.IsDBNull(2) ? "" : reader.GetString(2),
                     reader.IsDBNull(3) ? "" : reader.GetString(3),
                     reader.IsDBNull(4) ? 0 : reader.GetInt64(4),
-                    reader.IsDBNull(5) ? null : reader.GetInt64(5)));
+                    reader.IsDBNull(5) ? null : reader.GetInt64(5),
+                    reader.IsDBNull(6) ? "" : reader.GetString(6)));
             }
         }
         catch (Exception ex)

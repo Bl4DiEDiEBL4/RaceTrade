@@ -708,13 +708,73 @@ table.grid tbody tr:hover td { background: #262d3b; }
     word-break: break-word;
 }
 
-/* Long target-site lists in the DETAIL column must not stretch the table.
-   Truncate with an ellipsis; the full text shows on hover (title attr). */
-.history .detail-cell {
-    max-width: 340px;
+/* Site lists (Logs > Sites, Databases > Processed, History/Dashboard > Target).
+   A race can hit 30+ sites. Rendered as one comma-joined line that column took the
+   whole table and squeezed the release name to one letter per row (max-width and
+   text-overflow are ignored on a td in auto table layout, so they never helped).
+   The SiteList component collapses the list to an "N sites" toggle that expands
+   inline; the closed cell is a few characters wide regardless of site count. */
+.site-list {
+    display: inline-block;
+    vertical-align: top;
+}
+.site-list > summary {
+    cursor: pointer;
+    list-style: none;
+    display: inline-block;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 1px 8px;
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 999px;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 11.5px;
+    user-select: none;
+}
+.site-list > summary::-webkit-details-marker { display: none; }
+.site-list > summary::after {
+    content: " \25BE";
+    opacity: .7;
+}
+.site-list[open] > summary::after { content: " \25B4"; }
+.site-list > summary:hover { background: rgba(255,255,255,.06); }
+.site-list-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-width: 440px;
+    margin-top: 5px;
+}
+.site-chip {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(255,255,255,.07);
+    color: var(--accent);
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+.site-list-single { color: var(--accent); font-weight: 700; }
+
+/* Keep the release column on one line now that the site list no longer competes. */
+.logs .rel {
+    white-space: nowrap;
+}
+.logs .targets {
+    white-space: normal;
+}
+.database-table td.site-list-cell {
+    white-space: normal;
+    font-weight: 400;
+}
+.database-table .release-name {
+    white-space: nowrap;
+}
+.history .detail-cell {
+    white-space: normal;
+}
+.history .release-name {
+    white-space: nowrap;
 }
 
 .database-summary {

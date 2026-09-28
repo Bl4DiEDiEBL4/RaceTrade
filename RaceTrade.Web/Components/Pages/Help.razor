@@ -191,9 +191,9 @@
             <li>Add one or more FXP backend mappings. Empty trigger regex means fallback/default.</li>
             <li>Add <strong>FXP backend Mapping Rules</strong> under a mapping when only that FXP backend target needs extra filtering.</li>
             <li>Add <strong>Section Rules</strong> when every mapping in this IRC section should use the same filter.</li>
-            <li>Enable IMDB or TVMaze filters only when that section needs lookup checks; their genre, network and show type lists are under <strong>Lookup filters</strong>.</li>
+            <li>Enable IMDB or TVMaze filters only when that section needs lookup checks; their genre, network, country and show type lists are under <strong>Lookup filters</strong>.</li>
+            <li>For "native English spoken" site rules use TVMaze <strong>Allowed countries</strong> (US, GB, CA, AU, ...), not just English only. TVMaze lists one language per show, so a dual-audio show from South Africa still reads as English, but its network country is ZA and the country filter catches it. Nuke reasons like "Reality type" or "Talk Show type" are TVMaze <strong>show types</strong>, not genres: set <strong>Show types</strong> to Scripted for those.</li>
             <li>Save the site after changing routing or filters.</li>
-            <li><strong>Affil only</strong>: for a section the site does not let you upload to, turn on Affil only. RaceTrade then never races (uploads) there and only accepts a release whose group is one of the site's affils, as download-only. Internal releases count automatically, so <code>GROUP_INT</code> matches the affil <code>GROUP</code> and you do not list <code>_INT</code> names separately. The affils come from the Affils tab (filled by the site import).</li>
         </ol>
         <p>
             Core terms: <strong>IRC section</strong> is what the announce says, for example

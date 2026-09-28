@@ -38,6 +38,24 @@ public static class EngineSettings
     /// 0 disables it. Off by default because this can send hard resets for old FXP backend jobs.
     /// </summary>
     public static int FxpBackendHardResetLookbackHours { get; set; }
+
+    /// <summary>
+    /// How often (seconds) a RUNNING spreadjob is polled on the FXP backend for its
+    /// status. Only affects progress polling of races already submitted; new races are
+    /// always sent immediately. Lower = fresher race info, more load on the backend.
+    /// </summary>
+    public static int FxpBackendPollIntervalSeconds { get; set; } = 5;
+
+    /// <summary>
+    /// When many races are running at once, stretch the poll interval automatically so
+    /// RaceTrade does not hammer an FXP backend that is already busy transferring.
+    /// The interval grows with the number of active races and is capped at
+    /// <see cref="FxpBackendPollMaxIntervalSeconds"/>. New races are never delayed.
+    /// </summary>
+    public static bool FxpBackendPollSlowdownWhenBusy { get; set; } = true;
+
+    /// <summary>Upper bound (seconds) for the stretched poll interval when busy.</summary>
+    public static int FxpBackendPollMaxIntervalSeconds { get; set; } = 30;
 }
 
 /// <summary>

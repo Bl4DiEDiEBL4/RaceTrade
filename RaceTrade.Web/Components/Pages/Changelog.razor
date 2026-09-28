@@ -10,7 +10,7 @@
     <section class="doc-hero">
         <div>
             <span class="doc-kicker">Current branch</span>
-            <h2>v2.1.5</h2>
+            <h2>v2.1.6</h2>
             <p>
                 This page tracks user-facing RaceTrade changes for the new web build.
             </p>
@@ -19,6 +19,19 @@
 
     <section class="timeline">
         <article class="timeline-item current">
+            <div class="timeline-version">v2.1.6</div>
+            <div class="timeline-date">September 2026</div>
+            <ul>
+                <li>Added configurable FXP backend race-status polling with automatic slowdown when many races are active, reducing unnecessary backend load without delaying new races.</li>
+                <li>Fixed multi-backend race monitoring so job status is requested from the backend that actually received the race, with only one status monitor per release.</li>
+                <li>Added TVMaze country filtering with an English-speaking countries preset for more reliable native-language filtering.</li>
+                <li>Expanded IMDB and TVMaze logging with country, language, type, genre, network and other lookup details so race decisions are easier to diagnose.</li>
+                <li>Improved Logs, History, Dashboard and Databases with collapsible target-site lists, keeping releases readable when races contain many sites.</li>
+                <li>Added announce-source tracking to processed releases and expanded the IMDB database overview with type, language and country information.</li>
+                <li>Added a warning when editing site settings while the trader is running, clarifying that changes take effect after restarting the trader.</li>
+            </ul>
+        </article>
+        <article class="timeline-item">
             <div class="timeline-version">v2.1.5</div>
             <div class="timeline-date">September 2026</div>
             <ul>

@@ -36,6 +36,37 @@ public class FxpBackendJobStats
 public class FxpBackendRacer
 {
     private static Dictionary<string, dynamic> FXP_BACKEND_CONFIGS = new Dictionary<string, dynamic>();
+
+    // One progress monitor per release. The same release can reach the spawn point
+    // more than once (allowed sites split across two backend groups that resolve to
+    // the same server, a re-announce, etc.) and every spawn used to poll the backend
+    // on its own, doubling or tripling the GET /spreadjobs load for that race.
+    private static readonly ConcurrentDictionary<string, bool> ActiveJobMonitors =
+        new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Number of spreadjobs currently being polled for progress.</summary>
+    public static int ActiveJobMonitorCount => ActiveJobMonitors.Count;
+
+    /// <summary>
+    /// Delay between status polls of a RUNNING spreadjob. Starts at the configured
+    /// base interval and, when slowdown is on, stretches as more races run at once so
+    /// a backend that is already busy transferring is not hammered with status GETs.
+    /// Up to 5 concurrent races poll at the base rate; every 10 extra races add
+    /// another base interval, capped at the configured maximum. Submitting a new race
+    /// is never delayed by this, it only paces polling of jobs already sent.
+    /// </summary>
+    private static int EffectivePollDelayMs()
+    {
+        int baseSeconds = Math.Max(2, EngineSettings.FxpBackendPollIntervalSeconds);
+        if (!EngineSettings.FxpBackendPollSlowdownWhenBusy)
+            return baseSeconds * 1000;
+
+        int active = ActiveJobMonitors.Count;
+        double factor = 1.0 + Math.Max(0, active - 5) / 10.0;
+        int maxSeconds = Math.Max(baseSeconds, EngineSettings.FxpBackendPollMaxIntervalSeconds);
+        double seconds = Math.Min(maxSeconds, baseSeconds * factor);
+        return (int)Math.Round(seconds * 1000);
+    }
     // The WinForms build also held a reference to the MainApp form here
     // (SetMainForm/mainForm). It was write-only — never read — and it was the last
     // hard link from the racer to a UI type, so it is gone.
@@ -356,32 +387,43 @@ public class FxpBackendRacer
     /// Uses ONLY the stock FXP backend endpoint: GET /spreadjobs/{releaseName}
     /// and only stock fields: status, sites, size_estimated_bytes, time_spent_seconds.
     /// </summary>
-    public static async Task<FxpBackendJobStats> GetJobStats(string releaseName)
+    public static async Task<FxpBackendJobStats> GetJobStats(
+        string releaseName,
+        string backendHost = null,
+        string backendPort = null,
+        string backendPassword = null)
     {
         try
         {
-            var config = FXP_BACKEND_CONFIGS.Values.FirstOrDefault();
-            if (config == null)
-            {
-                LogManager.Error("No FXP backend configuration available");
-                return null;
-            }
-
             string endpoint;
-            if (config.Host.Contains("://"))
+            string password;
+
+            // Poll the backend the job was actually sent to. Before, this always used
+            // the first configured backend, which is wrong (and silently so) for
+            // setups with more than one FXP backend server.
+            if (!string.IsNullOrWhiteSpace(backendHost) &&
+                !string.IsNullOrWhiteSpace(backendPort) &&
+                !string.IsNullOrWhiteSpace(backendPassword))
             {
-                endpoint = config.Host.EndsWith($":{config.Port}")
-                    ? config.Host
-                    : $"{config.Host}:{config.Port}";
+                endpoint = BuildFxpBackendEndpoint(backendHost, backendPort);
+                password = backendPassword;
             }
             else
             {
-                endpoint = $"https://{config.Host}:{config.Port}";
+                var config = FXP_BACKEND_CONFIGS.Values.FirstOrDefault();
+                if (config == null)
+                {
+                    LogManager.Error("No FXP backend configuration available");
+                    return null;
+                }
+
+                endpoint = BuildFxpBackendEndpoint((string)config.Host, (string)config.Port);
+                password = (string)config.Password;
             }
 
             // Reused keep-alive client (see GetFxpBackendStatsClient): creating a
             // new HttpClient per poll paid TCP+TLS setup on every stats call.
-            var client = GetFxpBackendStatsClient(endpoint, (string)config.Password);
+            var client = GetFxpBackendStatsClient(endpoint, password);
 
             var encodedName = Uri.EscapeDataString(releaseName);
 
@@ -479,13 +521,24 @@ public class FxpBackendRacer
         string fxpBackendPassword = null,
         string fxpBackendServerName = null)
     {
+        // Only one monitor per release. A second spawn for a release that is already
+        // being polled would just duplicate every GET /spreadjobs call for it.
+        if (!ActiveJobMonitors.TryAdd(releaseName, true))
+        {
+            if (EngineSettings.DebugEnabled)
+            {
+                LogManager.Debug($"Job '{releaseName}' is already being monitored, not starting a second poller");
+            }
+            return;
+        }
+
         try
         {
             int checkCount = 0;
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                var stats = await GetJobStats(releaseName);
+                var stats = await GetJobStats(releaseName, fxpBackendHost, fxpBackendPort, fxpBackendPassword);
 
                 if (stats == null)
                 {
@@ -499,7 +552,7 @@ public class FxpBackendRacer
                         }
                         break;
                     }
-                    await Task.Delay(5000, cancellationToken);
+                    await Task.Delay(EffectivePollDelayMs(), cancellationToken);
                     continue;
                 }
 
@@ -570,13 +623,18 @@ public class FxpBackendRacer
                     break;
                 }
 
-                // Keep polling every 5 seconds while in-progress
-                await Task.Delay(5000, cancellationToken);
+                // Keep polling while in-progress. The delay comes from settings and
+                // stretches automatically when many races run at once.
+                await Task.Delay(EffectivePollDelayMs(), cancellationToken);
             }
         }
         catch (Exception ex)
         {
             LogManager.Error($"Error monitoring job '{releaseName}': {ex.Message}");
+        }
+        finally
+        {
+            ActiveJobMonitors.TryRemove(releaseName, out _);
         }
     }
 
@@ -591,8 +649,11 @@ public class FxpBackendRacer
         if (!string.IsNullOrWhiteSpace(section))
             parts.Add($"Section: {section}");
 
+        // Only the count goes in the message text. The full list travels in the
+        // event's targetSite field, which the Logs page shows as a collapsible
+        // "N sites" cell; repeating 30 names here made the Message column unreadable.
         if (sites.Count > 0)
-            parts.Add($"Sites: {string.Join(",", sites)}");
+            parts.Add($"Sites: {sites.Count}");
 
         if (!string.IsNullOrWhiteSpace(stats.Status))
             parts.Add($"Status: {FormatStatus(stats.Status)}");
@@ -1533,7 +1594,8 @@ public class FxpBackendRacer
                             category: section,
                             siteName: string.Join(",", allowedSites),
                             dateProcessed: DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                            pretime: 0
+                            pretime: 0,
+                            source: announceSite
                         );
                         processedReleaseLogged = true;
                     }
