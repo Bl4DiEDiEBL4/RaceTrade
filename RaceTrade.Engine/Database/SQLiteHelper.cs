@@ -85,6 +85,10 @@ public static class SQLiteHelper
         // Existing databases predate the Source column (announce site or prespam bot
         // the release came from). Add it in place; rows written before this stay NULL.
         EnsureColumn(connection, "ProcessedReleases", "Source", "TEXT");
+
+        using var index = connection.CreateCommand();
+        index.CommandText = "CREATE INDEX IF NOT EXISTS idx_processed_release_name ON ProcessedReleases(ReleaseName);";
+        index.ExecuteNonQuery();
     }
 
     private static void EnsureColumn(SqliteConnection connection, string table, string column, string type)
@@ -315,11 +319,11 @@ public static class SQLiteHelper
             await connection.OpenAsync();
 
             var command = connection.CreateCommand();
-            command.CommandText = "SELECT COUNT(1) FROM ProcessedReleases WHERE ReleaseName = @ReleaseName";
+            command.CommandText = "SELECT 1 FROM ProcessedReleases WHERE ReleaseName = @ReleaseName LIMIT 1";
             command.Parameters.AddWithValue("@ReleaseName", releaseName);
 
             var result = await command.ExecuteScalarAsync();
-            return Convert.ToInt32(result) > 0;
+            return result != null && result != DBNull.Value;
         }
         catch (Exception ex)
         {

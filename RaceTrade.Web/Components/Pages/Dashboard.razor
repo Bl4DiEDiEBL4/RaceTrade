@@ -89,11 +89,18 @@
                         <tr class="lvl-@e.Level.ToString().ToLowerInvariant()">
                             <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
                             <td class="ch">@e.Channel</td>
-                            <td class="site">@e.Site</td>
+                            <td class="site"><SiteList Value="@e.Site" /></td>
                             @* Same LogEvent stream as the Logs page, so it needs the same
                            markup rendering - otherwise the colour codes show up as
                            stray digits in front of every site name. *@
-                        <td class="msg">@((MarkupString)IrcMarkup.ToHtml(e.Message))</td>
+                        <td class="msg"><div class="msg-body">@((MarkupString)IrcMarkup.ToHtml(e.Message))</div></td>
+                        <td class="targets">
+                            @* Only for multi-site races: a single site is already named in the message. *@
+                            @if (!string.IsNullOrEmpty(e.TargetSite) && e.TargetSite.IndexOfAny(new[] { ',', '|', ';' }) >= 0)
+                            {
+                                <SiteList Value="@e.TargetSite" />
+                            }
+                        </td>
                         </tr>
                     }
                 </tbody>
@@ -134,8 +141,8 @@
                         <tr>
                             <td class="ts">@e.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")</td>
                             <td><span class="@StatusClass(e.Status)">@e.Status</span></td>
-                            <td class="site">@e.Site</td>
-                            <td>@e.Section</td>
+                            <td class="site"><SiteList Value="@e.Site" /></td>
+                            <td class="section"><SiteList Value="@e.Section" Label="sections" /></td>
                             <td class="release-name">@e.Release</td>
                             <td class="dim detail-cell">
                                 @if (ShowReason(e.Status) && !string.IsNullOrWhiteSpace(e.Reason))

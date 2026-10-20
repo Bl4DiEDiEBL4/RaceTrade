@@ -73,7 +73,7 @@ public sealed class SiteStore
     /// Saves the site. Passwords and Blowfish keys are encrypted here if they are still
     /// plaintext, so a value typed into the browser never lands on disk in the clear.
     /// </summary>
-    public string Save(SiteConfig cfg, string? originalName = null)
+    public string Save(SiteConfig cfg, string? originalName = null, bool refreshEngine = true)
     {
         var server = cfg.Server ?? new ServerSettings();
         var siteSettings = cfg.SiteSettings ?? new SiteSettings();
@@ -108,7 +108,7 @@ public sealed class SiteStore
 
         SiteConfigManager.Invalidate(originalName);
         SiteConfigManager.Invalidate(configKey);
-        RaceHelper.LoadAllSiteConfigs();
+        if (refreshEngine) RaceHelper.LoadAllSiteConfigs();
         LogManager.Success($"Saved site '{name}' as config '{configKey}'.");
         return configKey;
     }
@@ -215,15 +215,17 @@ public sealed class SiteStore
                                             .ToList()
                                             ?? new List<string>(),
                     affils = (site.Affils ?? new List<string>())
-                             .Where(a => !string.IsNullOrWhiteSpace(a))
-                             .Select(a => a.Trim())
-                             .Distinct(StringComparer.OrdinalIgnoreCase)
-                             .ToList(),
+                        .Where(a => !string.IsNullOrWhiteSpace(a))
+                        .Select(a => a.Trim())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList(),
                     sections = (site.Sections ?? new List<FxpBackendSection>())
                         .Where(s => !string.IsNullOrWhiteSpace(s.Name))
                         .Select(s => new
                         {
                             irc_name = s.Name,
+                            // New sections start with internals off (affil sources are exempt).
+                            allow_internal = false,
                             tags = new[]
                             {
                                 new

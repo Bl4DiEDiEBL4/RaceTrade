@@ -56,7 +56,7 @@
                             {
                                 <tr>
                                     <td class="ts">@FromUnixMs(row.PreTimestamp)</td>
-                                    <td class="section">@row.Section</td>
+                                    <td class="section"><SiteList Value="@row.Section" Label="sections" /></td>
                                     <td class="release-name">@row.ReleaseName</td>
                                     <td class="ts">@FromUnixMs(row.CreatedAt)</td>
                                 </tr>
@@ -84,9 +84,9 @@
                             {
                                 <tr>
                                     <td class="ts">@FromUnixSeconds(row.DateProcessed)</td>
-                                    <td class="site">@(string.IsNullOrWhiteSpace(row.Source) ? "-" : row.Source)</td>
+                                    <td class="site">@if (string.IsNullOrWhiteSpace(row.Source)) { <span class="dim">-</span> } else { <SiteList Value="@row.Source" /> }</td>
                                     <td class="site site-list-cell"><SiteList Value="@row.SiteName" /></td>
-                                    <td class="section">@row.Category</td>
+                                    <td class="section"><SiteList Value="@row.Category" Label="sections" /></td>
                                     <td class="release-name">@row.ReleaseName</td>
                                 </tr>
                             }
@@ -124,9 +124,9 @@
                                     <td>@Rating(row.Rating)</td>
                                     <td>@Votes(row.Votes)</td>
                                     <td>@row.Type</td>
-                                    <td>@row.Language</td>
-                                    <td>@row.Country</td>
-                                    <td class="dim">@row.Genre</td>
+                                    <td><SiteList Value="@row.Language" Label="languages" /></td>
+                                    <td><SiteList Value="@row.Country" Label="countries" /></td>
+                                    <td class="dim"><SiteList Value="@row.Genre" Label="genres" /></td>
                                 </tr>
                             }
                         </tbody>
@@ -158,10 +158,10 @@
                                     <td class="site">@row.TvMazeId</td>
                                     <td class="release-name">@row.Name</td>
                                     <td>@row.Type</td>
-                                    <td>@row.Language</td>
+                                    <td><SiteList Value="@row.Language" Label="languages" /></td>
                                     <td>@Rating(row.Rating)</td>
-                                    <td>@row.Network</td>
-                                    <td class="dim">@row.Genres</td>
+                                    <td><SiteList Value="@row.Network" Label="networks" /></td>
+                                    <td class="dim"><SiteList Value="@row.Genres" Label="genres" /></td>
                                 </tr>
                             }
                         </tbody>

@@ -21,6 +21,15 @@ public class RulesEngine
     private const string ACTION_EXCEPT = "EXCEPT";
 
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(250);
+    private const int MaxCachedRules = 4096;
+    private static readonly object ParsedRulesLock = new();
+    private static readonly Dictionary<string, ParsedRule> ParsedRules = new(StringComparer.Ordinal);
+    private static readonly Queue<string> ParsedRuleOrder = new();
+
+    private sealed record ParsedRule(string Key, string Operator, string Value, string Action)
+    {
+        public Rule Copy() => new() { Key = Key, Operator = Operator, Value = Value, Action = Action };
+    }
 
     public RulesEngine()
     {
@@ -279,7 +288,27 @@ public class RulesEngine
                 return new RuleEvaluation(ACTION_ALLOW, rule, "section ALLOW rule matched");
         }
 
-        // 4) DEFAULT: ALLOW when nothing matched
+        // 4) DEFAULT: ALLOW when nothing matched.
+        // A rule whose key has no value for this release is skipped (see EvaluateRule),
+        // which is easy to mistake for a bug when e.g. "[resolution] !isin 1080p,720p DROP"
+        // lets an unparsed resolution through. Say so in the reason so the release
+        // tester shows exactly which keys were missing.
+        var missingKeys = _sectionRules
+            .Concat(!string.IsNullOrEmpty(fxpBackendSection) && _tagRules.TryGetValue(fxpBackendSection, out var allTagRules)
+                ? allTagRules
+                : Enumerable.Empty<Rule>())
+            .Select(r => r.Key)
+            .Where(k => !string.IsNullOrEmpty(k) && !input.ContainsKey(k))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (missingKeys.Count > 0)
+        {
+            var skipped = string.Join(", ", missingKeys.Select(k => $"[{k}]"));
+            return new RuleEvaluation(ACTION_ALLOW, null,
+                $"no rule matched, default allow. Rules on {skipped} were skipped because this release has no value for that key");
+        }
+
         return new RuleEvaluation(ACTION_ALLOW, null, "no rule matched, default allow");
     }
 
@@ -380,6 +409,25 @@ public class RulesEngine
     {
         if (string.IsNullOrWhiteSpace(ruleString))
             return null;
+
+        lock (ParsedRulesLock)
+        {
+            // Evaluators expose mutable Rule objects; never hand out the cached state.
+            if (ParsedRules.TryGetValue(ruleString, out var cached))
+                return cached.Copy();
+
+            var rule = ParseUncachedRule(ruleString);
+            if (rule is null) return null;
+            if (ParsedRules.Count >= MaxCachedRules)
+                ParsedRules.Remove(ParsedRuleOrder.Dequeue());
+            ParsedRules[ruleString] = new ParsedRule(rule.Key, rule.Operator, rule.Value, rule.Action);
+            ParsedRuleOrder.Enqueue(ruleString);
+            return rule;
+        }
+    }
+
+    private static Rule ParseUncachedRule(string ruleString)
+    {
 
         var parts = ruleString.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 3)

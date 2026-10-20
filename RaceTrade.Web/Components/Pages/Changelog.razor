@@ -10,7 +10,7 @@
     <section class="doc-hero">
         <div>
             <span class="doc-kicker">Current branch</span>
-            <h2>v2.1.6</h2>
+            <h2>v2.1.7</h2>
             <p>
                 This page tracks user-facing RaceTrade changes for the new web build.
             </p>
@@ -19,6 +19,23 @@
 
     <section class="timeline">
         <article class="timeline-item current">
+            <div class="timeline-version">v2.1.7</div>
+            <div class="timeline-date">October 2026</div>
+            <ul>
+                <li>Added site JSON export and import with single-site/all-site downloads, an import preview, destination backend selection and optional replacement of existing sites. Credentials are excluded from exports by default.</li>
+                <li>Improved affil source handling: a site's own affiliated releases join as download-only sources and bypass that site's content filters, including matching Group and Group_iNT.</li>
+                <li>Restored affil-group import from FXP backend sites and fixed progress-monitor collisions when multiple backends handle the same release and section.</li>
+                <li>Added an Allow internal switch per section, with clear AFFIL and NO INT indicators. New sections block internals by default; existing sections keep their previous behaviour and affil sources remain exempt.</li>
+                <li>Updated race job grouping to use each site's mapped FXP backend section. Processed-release records now list only sites included in successfully submitted jobs.</li>
+                <li>Added TVMaze Blocked show types for categories such as Talk Show, Reality and Game Show, separate from genre filtering.</li>
+                <li>Improved TVMaze caching for title punctuation and spelling differences, and reused IMDB/TVMaze lookup results across sites to reduce repeated metadata requests.</li>
+                <li>Expanded video-resolution detection for SD, interlaced, VR and higher-resolution releases while avoiding MP3 product-code false matches. Rule test results now explain when missing release attributes cause rules to be skipped.</li>
+                <li>Expanded Test Release with a per-site results table showing race/download-only/blocked outcomes, destination sections and rejection reasons.</li>
+                <li>Improved table readability across Logs, Dashboard, History, Skips and Databases with compact lists and better handling of long messages. Added active/inactive counts to the Sites overview.</li>
+                <li>Improved performance for larger site lists with cached section/mapping rules, indexed duplicate-release checks and batched live history updates. Existing databases upgrade automatically without removing stored releases.</li>
+            </ul>
+        </article>
+        <article class="timeline-item">
             <div class="timeline-version">v2.1.6</div>
             <div class="timeline-date">September 2026</div>
             <ul>

@@ -3,12 +3,21 @@
 @inject SiteConnectionTestService SiteTester
 @inject FxpBackendSiteService FxpBackendSites
 @inject FxpBackendStore FxpBackendConfigStore
+@inject SiteTransferService SiteTransfer
 
 <PageTitle>Sites - RaceTrade</PageTitle>
 
 <div class="page-head">
-    <h1><Icon Name="sites" Size="18" />Sites</h1>
+    <h1>
+        <Icon Name="sites" Size="18" />Sites
+        @if (_rows.Count > 0)
+        {
+            <span class="hint site-counts">@ActiveSiteCount active, @InactiveSiteCount inactive</span>
+        }
+    </h1>
     <div class="head-actions">
+        <button class="btn" disabled="@IsBusy" @onclick="OpenImport"><Icon Name="folder" Size="13" /><span>Import</span></button>
+        <button class="btn" disabled="@(IsBusy || _rows.Count == 0)" @onclick="() => OpenExport(null)"><Icon Name="download" Size="13" /><span>Export all</span></button>
         <a class="btn primary" href="sites/new"><Icon Name="plus" Size="13" /><span>Add site</span></a>
     </div>
 </div>
@@ -132,6 +141,9 @@
                                             @onclick="() => OpenDuplicateSite(r.Key)">
                                         <Icon Name="copy" Size="13" /><span>Duplicate</span>
                                     </button>
+                                    <button class="btn icon-only" title="Export this RaceTrade site" aria-label="@($"Export {r.Name}")" disabled="@IsBusy" @onclick="() => OpenExport(r.Key)">
+                                        <Icon Name="download" Size="13" />
+                                    </button>
                                     <button class="btn" title="Copy the FXP backend site config to another backend" disabled="@IsBusy"
                                             @onclick="() => OpenDuplicateFxpBackendSite(r.Key)">
                                         <Icon Name="copy" Size="13" /><span>Copy FXP backend</span>
@@ -247,7 +259,177 @@
     </div>
 }
 
+@if (_showExport)
+{
+    <div class="modal-backdrop" @onclick="CloseExport">
+        <div class="modal-card duplicate-modal" role="dialog" aria-modal="true" aria-labelledby="site-export-title" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2 id="site-export-title">Export @(_exportKey is null ? "all sites" : "site")</h2>
+                <button class="btn icon-only" aria-label="Close" @onclick="CloseExport"><Icon Name="close" Size="15" /></button>
+            </div>
+            <div class="modal-body duplicate-body site-transfer-body">
+                <strong>@(_exportKey is null ? $"{_rows.Count} sites" : _rows.FirstOrDefault(r => r.Key == _exportKey)?.Name)</strong>
+                <label class="site-transfer-option"><input type="checkbox" @bind="_exportSecrets" />Include IRC login and FiSH keys</label>
+                @if (_exportSecrets)
+                {
+                    <p class="hint err">Warning: passwords and keys will be readable in the downloaded file. Share it only with trusted users.</p>
+                }
+                else
+                {
+                    <p class="hint">IRC usernames, passwords and FiSH keys are excluded.</p>
+                }
+                <p class="hint">RaceTrade settings only. FTP backend logins and server configurations are not included.</p>
+                <div class="modal-actions">
+                    <button class="btn" @onclick="CloseExport">Cancel</button>
+                    <a class="btn primary" href="@ExportUrl" data-enhance-nav="false" download><Icon Name="download" Size="13" /><span>Download JSON</span></a>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showImport)
+{
+    <div class="modal-backdrop" @onclick="CloseImport">
+        <div class="modal-card site-import-modal" role="dialog" aria-modal="true" aria-labelledby="site-import-title" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2 id="site-import-title">Import sites</h2>
+                <button class="btn icon-only" aria-label="Close" disabled="@_transferring" @onclick="CloseImport"><Icon Name="close" Size="15" /></button>
+            </div>
+            <div class="modal-body duplicate-body site-transfer-body">
+                <label for="site-import-file">JSON file</label>
+                <InputFile id="site-import-file" accept=".json,application/json" OnChange="ReadImportFile" disabled="@_transferring" />
+                @if (_importError is not null)
+                {
+                    <p class="hint err" role="alert">@_importError</p>
+                }
+                @if (_importChoices.Count > 0)
+                {
+                    <label for="site-import-backend">Destination FXP backend</label>
+                    <select id="site-import-backend" @bind="_importBackend" disabled="@_transferring">
+                        <option value="">Unassigned (configure later)</option>
+                        @foreach (var backend in _importBackends)
+                        {
+                            <option value="@backend.Id">@DisplayFxpBackend(backend)</option>
+                        }
+                    </select>
+                    <div class="site-import-preview">
+                        <table class="grid">
+                            <thead><tr><th><input type="checkbox" aria-label="Select all sites" checked="@_importChoices.All(c => c.Selected)" @onchange="ToggleImportSelection" /></th><th>Site name</th><th>Sections</th></tr></thead>
+                            <tbody>
+                                @foreach (var choice in _importChoices)
+                                {
+                                    <tr @key="choice">
+                                        <td><input type="checkbox" @bind="choice.Selected" aria-label="@($"Import {choice.Config.SiteSettings.Sitename}")" /></td>
+                                        <td><input type="text" @bind="choice.Config.SiteSettings.Sitename" aria-label="Imported site name" maxlength="128" /></td>
+                                        <td>@choice.Config.Sections.Count</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <label class="site-transfer-option"><input type="checkbox" @bind="_importOverwrite" />Replace existing sites on this backend</label>
+                    @if (_importOverwrite)
+                    {
+                        <p class="hint err">Existing rules and settings will be replaced. Credentials omitted from the file are kept.</p>
+                    }
+                    <label class="site-transfer-option"><input type="checkbox" @bind="_importDisabled" />Import sites disabled</label>
+                    <p class="hint">The RaceTrade site name must match the site name on the selected FXP backend. Backend sites are not created by this import.</p>
+                }
+            </div>
+            <div class="modal-actions site-transfer-actions">
+                <button class="btn" disabled="@_transferring" @onclick="CloseImport">Cancel</button>
+                <button class="btn primary" disabled="@(_transferring || !_importChoices.Any(c => c.Selected))" @onclick="ConfirmImport"><Icon Name="save" Size="13" /><span>@(_transferring ? "Importing..." : "Import selected")</span></button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
+    private sealed class ImportChoice(SiteConfig config)
+    {
+        public SiteConfig Config { get; } = config;
+        public bool Selected { get; set; } = true;
+    }
+    private bool _showExport;
+    private string? _exportKey;
+    private bool _exportSecrets;
+    private bool _showImport;
+    private bool _transferring;
+    private string? _importError;
+    private string _importBackend = "";
+    private bool _importOverwrite;
+    private bool _importDisabled = true;
+    private List<ImportChoice> _importChoices = new();
+    private List<FxpBackend> _importBackends = new();
+    private string ExportUrl => $"sites/export?includeSecrets={_exportSecrets.ToString().ToLowerInvariant()}" +
+        (_exportKey is null ? "" : $"&key={Uri.EscapeDataString(_exportKey)}");
+
+    private void OpenExport(string? key)
+    {
+        _exportKey = key;
+        _exportSecrets = false;
+        _showExport = true;
+    }
+    private void CloseExport() => _showExport = false;
+    private void OpenImport()
+    {
+        _importChoices.Clear();
+        _importError = null;
+        _importBackend = "";
+        _importOverwrite = false;
+        _importDisabled = true;
+        _importBackends = FxpBackendConfigStore.Load().FxpBackends.ToList();
+        _showImport = true;
+    }
+    private void CloseImport()
+    {
+        if (_transferring) return;
+        _showImport = false;
+        _importChoices.Clear();
+    }
+    private async Task ReadImportFile(InputFileChangeEventArgs args)
+    {
+        _importChoices.Clear();
+        _importError = null;
+        try
+        {
+            _transferring = true;
+            await using var stream = args.File.OpenReadStream(SiteTransferService.MaxFileBytes);
+            using var reader = new System.IO.StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+            _importChoices = SiteTransfer.Parse(json).Select(c => new ImportChoice(c)).ToList();
+        }
+        catch (Exception)
+        {
+            _importError = "Could not read this file. Choose a valid RaceTrade site JSON file of 5 MB or smaller.";
+        }
+        finally { _transferring = false; }
+    }
+    private void ToggleImportSelection(ChangeEventArgs args)
+    {
+        foreach (var choice in _importChoices) choice.Selected = args.Value is true;
+    }
+    private void ConfirmImport()
+    {
+        try
+        {
+            _transferring = true;
+            _importError = null;
+            if (_importBackend.Length > 0 && !_importBackends.Any(b => b.Id == _importBackend))
+                throw new InvalidOperationException("Choose an available FXP backend.");
+            var result = SiteTransfer.Import(_importChoices.Where(c => c.Selected).Select(c => c.Config),
+                _importBackend, _importOverwrite, _importDisabled);
+            Reload();
+            _siteTestResult = new SiteConnectionTestResult(result.Errors.Count == 0,
+                $"{result.Imported} site(s) imported, {result.Skipped} existing site(s) skipped, {result.Errors.Count} failed.",
+                result.Errors.Concat(new[] { "Restart the trader after changing site settings." }).ToList());
+            _showImport = false;
+            _importChoices.Clear();
+        }
+        catch (Exception ex) { _importError = ex.Message; }
+        finally { _transferring = false; }
+    }
     private sealed record Row(string Key, string Name, string FxpBackend, string Host, string Network,
                               int Channels, int Sections, bool Disabled, bool DlOnly,
                               bool LinkedServerDisabled, bool ServerMissing, bool EffectiveDisabled,
@@ -267,7 +449,12 @@
     private string _duplicateFxpBackendTargetId = "";
     private bool _duplicating;
 
-    private bool IsBusy => _busySite is not null || _duplicating;
+    private bool IsBusy => _busySite is not null || _duplicating || _transferring;
+
+    // "Inactive" is anything that will not race: disabled by the user, its FXP
+    // backend disabled, or its backend missing (the same test the Racing/Off badge uses).
+    private int ActiveSiteCount => _rows.Count(r => !r.EffectiveDisabled);
+    private int InactiveSiteCount => _rows.Count(r => r.EffectiveDisabled);
 
     protected override void OnInitialized() => Reload();
 

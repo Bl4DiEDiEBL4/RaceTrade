@@ -356,6 +356,14 @@ namespace RaceTrade
         [JsonProperty("affil_only")]
         public bool AffilOnly { get; set; }
 
+        // Allow internal releases (INTERNAL / -GROUP_iNT) in this section. Nullable on
+        // purpose: a missing key means ALLOW so existing configs keep racing internals
+        // exactly as before. The editor sets it to false for newly created sections,
+        // since most sites ban internals from anyone but their own affils (affil
+        // sources bypass this check anyway).
+        [JsonProperty("allow_internal", NullValueHandling = NullValueHandling.Ignore)]
+        public bool? AllowInternal { get; set; }
+
         [JsonProperty("dupeRules")]
         public DupeRules DupeRules { get; set; }
 

@@ -9,6 +9,8 @@ internal static class Program
         {
             LanguageCodeIsOutputOnly();
             XxxLanguageReleaseContinuesIntoXxxGroup();
+            OptimizationRegressionTests.Run().GetAwaiter().GetResult();
+            SiteTransferRegressionTests.Run();
             Console.WriteLine("All RaceTrade.Engine regression tests passed.");
             return 0;
         }

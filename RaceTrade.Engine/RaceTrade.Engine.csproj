@@ -16,6 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="RaceTrade.Engine.Tests" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <!-- GHSA-2m69-gcr7-jv3q / CVE-2025-6965 is against the native SQLite library
          (fixed in SQLite 3.50.2), not against Microsoft.Data.Sqlite. The advisory has

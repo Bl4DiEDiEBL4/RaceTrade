@@ -104,6 +104,23 @@ namespace RaceTrader
                             cmd.ExecuteNonQuery();
                         }
 
+                        // Search cache: normalized search term -> tvmaze_id. The shows table
+                        // stores TVMaze's canonical name ("The Last Drive-In with Joe Bob
+                        // Briggs") while lookups use the name parsed from the release ("The
+                        // Last Drive In With Joe Bob Briggs"), so a name match almost never
+                        // hit and every episode of every show went to the API again.
+                        var createSearchTable = @"
+                            CREATE TABLE IF NOT EXISTS tvmaze_search_cache (
+                                search_key TEXT PRIMARY KEY,
+                                tvmaze_id INTEGER NOT NULL,
+                                last_updated TEXT NOT NULL
+                            )";
+
+                        using (var cmd = new SqliteCommand(createSearchTable, connection))
+                        {
+                            cmd.ExecuteNonQuery();
+                        }
+
                         // Create indexes
                         var createIndexes = @"
                             CREATE INDEX IF NOT EXISTS idx_imdb ON tvmaze_shows(imdb_id);
@@ -288,6 +305,35 @@ namespace RaceTrader
                                 }
                             }
                         }
+
+                        // Punctuation-insensitive match. The parsed release name has dots
+                        // turned into spaces, so "Drive-In" / "Drive In", "Mr. Robot" /
+                        // "Mr Robot", "Law & Order" / "Law and Order" never matched above.
+                        var wanted = NormalizeName(name);
+                        if (wanted.Length > 0)
+                        {
+                            var scanQuery = @"
+                                SELECT * FROM tvmaze_shows
+                                WHERE last_updated > @cutoff";
+
+                            using (var cmd = new SqliteCommand(scanQuery, connection))
+                            {
+                                cmd.Parameters.AddWithValue("@cutoff", cutoffDate);
+
+                                using (var reader = cmd.ExecuteReader())
+                                {
+                                    while (reader.Read())
+                                    {
+                                        var candidate = reader["name"]?.ToString();
+                                        if (NormalizeName(candidate) == wanted)
+                                        {
+                                            LogManager.Debug($"Cache HIT (normalized) for name: {name}");
+                                            return ParseShowFromReader(reader);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -298,6 +344,111 @@ namespace RaceTrader
             {
                 LogManager.Error($"Error reading TVMaze cache: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Lowercase alphanumerics only, with "&amp;" treated as "and", so titles compare
+        /// regardless of dots, dashes, apostrophes, colons and spacing.
+        /// </summary>
+        public static string NormalizeName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return "";
+
+            var sb = new System.Text.StringBuilder(name.Length);
+            foreach (var ch in name.Replace("&", "and"))
+            {
+                if (char.IsLetterOrDigit(ch))
+                    sb.Append(char.ToLowerInvariant(ch));
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Looks up the cached TVMaze id for a search term (normalized) and returns the
+        /// show when it is still fresh. This is what makes episode 2..N of a show, and
+        /// site 2..N of one race, resolve without touching the API.
+        /// </summary>
+        public static TVMazeShow GetCachedShowBySearchKey(string searchTerm, int cacheDays = 7)
+        {
+            var key = NormalizeName(searchTerm);
+            if (key.Length == 0)
+                return null;
+
+            try
+            {
+                int tvmazeId = 0;
+                lock (dbLock)
+                {
+                    using (var connection = new SqliteConnection(connectionString))
+                    {
+                        connection.Open();
+
+                        var cutoffDate = DateTime.Now.AddDays(-cacheDays).ToString("yyyy-MM-dd HH:mm:ss");
+                        var query = @"
+                            SELECT tvmaze_id FROM tvmaze_search_cache
+                            WHERE search_key = @key AND last_updated > @cutoff
+                            LIMIT 1";
+
+                        using (var cmd = new SqliteCommand(query, connection))
+                        {
+                            cmd.Parameters.AddWithValue("@key", key);
+                            cmd.Parameters.AddWithValue("@cutoff", cutoffDate);
+                            var result = cmd.ExecuteScalar();
+                            if (result != null && result != DBNull.Value)
+                                tvmazeId = Convert.ToInt32(result);
+                        }
+                    }
+                }
+
+                if (tvmazeId <= 0)
+                    return null;
+
+                var show = GetCachedShowById(tvmazeId, cacheDays);
+                if (show != null)
+                    LogManager.Debug($"Cache HIT (search key) for '{searchTerm}' -> {tvmazeId}");
+                return show;
+            }
+            catch (Exception ex)
+            {
+                LogManager.Error($"Error reading TVMaze search cache: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>Remembers which TVMaze show a search term resolved to.</summary>
+        public static void CacheSearchKey(string searchTerm, int tvmazeId)
+        {
+            var key = NormalizeName(searchTerm);
+            if (key.Length == 0 || tvmazeId <= 0)
+                return;
+
+            try
+            {
+                lock (dbLock)
+                {
+                    using (var connection = new SqliteConnection(connectionString))
+                    {
+                        connection.Open();
+
+                        var query = @"
+                            INSERT OR REPLACE INTO tvmaze_search_cache (search_key, tvmaze_id, last_updated)
+                            VALUES (@key, @id, @now)";
+
+                        using (var cmd = new SqliteCommand(query, connection))
+                        {
+                            cmd.Parameters.AddWithValue("@key", key);
+                            cmd.Parameters.AddWithValue("@id", tvmazeId);
+                            cmd.Parameters.AddWithValue("@now", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogManager.Error($"Error writing TVMaze search cache: {ex.Message}");
             }
         }
 

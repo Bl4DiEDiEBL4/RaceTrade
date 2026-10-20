@@ -135,6 +135,7 @@ builder.Services.AddSingleton<RacerState>();
 // the first time somebody opens the Skips page.
 builder.Services.AddSingleton<SkipStore>();
 builder.Services.AddSingleton<SiteStore>();
+builder.Services.AddSingleton<SiteTransferService>();
 builder.Services.AddSingleton<SiteConnectionTestService>();
 builder.Services.AddSingleton<FxpBackendStore>();
 builder.Services.AddHostedService<FxpBackendHardResetBacklogService>();
@@ -289,6 +290,22 @@ app.MapPost("/auth/logout", async (HttpContext ctx) =>
     await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     return Results.Redirect("/login");
 }).AllowAnonymous().DisableAntiforgery();
+
+app.MapGet("/sites/export", (HttpContext context, SiteStore store, SiteTransferService transfer,
+    string? key, bool? includeSecrets) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    try
+    {
+        var json = transfer.Export(key is null ? store.ListNames() : new[] { key }, includeSecrets == true);
+        return Results.File(System.Text.Encoding.UTF8.GetBytes(json), "application/json", "RaceTrade-sites.json");
+    }
+    catch (Exception)
+    {
+        return Results.BadRequest(new { error = "Could not export the selected sites. Verify that the sites and their stored secrets can be read." });
+    }
+}).RequireAuthorization();
 
 app.MapRazorComponents<RaceTrade.Web.Components.App>()
     .AddInteractiveServerRenderMode();

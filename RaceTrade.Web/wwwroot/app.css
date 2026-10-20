@@ -754,7 +754,80 @@ table.grid tbody tr:hover td { background: #262d3b; }
     font-size: 11.5px;
     white-space: nowrap;
 }
-.site-list-single { color: var(--accent); font-weight: 700; }
+/* A single value is bounded too: inline-block honours max-width (a td does not),
+   so even an unexpectedly long name gets an ellipsis instead of a mile-wide row. */
+.site-list-single {
+    display: inline-block;
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    color: var(--accent);
+    font-weight: 700;
+}
+/* Universal guard for every grid table: a cell may never force the table wider.
+   Unbreakable tokens (comma lists without spaces, long ids) wrap at any character
+   instead. Columns that are meant to stay on one line (time, release name, status
+   pill) keep their own explicit nowrap, which guarantees THEM their full width. */
+table.grid td {
+    overflow-wrap: anywhere;
+}
+/* Message is the column that absorbs the remaining width. Without this the
+   release column (nowrap, guaranteed) and the fixed columns took their share
+   and Message got the scraps: two words per line, rows ten lines tall. The
+   inner .msg-body carries the floor, because min-width on a td itself is
+   not reliable in auto table layout while a block inside it is. */
+.logs .msg,
+.dashboard-activity .logs .msg {
+    width: 100%;
+}
+.msg-body {
+    min-width: 280px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+/* Reason text next to the sites pill gets a floor too, so it does not wrap
+   one word per line when the table is tight. */
+.logs .targets .log-reason {
+    display: inline-block;
+    min-width: 160px;
+    vertical-align: top;
+}
+/* Variable-length columns: wrap, never hog. */
+.logs .section,
+.logs .ircchan,
+.logs .targets,
+.history .section,
+.database-table .section {
+    white-space: normal;
+    width: auto;
+}
+/* Site columns must never be allowed to force the table wider. */
+.logs .site,
+.history .site,
+.database-table .site {
+    white-space: normal;
+}
+
+/* Test release: per-site outcome table. */
+.test-sites td { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; vertical-align: top; }
+.test-sites .section { color: var(--accent); white-space: normal; }
+.test-sites .msg { width: 100%; }
+.test-sites tr.test-blocked td { opacity: .85; }
+.test-sites tr.test-race td.site { font-weight: 700; }
+/* Sites page heading: active / inactive counts next to the title. */
+.page-head h1 .site-counts {
+    margin-left: 10px;
+    font-size: 12.5px;
+    font-weight: 400;
+    color: var(--muted);
+}
+/* Dashboard > Latest Activity: the collapsible sites cell must stay narrow. */
+.dashboard-activity .logs .targets {
+    white-space: normal;
+    width: 1%;
+}
 
 /* Keep the release column on one line now that the site list no longer competes. */
 .logs .rel {
@@ -846,7 +919,8 @@ table.grid tbody tr:hover td { background: #262d3b; }
 .database-table .section {
     color: var(--accent);
     font-weight: 700;
-    white-space: nowrap;
+    /* no nowrap: these can hold lists, the SiteList component keeps them short */
+    white-space: normal;
 }
 
 .database-table .ts {
@@ -3019,6 +3093,39 @@ pre.code {
     width: min(560px, 96vw);
 }
 
+.site-import-modal {
+    width: min(720px, 96vw);
+    max-height: 90dvh;
+    display: flex;
+    flex-direction: column;
+}
+.site-import-modal .modal-body { min-height: 0; overflow-y: auto; }
+.site-transfer-body > * { min-width: 0; }
+.site-transfer-body .site-transfer-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 13px;
+    color: var(--fg);
+}
+.site-transfer-body .hint { margin: 0; overflow-wrap: anywhere; }
+.site-transfer-body input[type=file] { width: 100%; color: var(--fg); }
+.site-transfer-body input[type=file]::file-selector-button {
+    background: var(--card);
+    color: var(--fg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-right: 10px;
+    cursor: pointer;
+}
+.site-import-preview { max-height: 35dvh; overflow: auto; }
+.site-import-preview td:first-child { width: 36px; }
+.site-import-preview input[type=text] { width: 100%; min-width: 100px; }
+.site-transfer-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 16px; border-top: 1px solid var(--line); }
+
 .duplicate-body {
     display: grid;
     gap: 10px;
@@ -4397,6 +4504,7 @@ html[data-theme="light"] .fxp-text-viewer {
     border-color: rgba(17, 215, 202, .24);
     background: rgba(17, 215, 202, .08);
 }
+.mini-pill.warn { background: rgba(245,172,70,.16); color: var(--warn); border-color: rgba(245,172,70,.35); }
 
 .mini-pill.toggle {
     cursor: pointer;

@@ -118,10 +118,10 @@
                     <tr>
                         <td class="ts">@r.At.ToString("HH:mm:ss")</td>
                         <td><span class="reason-tag @ReasonClass(r.Reason)">@Label(r.Reason)</span></td>
-                        <td class="msg rel">@r.Release</td>
-                        <td class="site">@(string.IsNullOrEmpty(r.Site) ? "—" : r.Site)</td>
-                        <td class="ch">@(string.IsNullOrEmpty(r.Section) ? "—" : r.Section)</td>
-                        <td class="msg detail">@r.Detail</td>
+                        <td class="rel">@r.Release</td>
+                        <td class="site">@if (string.IsNullOrEmpty(r.Site)) { <span class="dim">-</span> } else { <SiteList Value="@r.Site" /> }</td>
+                        <td class="section">@if (string.IsNullOrEmpty(r.Section)) { <span class="dim">-</span> } else { <SiteList Value="@r.Section" Label="sections" /> }</td>
+                        <td class="msg detail"><div class="msg-body">@r.Detail</div></td>
                     </tr>
                 }
             </tbody>

@@ -21,6 +21,8 @@ public sealed class RaceHistoryStore : IDisposable
 
     private readonly object _gate = new();
     private readonly Timer _flushTimer;
+    private readonly Timer _notifyTimer;
+    private int _pendingNotification;
     private List<RaceHistoryEntry> _entries = [];
     private bool _dirty;
 
@@ -28,6 +30,11 @@ public sealed class RaceHistoryStore : IDisposable
     {
         Load();
         _flushTimer = new Timer(_ => FlushIfDirty(), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        _notifyTimer = new Timer(_ =>
+        {
+            if (Interlocked.Exchange(ref _pendingNotification, 0) != 0)
+                NotifyChanged();
+        }, null, TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(250));
     }
 
     public event Action? Changed;
@@ -49,7 +56,7 @@ public sealed class RaceHistoryStore : IDisposable
             _dirty = true;
         }
 
-        NotifyChanged();
+        Interlocked.Exchange(ref _pendingNotification, 1);
     }
 
     public RaceHistoryStats GetStats()
@@ -186,6 +193,7 @@ public sealed class RaceHistoryStore : IDisposable
 
     public void Dispose()
     {
+        _notifyTimer.Dispose();
         _flushTimer.Dispose();
         Flush();
     }

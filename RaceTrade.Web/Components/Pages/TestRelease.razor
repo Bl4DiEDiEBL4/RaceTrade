@@ -67,12 +67,46 @@
     </div>
 }
 
+@if (_siteRows.Count > 0)
+{
+    <h2>PER SITE: @_siteRows.Count(r => r.Races) would race, @_siteRows.Count(r => !r.Races) blocked</h2>
+    <div class="panel">
+        <table class="grid test-sites">
+            <thead>
+                <tr>
+                    <th>SITE</th>
+                    <th>RESULT</th>
+                    <th>FXP SECTION</th>
+                    <th>STAGE</th>
+                    <th>WHY</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _siteRows)
+                {
+                    <tr class="@(row.Races ? "test-race" : "test-blocked")">
+                        <td class="site"><SiteList Value="@row.Site" /></td>
+                        <td><span class="pill @row.PillClass">@row.Outcome</span></td>
+                        <td class="section">@row.Section</td>
+                        <td class="dim">@row.Stage</td>
+                        <td class="msg"><div class="msg-body">@row.Detail</div></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
 @code {
     private sealed record Line(string Text, string Level);
+
+    // One row per site the racer looked at: allowed (race / dl-only) or blocked, and why.
+    private sealed record SiteRow(string Site, bool Races, string Outcome, string PillClass, string Section, string Stage, string Detail);
 
     private List<string> _siteNames = new();
     private List<string> _sectionNames = new();
     private List<Line> _results = new();
+    private List<SiteRow> _siteRows = new();
     private string _site = "*";
     private string _section = "";
     private string _release = "";
@@ -104,6 +138,59 @@
     private void ClearResults()
     {
         _results.Clear();
+        _siteRows.Clear();
+    }
+
+    // "SectionDisabled" -> "Section disabled"
+    private static string Humanize(string reason)
+    {
+        if (string.IsNullOrEmpty(reason)) return "";
+        var spaced = System.Text.RegularExpressions.Regex.Replace(reason, "(?<=[a-z0-9])([A-Z])", " $1");
+        return char.ToUpperInvariant(spaced[0]) + spaced.Substring(1).ToLowerInvariant();
+    }
+
+    private void BuildSiteRows(FilterResult result, string fxpBackendSection)
+    {
+        _siteRows.Clear();
+
+        var allowed = result.AllowedSites ?? new List<string>();
+        var dlOnly = result.DlOnlySites ?? new List<string>();
+        var sections = result.SiteSections ?? new Dictionary<string, string>();
+
+        foreach (var site in allowed.OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
+        {
+            var isDl = dlOnly.Contains(site, StringComparer.OrdinalIgnoreCase);
+            var section = sections.TryGetValue(site, out var own) && !string.IsNullOrWhiteSpace(own)
+                ? own
+                : fxpBackendSection;
+            var sectionNote = string.Equals(section, fxpBackendSection, StringComparison.OrdinalIgnoreCase)
+                ? ""
+                : " (this site's own mapping)";
+
+            _siteRows.Add(new SiteRow(
+                site,
+                true,
+                isDl ? "DL ONLY" : "RACE",
+                isDl ? "dl" : "race-completed",
+                section,
+                isDl ? "Affil" : "Passed all filters",
+                isDl ? "Release group is in this site's affils: downloads only, no upload" : "Mapping, section, skiplist, filters, rules and blacklist all passed" + sectionNote));
+        }
+
+        // Per-site rejections. Announce-stage ones (no site) are already in the log above.
+        foreach (var skip in result.Skips.Where(s => !string.IsNullOrEmpty(s.Site))
+                     .OrderBy(s => s.Reason.ToString())
+                     .ThenBy(s => s.Site, StringComparer.OrdinalIgnoreCase))
+        {
+            _siteRows.Add(new SiteRow(
+                skip.Site,
+                false,
+                "BLOCKED",
+                "race-filtered",
+                string.IsNullOrWhiteSpace(skip.Section) ? "" : skip.Section,
+                Humanize(skip.Reason.ToString()),
+                skip.Detail ?? ""));
+        }
     }
 
     private void SelectSite(ChangeEventArgs e)
@@ -159,6 +246,7 @@
     private async Task Run()
     {
         _results.Clear();
+        _siteRows.Clear();
 
         if (string.IsNullOrWhiteSpace(_site) || string.IsNullOrWhiteSpace(_section) ||
             string.IsNullOrWhiteSpace(_release))
@@ -231,19 +319,11 @@
             switch (result.Status)
             {
                 case FilterStatus.Success:
-                    var dl = result.DlOnlySites ?? new List<string>();
-                    Add($"{result.AllowedSites.Count} site(s) would race:", "success");
-                    foreach (var s in result.AllowedSites)
-                    {
-                        var isDl = dl.Contains(s, StringComparer.OrdinalIgnoreCase);
-                        Add(isDl ? $"   {s}   [DL-only: affil]" : $"   {s}", isDl ? "warning" : "info");
-                    }
+                    Add($"WOULD RACE on {result.AllowedSites.Count} site(s). See the per-site table below.", "success");
                     break;
 
                 case FilterStatus.InsufficientSites:
-                    Add(result.Message, "warning");
-                    foreach (var s in result.AllowedSites ?? new List<string>())
-                        Add($"   {s}");
+                    Add($"{result.Message} See the per-site table below for why the others were blocked.", "warning");
                     break;
 
                 default:
@@ -251,20 +331,17 @@
                     break;
             }
 
-            // The per-site reasons. Previously a release rejected by twelve different site
-            // rules rendered as one line ("All sites were filtered out"), which told you
-            // nothing about which rule to change.
-            if (result.Skips.Count > 0)
+            // Announce-stage rejections (no site) stay in the log; everything per site
+            // goes into the table below, one row per site with the stage and reason.
+            var announceSkips = result.Skips.Where(s => string.IsNullOrEmpty(s.Site)).ToList();
+            if (announceSkips.Count > 0)
             {
                 Add("", "info");
-                Add($"Skipped ({result.Skips.Count}):", "warning");
-
-                foreach (var s in result.Skips)
-                {
-                    var where = string.IsNullOrEmpty(s.Site) ? "" : $"{s.Site}: ";
-                    Add($"   {where}{s.Reason} — {s.Detail}", "warning");
-                }
+                foreach (var s in announceSkips)
+                    Add($"{Humanize(s.Reason.ToString())}: {s.Detail}", "warning");
             }
+
+            BuildSiteRows(result, fxpBackendSection);
         }
         catch (Exception ex)
         {

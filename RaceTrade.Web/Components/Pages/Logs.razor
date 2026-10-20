@@ -77,13 +77,13 @@
                         <tr class="lvl-@e.Level.ToString().ToLowerInvariant()">
                             <td class="ts">@e.Timestamp.ToString("HH:mm:ss")</td>
                             <td class="ch">@e.Channel</td>
-                            <td class="site">@((MarkupString)FormatSite(e.Site))</td>
-                            <td class="ircchan">@e.Source</td>
+                            <td class="site"><SiteList Value="@e.Site" /></td>
+                            <td class="ircchan"><SiteList Value="@e.Source" Label="channels" /></td>
                             <td class="race-status @StatusClass(e.Status)">@e.Status</td>
-                            <td class="section">@((MarkupString)FormatSection(e.Section))</td>
+                            <td class="section"><SiteList Value="@e.Section" Label="sections" /></td>
                             <td class="rel">@((MarkupString)FormatRelease(e.Release))</td>
                             <td class="targets"><SiteList Value="@e.TargetSite" />@((MarkupString)FormatReason(e.Reason))</td>
-                            <td class="msg">@((MarkupString)FormatMessage(e))</td>
+                            <td class="msg"><div class="msg-body">@((MarkupString)FormatMessage(e))</div></td>
                         </tr>
                     }
                 </tbody>

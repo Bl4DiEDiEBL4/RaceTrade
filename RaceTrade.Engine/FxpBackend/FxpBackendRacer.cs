@@ -37,7 +37,7 @@ public class FxpBackendRacer
 {
     private static Dictionary<string, dynamic> FXP_BACKEND_CONFIGS = new Dictionary<string, dynamic>();
 
-    // One progress monitor per release. The same release can reach the spawn point
+    // One progress monitor per backend, release and section. The same job can reach the spawn point
     // more than once (allowed sites split across two backend groups that resolve to
     // the same server, a re-announce, etc.) and every spawn used to poll the backend
     // on its own, doubling or tripling the GET /spreadjobs load for that race.
@@ -521,13 +521,17 @@ public class FxpBackendRacer
         string fxpBackendPassword = null,
         string fxpBackendServerName = null)
     {
-        // Only one monitor per release. A second spawn for a release that is already
-        // being polled would just duplicate every GET /spreadjobs call for it.
-        if (!ActiveJobMonitors.TryAdd(releaseName, true))
+        // Use the same backend-selection rule as GetJobStats, including its default
+        // backend fallback. Separate backends must never suppress each other's polls.
+        var explicitBackend = !string.IsNullOrWhiteSpace(fxpBackendHost) &&
+            !string.IsNullOrWhiteSpace(fxpBackendPort) && !string.IsNullOrWhiteSpace(fxpBackendPassword);
+        var monitorKey = CreateJobMonitorKey(releaseName, section,
+            explicitBackend ? fxpBackendHost : null, explicitBackend ? fxpBackendPort : null);
+        if (!ActiveJobMonitors.TryAdd(monitorKey, true))
         {
             if (EngineSettings.DebugEnabled)
             {
-                LogManager.Debug($"Job '{releaseName}' is already being monitored, not starting a second poller");
+                LogManager.Debug($"Job '{releaseName}' ({section}) is already being monitored, not starting a second poller");
             }
             return;
         }
@@ -634,8 +638,20 @@ public class FxpBackendRacer
         }
         finally
         {
-            ActiveJobMonitors.TryRemove(releaseName, out _);
+            ActiveJobMonitors.TryRemove(monitorKey, out _);
         }
+    }
+
+    internal static string CreateJobMonitorKey(string releaseName, string section, string host, string port)
+    {
+        if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(port))
+        {
+            var config = FXP_BACKEND_CONFIGS.Values.FirstOrDefault();
+            host = config is null ? "" : (string)config.Host;
+            port = config is null ? "" : (string)config.Port;
+        }
+        var endpoint = string.IsNullOrWhiteSpace(host) ? "" : BuildFxpBackendEndpoint(host, port);
+        return JsonConvert.SerializeObject(new[] { endpoint, releaseName, section });
     }
 
     private static string BuildJobLogMessage(FxpBackendJobStats stats, string fallbackSection, IEnumerable<string> fallbackSites, string prefix)
@@ -1443,10 +1459,10 @@ public class FxpBackendRacer
                     }
                 }
 
-                // Check if group is in site's affils list
+                // Check if group is in site's affils list. Shared matcher so TEST and
+                // TEST_iNT count as the same affil here exactly as in the filter stage.
                 if (!string.IsNullOrEmpty(group) &&
-                    siteConfig.Affils != null &&
-                    siteConfig.Affils.Contains(group, StringComparer.OrdinalIgnoreCase))
+                    RaceHelper.GroupIsAffil(group, siteConfig.Affils))
                 {
                     if (!sitesDlOnly.Contains(site))
                     {
@@ -1463,18 +1479,31 @@ public class FxpBackendRacer
             }
 
             bool anyTransferSucceeded = false;
-            bool processedReleaseLogged = false;
-            var sitesByFxpBackend = GroupAllowedSitesByFxpBackend(allowedSites);
 
-            foreach (var fxpBackendGroup in sitesByFxpBackend)
+            // Sites that were actually included in a sent spreadjob. The Processed
+            // table lists these, not every allowed site: a site whose backend group
+            // was skipped (e.g. the only enabled site on a second cbftp, nothing to
+            // spread from) used to show up as raced when it never was.
+            var sentSites = new List<string>();
+
+            // One spreadjob per (backend server, FXP backend section). A cbftp spreadjob
+            // carries a single section name that it applies to every site in the job,
+            // so sites whose own mapping routes this release elsewhere (e.g. a VR
+            // section) must go in their own job. For the common case where every site
+            // uses the announce-side section this is exactly one job, as before.
+            var jobGroups = GroupAllowedSitesByFxpBackendAndSection(allowedSites, section, filterResult.SiteSections);
+
+            foreach (var jobGroup in jobGroups)
             {
-                if (!FXP_BACKEND_CONFIGS.TryGetValue(fxpBackendGroup.Key, out var config))
+                var jobSection = jobGroup.Section;
+
+                if (!FXP_BACKEND_CONFIGS.TryGetValue(jobGroup.BackendKey, out var config))
                 {
                     LogManager.LogFxpBackend(
                         FxpBackendEventType.Error,
-                        $"Configured FXP backend server '{fxpBackendGroup.Key}' was not found for sites: {string.Join(", ", fxpBackendGroup.Value)}",
+                        $"Configured FXP backend server '{jobGroup.BackendKey}' was not found for sites: {string.Join(", ", jobGroup.Sites)}",
                         releaseName: release,
-                        targetSite: fxpBackendGroup.Key
+                        targetSite: jobGroup.BackendKey
                     );
                     continue;
                 }
@@ -1483,7 +1512,7 @@ public class FxpBackendRacer
                 string host = config.Host;
                 string port = config.Port;
                 string password = config.Password;
-                var targetSiteKeys = fxpBackendGroup.Value;
+                var targetSiteKeys = jobGroup.Sites;
                 var targetSites = targetSiteKeys
                     .Select(RemoteSiteNameForKey)
                     .Where(s => !string.IsNullOrWhiteSpace(s))
@@ -1494,7 +1523,7 @@ public class FxpBackendRacer
                 {
                     LogManager.LogFxpBackend(
                         FxpBackendEventType.Info,
-                        $"Skipping spreadjob on FXP backend '{serverName}': only {targetSites.Count} mapped site(s) [{string.Join(", ", targetSites)}] from config(s) [{string.Join(", ", targetSiteKeys)}]. A spreadjob needs at least 2 sites on the same FXP backend server.",
+                        $"Skipping spreadjob on FXP backend '{serverName}' for section '{jobSection}': only {targetSites.Count} mapped site(s) [{string.Join(", ", targetSites)}] from config(s) [{string.Join(", ", targetSiteKeys)}]. A spreadjob needs at least 2 sites on the same FXP backend server using the same section.",
                         releaseName: release,
                         targetSite: serverName
                     );
@@ -1505,14 +1534,14 @@ public class FxpBackendRacer
                 {
                     if (EngineSettings.DebugEnabled)
                     {
-                        LogManager.Warning($"FXP backend '{fxpBackendGroup.Key}': Missing configuration");
+                        LogManager.Warning($"FXP backend '{jobGroup.BackendKey}': Missing configuration");
                     }
                     continue;
                 }
 
                 var payload = new Dictionary<string, object>
                 {
-                    { "section", section },
+                    { "section", jobSection },
                     { "name", release },
                     { "sites", targetSites }
                 };
@@ -1545,16 +1574,17 @@ public class FxpBackendRacer
 
                 LogManager.LogFxpBackend(
                     FxpBackendEventType.SpreadJobSent,
-                    "Sending spreadjob",
+                    $"Sending spreadjob (section {jobSection})",
                     releaseName: release,
                     targetSite: serverName
                 );
 
-                var transferResult = await StartSpreadjobTransfer(payload, host, port, password, serverName, release, section);
+                var transferResult = await StartSpreadjobTransfer(payload, host, port, password, serverName, release, jobSection);
 
                 if (transferResult.Success)
                 {
                     anyTransferSucceeded = true;
+                    sentSites.AddRange(targetSiteKeys.Where(s => !sentSites.Contains(s, StringComparer.OrdinalIgnoreCase)));
 
                     if (transferResult.JobId.HasValue)
                     {
@@ -1562,7 +1592,7 @@ public class FxpBackendRacer
                         _ = Task.Run(() => MonitorJobProgress(
                             release,
                             announceSite,
-                            section,
+                            jobSection,
                             targetSites,
                             cts.Token,
                             ircChannel,
@@ -1583,22 +1613,6 @@ public class FxpBackendRacer
                         );
                     }
 
-                    // Store the PLAIN release name — IsReleaseProcessedAsync does an exact
-                    // match on it, so a decorated string kills duplicate detection entirely
-                    // (re-announces would be raced again). Timestamp/section/sites have
-                    // their own columns.
-                    if (!processedReleaseLogged)
-                    {
-                        SQLiteHelper.LogProcessedRelease(
-                            releaseName: release,
-                            category: section,
-                            siteName: string.Join(",", allowedSites),
-                            dateProcessed: DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                            pretime: 0,
-                            source: announceSite
-                        );
-                        processedReleaseLogged = true;
-                    }
                 }
                 else
                 {
@@ -1628,11 +1642,78 @@ public class FxpBackendRacer
             {
                 LogManager.Error($"All FXP backend servers failed for release '{release}'");
             }
+            else
+            {
+                // Store the PLAIN release name — IsReleaseProcessedAsync does an exact
+                // match on it, so a decorated string kills duplicate detection entirely
+                // (re-announces would be raced again). Logged once per release, after
+                // every backend group, with only the sites that were really sent.
+                SQLiteHelper.LogProcessedRelease(
+                    releaseName: release,
+                    category: section,
+                    siteName: string.Join(",", sentSites),
+                    dateProcessed: DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    pretime: 0,
+                    source: announceSite
+                );
+            }
         }
         catch (Exception ex)
         {
             LogManager.Exception(ex, $"Exception in HandleTransferJob for '{release}'");
         }
+    }
+
+    private sealed class SpreadJobGroup
+    {
+        public string BackendKey { get; set; }
+        public string Section { get; set; }
+        public List<string> Sites { get; } = new List<string>();
+    }
+
+    /// <summary>
+    /// Splits the allowed sites into one spreadjob per (backend server, section).
+    /// A site listed in <paramref name="siteSections"/> goes to the job for its own
+    /// section; everything else uses <paramref name="defaultSection"/>. Group order
+    /// is first-seen, so the default-section job (the big one) is sent first.
+    /// </summary>
+    private static List<SpreadJobGroup> GroupAllowedSitesByFxpBackendAndSection(
+        IEnumerable<string> allowedSites,
+        string defaultSection,
+        IReadOnlyDictionary<string, string> siteSections)
+    {
+        var groups = new List<SpreadJobGroup>();
+        var fallbackKey = FXP_BACKEND_CONFIGS.Keys.FirstOrDefault() ?? "";
+
+        foreach (var site in allowedSites.Where(s => !string.IsNullOrWhiteSpace(s)))
+        {
+            var backendKey = ResolveFxpBackendKeyForSite(site, fallbackKey);
+            if (string.IsNullOrWhiteSpace(backendKey))
+                continue;
+
+            var jobSection = defaultSection;
+            if (siteSections != null &&
+                siteSections.TryGetValue(site, out var ownSection) &&
+                !string.IsNullOrWhiteSpace(ownSection))
+            {
+                jobSection = ownSection;
+            }
+
+            var group = groups.FirstOrDefault(g =>
+                string.Equals(g.BackendKey, backendKey, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(g.Section, jobSection, StringComparison.OrdinalIgnoreCase));
+
+            if (group == null)
+            {
+                group = new SpreadJobGroup { BackendKey = backendKey, Section = jobSection };
+                groups.Add(group);
+            }
+
+            if (!group.Sites.Contains(site, StringComparer.OrdinalIgnoreCase))
+                group.Sites.Add(site);
+        }
+
+        return groups;
     }
 
     private static Dictionary<string, List<string>> GroupAllowedSitesByFxpBackend(IEnumerable<string> allowedSites)

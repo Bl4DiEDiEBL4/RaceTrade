@@ -125,7 +125,17 @@ public static class LogManager
         var detail = LogColors.Yellow(statusText);
         if (!string.IsNullOrEmpty(quality)) detail += $" [{LogColors.Green(quality)}]";
         if (!string.IsNullOrEmpty(releaseName)) detail += $" {LogColors.Orange(releaseName)}";
-        if (!string.IsNullOrEmpty(targetSite)) detail += $" -> {LogColors.Magenta(targetSite)}";
+        // The full target list stays in the structured targetSite field (shown as a
+        // collapsible "N sites" cell in the UI). In the message text a single site is
+        // named, several become a count: 30 names inline made the Dashboard's
+        // Latest Activity unreadable.
+        if (!string.IsNullOrEmpty(targetSite))
+        {
+            var targetCount = targetSite.Split(new[] { ',', '|', ';' }, StringSplitOptions.RemoveEmptyEntries).Length;
+            detail += targetCount > 1
+                ? $" -> {LogColors.Magenta($"{targetCount} sites")}"
+                : $" -> {LogColors.Magenta(targetSite)}";
+        }
         if (!string.IsNullOrEmpty(filterReason)) detail += $" ({LogColors.Red(filterReason)})";
         if (spreadJobId.HasValue) detail += $" job#{spreadJobId}";
 

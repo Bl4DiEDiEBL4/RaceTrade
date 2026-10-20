@@ -574,6 +574,14 @@
                                 {
                                     <span class="mini-pill info" title="TVMaze filter active">TV</span>
                                 }
+                                @if (sec.AffilOnly)
+                                {
+                                    <span class="mini-pill warn" title="Affil only: only releases from this site's affil groups race here">AFFIL</span>
+                                }
+                                @if (!AllowInternalOn(sec))
+                                {
+                                    <span class="mini-pill" title="Internal releases are dropped in this section (affils excepted)">NO INT</span>
+                                }
                             </span>
                         </button>
                     }
@@ -645,6 +653,21 @@
                                         @(selected.AffilOnly
                                             ? "Never upload here. Only affil-group releases pass, download-only. Group_INT counts as the affil automatically."
                                             : "Race normally. Turn on for sections where the site only accepts its affils.")
+                                    </em>
+                                </span>
+                            </label>
+
+                            <label class="control-card toggle-card @(AllowInternalOn(selected) ? "on" : "")">
+                                <input type="checkbox"
+                                       checked="@AllowInternalOn(selected)"
+                                       @onchange="e => selected.AllowInternal = (bool)(e.Value ?? false)" />
+                                <span class="switch-track"></span>
+                                <span class="control-text">
+                                    <strong>Allow internal</strong>
+                                    <em>
+                                        @(AllowInternalOn(selected)
+                                            ? "INTERNAL and Group_iNT releases race here like any other."
+                                            : "INTERNAL and Group_iNT releases are dropped here. This site's own affils are never affected, their internals still count as the source.")
                                     </em>
                                 </span>
                             </label>
@@ -839,7 +862,7 @@
                                             <label>Blocked genres</label>
                                             <div>
                                                 <input type="text" value='@GetListText(selected.Tvmaze, "blocked_genres")'
-                                                       @oninput='e => SetListText(selected.Tvmaze, "blocked_genres", e.Value?.ToString())' placeholder="Reality, Talk Show" />
+                                                       @oninput='e => SetListText(selected.Tvmaze, "blocked_genres", e.Value?.ToString())' placeholder="Drama, Romance" />
                                                 <div class="lookup-actions">
                                                     <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "blocked_genres", TvmazeGenres)'>All</button>
                                                     <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "blocked_genres", Array.Empty<string>())'>None</button>
@@ -857,6 +880,7 @@
                                                         </label>
                                                     }
                                                 </div>
+                                                <div class="fh">Genres only (Drama, Comedy, Crime...). Talk Show, Reality, Game Show, News, Documentary are show TYPES, not genres: use Blocked show types below for those.</div>
                                             </div>
 
                                             <label>Allowed networks</label>
@@ -907,7 +931,7 @@
                                                 <div class="fh">Country of the show's network or web channel (ISO code). The reliable way to enforce "native English spoken": TVMaze only lists one language per show, so a dual-audio South African show still says English, but its country is ZA. Empty = allow all.</div>
                                             </div>
 
-                                            <label>Show types</label>
+                                            <label>Allowed show types</label>
                                             <div>
                                                 <input type="text" value='@GetListText(selected.Tvmaze, "allowed_show_types")'
                                                        @oninput='e => SetListText(selected.Tvmaze, "allowed_show_types", e.Value?.ToString())' placeholder="Scripted" />
@@ -928,7 +952,31 @@
                                                         </label>
                                                     }
                                                 </div>
-                                                <div class="fh">e.g. Scripted, Reality, Documentary.</div>
+                                                <div class="fh">Allow list: only these types race. Set just Scripted to drop everything else. Empty = allow all.</div>
+                                            </div>
+
+                                            <label>Blocked show types</label>
+                                            <div>
+                                                <input type="text" value='@GetListText(selected.Tvmaze, "blocked_show_types")'
+                                                       @oninput='e => SetListText(selected.Tvmaze, "blocked_show_types", e.Value?.ToString())' placeholder="Talk Show, Reality, Game Show" />
+                                                <div class="lookup-actions">
+                                                    <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "blocked_show_types", TvmazeShowTypes)'>All</button>
+                                                    <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "blocked_show_types", Array.Empty<string>())'>None</button>
+                                                </div>
+                                                <div class="check-chip-list compact">
+                                                    @foreach (var typeOption in OptionsWithSelected(TvmazeShowTypes, selected.Tvmaze, "blocked_show_types"))
+                                                    {
+                                                        var option = typeOption;
+                                                        var isChecked = ListContains(selected.Tvmaze, "blocked_show_types", option);
+                                                        <label class="check-chip @(isChecked ? "checked" : "")">
+                                                            <input type="checkbox"
+                                                                   checked="@isChecked"
+                                                                   @onchange='e => SetListItem(selected.Tvmaze, "blocked_show_types", option, (bool)(e.Value ?? false))' />
+                                                            <span>@option</span>
+                                                        </label>
+                                                    }
+                                                </div>
+                                                <div class="fh">Block list: these types are dropped, everything else races. Use this (not Blocked genres) for Talk Show, Reality, Game Show, News, Documentary, Variety.</div>
                                             </div>
 
                                             <label>Allowed languages</label>
@@ -1386,7 +1434,7 @@
                                     <label>Blocked genres</label>
                                     <div>
                                         <input type="text" value='@GetListText(selected.Tvmaze, "blocked_genres")'
-                                               @oninput='e => SetListText(selected.Tvmaze, "blocked_genres", e.Value?.ToString())' placeholder="Reality, Talk Show" />
+                                               @oninput='e => SetListText(selected.Tvmaze, "blocked_genres", e.Value?.ToString())' placeholder="Drama, Romance" />
                                         <div class="lookup-actions">
                                             <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "blocked_genres", TvmazeGenres)'>All</button>
                                             <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "blocked_genres", Array.Empty<string>())'>None</button>
@@ -1404,6 +1452,7 @@
                                                 </label>
                                             }
                                         </div>
+                                        <div class="fh">Genres only (Drama, Comedy, Crime...). Talk Show, Reality, Game Show, News, Documentary are show TYPES, not genres: use Blocked show types below for those.</div>
                                     </div>
 
                                     <label>Allowed networks</label>
@@ -1454,7 +1503,7 @@
                                         <div class="fh">Country of the show's network or web channel (ISO code). The reliable way to enforce "native English spoken": TVMaze only lists one language per show, so a dual-audio South African show still says English, but its country is ZA. Empty = allow all.</div>
                                     </div>
 
-                                    <label>Show types</label>
+                                    <label>Allowed show types</label>
                                     <div>
                                         <input type="text" value='@GetListText(selected.Tvmaze, "allowed_show_types")'
                                                @oninput='e => SetListText(selected.Tvmaze, "allowed_show_types", e.Value?.ToString())' placeholder="Scripted" />
@@ -1475,7 +1524,31 @@
                                                 </label>
                                             }
                                         </div>
-                                        <div class="fh">e.g. Scripted, Reality, Documentary.</div>
+                                        <div class="fh">Allow list: only these types race. Set just Scripted to drop everything else. Empty = allow all.</div>
+                                    </div>
+
+                                    <label>Blocked show types</label>
+                                    <div>
+                                        <input type="text" value='@GetListText(selected.Tvmaze, "blocked_show_types")'
+                                               @oninput='e => SetListText(selected.Tvmaze, "blocked_show_types", e.Value?.ToString())' placeholder="Talk Show, Reality, Game Show" />
+                                        <div class="lookup-actions">
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "blocked_show_types", TvmazeShowTypes)'>All</button>
+                                            <button type="button" class="btn sm" @onclick='() => SetList(selected.Tvmaze, "blocked_show_types", Array.Empty<string>())'>None</button>
+                                        </div>
+                                        <div class="check-chip-list compact">
+                                            @foreach (var typeOption in OptionsWithSelected(TvmazeShowTypes, selected.Tvmaze, "blocked_show_types"))
+                                            {
+                                                var option = typeOption;
+                                                var isChecked = ListContains(selected.Tvmaze, "blocked_show_types", option);
+                                                <label class="check-chip @(isChecked ? "checked" : "")">
+                                                    <input type="checkbox"
+                                                           checked="@isChecked"
+                                                           @onchange='e => SetListItem(selected.Tvmaze, "blocked_show_types", option, (bool)(e.Value ?? false))' />
+                                                    <span>@option</span>
+                                                </label>
+                                            }
+                                        </div>
+                                        <div class="fh">Block list: these types are dropped, everything else races. Use this (not Blocked genres) for Talk Show, Reality, Game Show, News, Documentary, Variety.</div>
                                     </div>
 
                                     <label>Options</label>
@@ -2606,6 +2679,7 @@
                 {
                     IrcName = name,
                     Rules = new List<string>(),
+                    AllowInternal = false,
                     Tags = new List<Tag>
                     {
                         new Tag
@@ -2649,9 +2723,15 @@
                _fxpBackendServers.FirstOrDefault();
     }
 
+    // Missing key = allowed, so configs from before this setting existed keep racing
+    // internals exactly as they did. Only explicitly false drops them.
+    private static bool AllowInternalOn(Section sec) => sec.AllowInternal != false;
+
     private void AddSection()
     {
-        _cfg.Sections.Add(new Section { Tags = new List<Tag>(), Rules = new List<string>() });
+        // New sections start with internals off: most sites ban INTERNAL / Group_iNT
+        // from anyone but their own affils, and affil sources bypass the check anyway.
+        _cfg.Sections.Add(new Section { Tags = new List<Tag>(), Rules = new List<string>(), AllowInternal = false });
         _selectedSectionIndex = _cfg.Sections.Count - 1;
     }
 

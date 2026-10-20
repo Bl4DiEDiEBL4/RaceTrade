@@ -44,7 +44,16 @@ public static class RaceHelper
         private const RegexOptions CI = RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant;
 
         public static readonly Regex Year = new(@"(19\d{2}|20\d{2})", RegexOptions.Compiled);
-        public static readonly Regex Resolution = new(@"[\s._-](720P|1080P|1280P|1440P|1920P|2160P|2300P|2700P|2880P)[\s._-]", CI);
+        // Every video height seen on predb, progressive or interlaced: SD (240-576),
+        // HD (720/1080), QHD (1440), UHD (2160) and the VR heights (1600 up to 8192,
+        // e.g. 3840p/4096p for VR180). The old list stopped at 2880P, so a 4096p VR
+        // release had NO resolution and "[resolution] !isin 1080p,720p DROP" was
+        // silently skipped. Deliberately a whitelist and not \d{3,4}[PI]: MP3 names
+        // carry product codes like _430P- / _560P- (TM Century, USA Pop Express)
+        // that a generic pattern would tag as a resolution.
+        public static readonly Regex Resolution = new(
+            @"[\s._-]((?:240|288|360|480|540|576|720|1080|1280|1440|1600|1920|2048|2160|2300|2700|2880|2900|3072|3200|3840|4096|4320|5400|5760|6144|7680|8192)[PI])[\s._-]",
+            CI);
         public static readonly Regex SourceBluray = new(@"[\s._-](((720p|1080p)\.(PURE\.)?M?BLURAY)|COMPLETE(\.PURE)?\.M?BLURAY)", CI);
         public static readonly Regex SourceUhdBluray = new(@"[\s._-]((2160p\.UHD\.M?BLURAY)|COMPLETE(\.UHD)?\.M?BLURAY)", CI);
         public static readonly Regex SourceSd = new(@"[\s._-](DVDRIP|BDRIP)", CI);
@@ -648,12 +657,18 @@ public static class RaceHelper
             // Sites where the release group is affiliated: they still race but only
             // as download-only (mirrors the racer's affil handling in FxpBackendRacer).
             var dlOnlySites = new List<string>();
+
+            // Sites whose own mapping routes this release to a different FXP backend
+            // section than the announce-side one (see FilterResult.SiteSections).
+            var siteSections = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var releaseGroup = ExtractGroupFromRelease(releaseName);
 
             // Pretime is a property of the release, not of the site: query once and
             // reuse for every site's threshold comparison.
             int cachedPretimeDiff = -1;
             bool pretimeQueried = false;
+
+            var metadata = new ReleaseMetadataLookup(releaseName);
 
             // Per-call engine: rules are (re)loaded per site immediately before Evaluate.
             var rulesEngine = new RulesEngine();
@@ -756,6 +771,58 @@ public static class RaceHelper
                     var configSection = siteConfig["sections"]?.FirstOrDefault(s =>
                         string.Equals((string)s["irc_name"], ircSectionToCheck, StringComparison.OrdinalIgnoreCase));
 
+                    // Affil source: the release group is an affil of THIS site, so the
+                    // release was pre'd here and this site is the race's source, not a
+                    // target. Its skiplist, blacklist, rules and lookup filters exist to
+                    // judge OTHER groups' releases (nearly every site bans e.g. INTERNAL
+                    // from outsiders while its own affils pre internals all day). Running
+                    // the source through them dropped it from the job, and a spreadjob
+                    // with no site that has the release races nowhere. Goes in as DL-only.
+                    var siteAffils = siteConfig["affils"]?.ToObject<List<string>>() ?? new List<string>();
+                    if (!string.IsNullOrEmpty(releaseGroup) && GroupIsAffil(releaseGroup, siteAffils))
+                    {
+                        LogManager.LogFxpBackend(
+                            FxpBackendEventType.Info,
+                            $"[{LogColors.Magenta(siteName)}] group [{LogColors.Green(releaseGroup)}] is an affil here: source site, filters bypassed, download-only ✓",
+                            releaseName: releaseName,
+                            targetSite: siteName);
+
+                        allowedSites.Add(siteName);
+                        dlOnlySites.Add(siteName);
+
+                        // cb reads the release FROM this site, so its own section mapping
+                        // matters just as much as for a target (see SiteSections).
+                        try
+                        {
+                            var sourceSection = GetMappedFxpBackendSection(ircSectionToCheck, releaseName, siteConfig, "", "");
+                            if (!string.IsNullOrWhiteSpace(sourceSection) &&
+                                !string.Equals(sourceSection, fxpBackendSection, StringComparison.OrdinalIgnoreCase))
+                            {
+                                siteSections[siteName] = sourceSection;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LogManager.Debug($"[{siteName}]: could not resolve own FXP backend section for affil source: {ex.Message}");
+                        }
+                        continue;
+                    }
+
+                    // Internal releases (INTERNAL / -GROUP_iNT) are banned on most sites
+                    // for anyone but their own affils (handled above). A section can say
+                    // so with allow_internal=false instead of everyone adding a DROP rule.
+                    // Missing key means allow, so existing configs keep racing as before.
+                    if (configSection?["allow_internal"]?.Value<bool?>() == false &&
+                        string.Equals(baseInput.TryGetValue("internal", out var internalFlag) ? internalFlag : "", "true", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LogManager.LogFxpBackend(
+                            FxpBackendEventType.Info,
+                            $"[{LogColors.Magenta(siteName)}] Section [{ircSectionToCheck}] does not allow internal releases, skipping [{LogColors.Orange(releaseName)}]");
+                        Skip(siteName, SkipReason.InternalNotAllowed,
+                            $"section '{ircSectionToCheck}' does not allow internal releases (Allow internal is off)", ircSectionToCheck);
+                        continue;
+                    }
+
                     var releaseSkiplists = configSection?["skiplists"]?.ToObject<List<string>>() ?? new List<string>();
                     if (MatchesReleaseSkiplist(releaseName, releaseSkiplists, out var skipPattern))
                     {
@@ -847,7 +914,7 @@ public static class RaceHelper
                         {
                             LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Checking filters");
 
-                            var imdbBlock = await ValidateIMDB(releaseName, imdb, siteName);
+                            var imdbBlock = await ValidateIMDB(releaseName, imdb, siteName, metadata);
                             if (imdbBlock != null)
                             {
                                 LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Filtered");
@@ -864,7 +931,7 @@ public static class RaceHelper
                         {
                             LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Checking filters");
 
-                            var tvmazeBlock = await ValidateTVMaze(releaseName, tvmaze, siteName);
+                            var tvmazeBlock = await ValidateTVMaze(releaseName, tvmaze, siteName, metadata);
                             if (tvmazeBlock != null)
                             {
                                 LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Filtered");
@@ -922,6 +989,30 @@ public static class RaceHelper
 
                     allowedSites.Add(siteName);
 
+                    // Resolve the section THIS site wants, from its own tags and trigger
+                    // regexes (exactly what the release tester evaluates). The announce
+                    // side only tells us the content; where it lives can differ per site,
+                    // e.g. one site keeps VR in "-XXX-PAYSITE-VR" while the rest use
+                    // "XXX-PAYSITE". The racer sends one spreadjob per distinct section.
+                    try
+                    {
+                        var ownSection = GetMappedFxpBackendSection(ircSectionToCheck, releaseName, siteConfig, "", "");
+                        if (!string.IsNullOrWhiteSpace(ownSection) &&
+                            !string.Equals(ownSection, fxpBackendSection, StringComparison.OrdinalIgnoreCase))
+                        {
+                            siteSections[siteName] = ownSection;
+                            LogManager.LogFxpBackend(
+                                FxpBackendEventType.Info,
+                                $"[{LogColors.Magenta(siteName)}]: own mapping routes [{LogColors.Orange(releaseName)}] to [{LogColors.Green(ownSection)}] instead of [{LogColors.Green(fxpBackendSection)}]",
+                                releaseName: releaseName,
+                                targetSite: siteName);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogManager.Debug($"[{siteName}]: could not resolve own FXP backend section, using '{fxpBackendSection}': {ex.Message}");
+                    }
+
                     // Affil = download-only: if the release group is affiliated with
                     // this site, mark it DL-Only so the UI/test reflects reality.
                     if (!string.IsNullOrEmpty(releaseGroup))
@@ -963,11 +1054,20 @@ public static class RaceHelper
                     FilterResult.InsufficientSites(releaseName, fxpBackendSection, allowedSites.Count, allowedSites));
             }
 
-            LogManager.LogFxpBackend(FxpBackendEventType.Info, $"{allowedSites.Count} site(s) allowed for release [{LogColors.Orange(releaseName)}]: [{LogColors.Magenta(string.Join(", ", allowedSites))}]");
+            // The site list goes in targetSite (rendered as a collapsible "N sites" cell
+            // on the Logs page) instead of inline in the message, where 30 names made
+            // the row unreadable.
+            LogManager.LogFxpBackend(
+                FxpBackendEventType.Info,
+                $"{allowedSites.Count} site(s) allowed for release [{LogColors.Orange(releaseName)}]",
+                releaseName: releaseName,
+                targetSite: string.Join(",", allowedSites));
 
             // Carried on success too: a race that ran on 2 of 6 sites still raises the
             // question of what happened to the other four.
-            return WithSkips(FilterResult.Success(releaseName, fxpBackendSection, allowedSites, dlOnlySites));
+            var success = FilterResult.Success(releaseName, fxpBackendSection, allowedSites, dlOnlySites);
+            success.SiteSections = siteSections;
+            return WithSkips(success);
         }
         catch (Exception ex)
         {
@@ -1372,6 +1472,35 @@ public static class RaceHelper
 
             var configSection = siteConfig["sections"]?.FirstOrDefault(s =>
                 string.Equals((string)s["irc_name"], ircSection, StringComparison.OrdinalIgnoreCase));
+
+            // 2b) Affil source: same exemption as the racer. The group pre'd this here,
+            //     so the site is the source and its filters do not apply to it.
+            {
+                var affilList = siteConfig["affils"]?.ToObject<List<string>>() ?? new List<string>();
+                var grp = ExtractGroupFromRelease(releaseName);
+                if (!string.IsNullOrEmpty(grp) && GroupIsAffil(grp, affilList))
+                {
+                    Step("Affil source", true, $"group '{grp}' is an affil of this site: source of the race, skiplist, filters, rules and blacklist are bypassed, download-only");
+                    result.Allowed = true;
+                    result.Summary = "Would take part as the affil source (download-only).";
+                    return result;
+                }
+            }
+
+            // 2c) Allow internal (missing = allowed, so old configs are unchanged).
+            if (configSection?["allow_internal"]?.Value<bool?>() == false)
+            {
+                var attrs = BuildRuleInput(releaseName);
+                if (attrs.TryGetValue("internal", out var internalFlag) &&
+                    string.Equals(internalFlag, "true", StringComparison.OrdinalIgnoreCase))
+                {
+                    Step("Internal", false, "internal release and this section has Allow internal off");
+                    result.Allowed = false;
+                    result.Summary = "Blocked: internal releases are not allowed in this section.";
+                    return result;
+                }
+                Step("Internal", true, "not an internal release");
+            }
 
             // 3) Section release skiplist.
             var releaseSkiplists = configSection?["skiplists"]?.ToObject<List<string>>() ?? new List<string>();
@@ -1790,7 +1919,8 @@ public static class RaceHelper
     /// Returns null when it passes, otherwise the reason it was blocked — the reason is
     /// what makes the skip feed useful, and a bare bool threw it away.
     /// </summary>
-    private static async Task<string> ValidateIMDB(string releaseName, JObject config, string siteName)
+    internal static async Task<string> ValidateIMDB(string releaseName, JObject config, string siteName,
+        ReleaseMetadataLookup metadata = null)
     {
         try
         {
@@ -1803,7 +1933,7 @@ public static class RaceHelper
                 return null;
             }
 
-            var releaseInfo = await IMDBHelper.EnrichReleaseInfo(releaseName);
+            var releaseInfo = await (metadata?.GetMovieAsync() ?? IMDBHelper.EnrichReleaseInfo(releaseName));
 
             if (releaseInfo?.Movie == null)
             {
@@ -1945,7 +2075,8 @@ public static class RaceHelper
     /// Validates release against TVMaze filters.
     /// Returns null when it passes, otherwise the reason it was blocked.
     /// </summary>
-    private static async Task<string> ValidateTVMaze(string releaseName, JObject config, string siteName)
+    internal static async Task<string> ValidateTVMaze(string releaseName, JObject config, string siteName,
+        ReleaseMetadataLookup metadata = null)
     {
         try
         {
@@ -1963,7 +2094,7 @@ public static class RaceHelper
             var cacheDays = config["cache_duration_days"]?.Value<int>() ?? 7;
             if (cacheDays < 1) cacheDays = 7;
 
-            var releaseInfo = await TVMazeHelper.EnrichReleaseInfo(releaseName, cacheDays);
+            var releaseInfo = await (metadata?.GetShowAsync(cacheDays) ?? TVMazeHelper.EnrichReleaseInfo(releaseName, cacheDays));
 
             if (releaseInfo?.Show == null)
             {
@@ -2149,6 +2280,20 @@ public static class RaceHelper
                 {
                     LogManager.Warning($"[{siteName}] [TVMaze] ❌ Show type '{showType}' not allowed");
                     return $"Show type '{showType}' not allowed";
+                }
+            }
+
+            // Block-list counterpart. Talk Show, Reality, Game Show etc. are TVMaze show
+            // TYPES, not genres, so "Blocked genres" never catches them; this does.
+            var blockedShowTypes = GetStringList(config, "blocked_show_types", "blocked_types", "blocked_showtypes");
+            if (blockedShowTypes.Any())
+            {
+                var showType = show.Type ?? "";
+                if (!string.IsNullOrWhiteSpace(showType) &&
+                    blockedShowTypes.Contains(showType, StringComparer.OrdinalIgnoreCase))
+                {
+                    LogManager.Warning($"[{siteName}] [TVMaze] ❌ Show type '{showType}' blocked");
+                    return $"Show type '{showType}' blocked";
                 }
             }
 

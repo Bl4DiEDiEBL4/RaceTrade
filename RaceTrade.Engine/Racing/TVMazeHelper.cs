@@ -58,6 +58,14 @@ namespace RaceTrader
         private static DateTime lastRequestTime = DateTime.MinValue;
         private static readonly TimeSpan minRequestInterval = TimeSpan.FromMilliseconds(500);
 
+        // In-flight lookups by normalized show name. One race checks every target site
+        // in turn and each TVMaze-enabled site asks for the same show; with a cache
+        // miss that used to mean one API call (plus the 500 ms rate-limit gap) PER
+        // SITE for the same release. Now the first caller does the lookup and the
+        // rest await the same task.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<TVMazeShow>> inFlightShowLookups =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, Task<TVMazeShow>>();
+
         static TVMazeHelper()
         {
             httpClient.DefaultRequestHeaders.Add("User-Agent", "RaceTrader/1.0");
@@ -191,13 +199,38 @@ namespace RaceTrader
             if (string.IsNullOrEmpty(showName))
                 return null;
 
-            // Try cache first
+            // 1) Search-key cache: "what did this exact search term resolve to last time".
+            //    Independent of how TVMaze spells the title, so it hits for every
+            //    later episode and every later site.
+            var bySearchKey = TVMazeCache.GetCachedShowBySearchKey(showName, cacheDays);
+            if (bySearchKey != null)
+                return bySearchKey;
+
+            // 2) Name match against the shows table (exact, fuzzy, then punctuation
+            //    insensitive). Remember the mapping so step 1 hits next time.
             var cached = TVMazeCache.GetCachedShowByName(showName, cacheDays);
             if (cached != null)
             {
+                TVMazeCache.CacheSearchKey(showName, cached.Id);
                 return cached;
             }
 
+            // 3) API, but only one request per show at a time: concurrent callers for
+            //    the same show (the other target sites of this race) share the task.
+            var key = TVMazeCache.NormalizeName(showName);
+            var lookup = inFlightShowLookups.GetOrAdd(key, _ => FetchShowFromApi(showName));
+            try
+            {
+                return await lookup;
+            }
+            finally
+            {
+                inFlightShowLookups.TryRemove(key, out _);
+            }
+        }
+
+        private static async Task<TVMazeShow> FetchShowFromApi(string showName)
+        {
             try
             {
                 await RateLimitDelay();
@@ -210,10 +243,11 @@ namespace RaceTrader
                     var json = await response.Content.ReadAsStringAsync();
                     var show = JsonConvert.DeserializeObject<TVMazeShow>(json);
 
-                    // Cache the result
+                    // Cache the result, and which search term led to it.
                     if (show != null)
                     {
                         TVMazeCache.CacheShow(show);
+                        TVMazeCache.CacheSearchKey(showName, show.Id);
                     }
 
                     return show;

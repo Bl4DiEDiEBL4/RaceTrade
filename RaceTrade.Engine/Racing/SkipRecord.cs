@@ -31,6 +31,7 @@ namespace RaceTrade
         Imdb,
         TvMaze,
         Rules,               // rule engine returned DROP
+        InternalNotAllowed,  // INTERNAL / _iNT release and the section has Allow internal off
 
         // --- after the per-site loop ---
         NoSites,             // every site was filtered out

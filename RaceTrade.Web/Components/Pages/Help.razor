@@ -192,6 +192,8 @@
             <li>Add <strong>FXP backend Mapping Rules</strong> under a mapping when only that FXP backend target needs extra filtering.</li>
             <li>Add <strong>Section Rules</strong> when every mapping in this IRC section should use the same filter.</li>
             <li>Enable IMDB or TVMaze filters only when that section needs lookup checks; their genre, network, country and show type lists are under <strong>Lookup filters</strong>.</li>
+            <li><strong>Affils are the source, not a target.</strong> When the release group is one of a site's affils (Group and Group_iNT count as the same), that site skips its skiplist, blacklist, rules and lookup filters for the release and joins the race download-only. The filters judge other groups' releases; the affil already pre'd it there. Without this, a site banning INTERNAL would drop its own affil's pre and the whole race had no source.</li>
+            <li><strong>Allow internal</strong> per section: off drops INTERNAL and Group_iNT releases without needing a DROP rule. New sections start off, sections from before this setting keep allowing internals until you change them. Affil sources are never affected.</li>
             <li>For "native English spoken" site rules use TVMaze <strong>Allowed countries</strong> (US, GB, CA, AU, ...), not just English only. TVMaze lists one language per show, so a dual-audio show from South Africa still reads as English, but its network country is ZA and the country filter catches it. Nuke reasons like "Reality type" or "Talk Show type" are TVMaze <strong>show types</strong>, not genres: set <strong>Show types</strong> to Scripted for those.</li>
             <li>Save the site after changing routing or filters.</li>
         </ol>

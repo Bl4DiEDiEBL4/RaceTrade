@@ -26,6 +26,20 @@ namespace RaceTrade
         public List<string> DlOnlySites { get; set; } = new List<string>();
 
         /// <summary>
+        /// FXP backend section each allowed site should receive, resolved from THAT
+        /// site's own mappings and trigger regexes (site key -> section). Only sites
+        /// whose section differs from <see cref="FxpBackendSection"/> are listed.
+        ///
+        /// Before this existed the section was decided once from the announcing site
+        /// and sent to every target. A site that routes VR releases to its own
+        /// "-XXX-PAYSITE-VR" section got them dumped into "XXX-PAYSITE" and nuked,
+        /// while the release tester (which evaluates the site's own triggers) said
+        /// the routing was fine. Never null.
+        /// </summary>
+        public Dictionary<string, string> SiteSections { get; set; } =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
         /// Status of the filter operation.
         /// </summary>
         public FilterStatus Status { get; set; }

@@ -64,8 +64,8 @@
                             <tr>
                                 <td class="ts">@e.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")</td>
                                 <td><span class="@StatusClass(e.Status)">@e.Status</span></td>
-                                <td class="site">@e.Site</td>
-                                <td>@e.Section</td>
+                                <td class="site"><SiteList Value="@e.Site" /></td>
+                                <td class="section"><SiteList Value="@e.Section" Label="sections" /></td>
                                 <td class="release-name">@e.Release</td>
                                 <td class="dim detail-cell">
                                     @if (ShowReason(e.Status) && !string.IsNullOrWhiteSpace(e.Reason))
