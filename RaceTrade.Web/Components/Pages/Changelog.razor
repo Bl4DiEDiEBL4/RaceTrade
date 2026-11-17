@@ -10,7 +10,7 @@
     <section class="doc-hero">
         <div>
             <span class="doc-kicker">Current branch</span>
-            <h2>v2.1.7</h2>
+            <h2>v2.1.8</h2>
             <p>
                 This page tracks user-facing RaceTrade changes for the new web build.
             </p>
@@ -19,6 +19,16 @@
 
     <section class="timeline">
         <article class="timeline-item current">
+            <div class="timeline-version">v2.1.8</div>
+            <div class="timeline-date">November 2026</div>
+            <ul>
+                <li>Fixed duplicate race submissions when multiple Prespam Bots announce the same release close together, including delayed announces arriving just after the first submission finishes. Failed submissions remain retryable.</li>
+                <li>Fixed IMDB and TVMaze lookup-error checkboxes to reflect the engine's actual defaults, so the Site Editor correctly shows whether releases may race when metadata is unavailable.</li>
+                <li>Improved live logs and Test Release results to distinguish genuine metadata passes from bypassed filters and releases allowed because lookup-error fallback is enabled.</li>
+                <li>Improved IMDB and TVMaze database searching so full release names can be pasted to find their cached movie or show titles.</li>
+            </ul>
+        </article>
+        <article class="timeline-item">
             <div class="timeline-version">v2.1.7</div>
             <div class="timeline-date">October 2026</div>
             <ul>

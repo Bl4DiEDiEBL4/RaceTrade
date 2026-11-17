@@ -23,7 +23,7 @@
                 <button type="button" class="@TabClass(DbTab.Imdb)" @onclick="() => SelectTab(DbTab.Imdb)">IMDB</button>
                 <button type="button" class="@TabClass(DbTab.TvMaze)" @onclick="() => SelectTab(DbTab.TvMaze)">TVMaze</button>
             </div>
-            <input type="text" class="database-search" placeholder="Search release, section, title, site..." @bind="_query" @bind:event="oninput" @bind:after="SearchChanged" />
+            <input type="text" class="database-search" placeholder="@(_tab == DbTab.Imdb || _tab == DbTab.TvMaze ? "Search title, id, genre, language... or paste a release name" : "Search release, section, site...")" @bind="_query" @bind:event="oninput" @bind:after="SearchChanged" />
             <select class="page-size" @bind="_limit" @bind:after="Refresh">
                 <option value="50">50 rows</option>
                 <option value="100">100 rows</option>
@@ -209,8 +209,35 @@
 
         _pretimes = _tab == DbTab.Pretimes ? SQLiteHelper.SearchPretimes(_query, _limit) : new();
         _processed = _tab == DbTab.Processed ? SQLiteHelper.SearchProcessedReleases(_query, _limit) : new();
-        _imdb = _tab == DbTab.Imdb ? DatabaseBrowser.SearchImdbMovies(_query, _limit) : new();
-        _tvmaze = _tab == DbTab.TvMaze ? DatabaseBrowser.SearchTvMazeShows(_query, _limit) : new();
+        _imdb = _tab == DbTab.Imdb ? DatabaseBrowser.SearchImdbMovies(LookupQuery(_query, movie: true), _limit) : new();
+        _tvmaze = _tab == DbTab.TvMaze ? DatabaseBrowser.SearchTvMazeShows(LookupQuery(_query, movie: false), _limit) : new();
+    }
+
+    // The IMDB / TVMaze caches store titles, not release names. When the query looks
+    // like a release name (dots, no spaces), run it through the same title extraction
+    // the lookups use, so pasting Survive.Style.5.2004.BDRip.x264-RUSTED finds the
+    // "Survive Style 5" row instead of nothing.
+    private static string LookupQuery(string query, bool movie)
+    {
+        var q = query?.Trim() ?? "";
+        if (q.Length == 0 || q.Contains(' ') || !q.Contains('.'))
+            return q;
+
+        try
+        {
+            // Keep ordinary dotted titles (e.g. Mr.Robot) as literal searches.
+            if (movie ? !RaceTrader.IMDBHelper.ExtractYearFromRelease(q).HasValue
+                      : string.IsNullOrWhiteSpace(RaceTrader.TVMazeHelper.ExtractEpisodeToken(q)))
+                return q;
+            var title = movie
+                ? RaceTrader.IMDBHelper.ExtractTitleFromRelease(q)
+                : RaceTrader.TVMazeHelper.ExtractShowNameFromRelease(q);
+            return string.IsNullOrWhiteSpace(title) ? q : title.Trim();
+        }
+        catch
+        {
+            return q;
+        }
     }
 
     private string TabClass(DbTab tab) => _tab == tab ? "tab active" : "tab";

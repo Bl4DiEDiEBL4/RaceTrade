@@ -914,7 +914,8 @@ public static class RaceHelper
                         {
                             LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Checking filters");
 
-                            var imdbBlock = await ValidateIMDB(releaseName, imdb, siteName, metadata);
+                            var imdbNotes = new List<string>();
+                            var imdbBlock = await ValidateIMDB(releaseName, imdb, siteName, metadata, imdbNotes);
                             if (imdbBlock != null)
                             {
                                 LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Filtered");
@@ -922,7 +923,10 @@ public static class RaceHelper
                                 continue;
                             }
 
-                            LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [IMDB] Passed ✓");
+                            LogManager.LogFxpBackend(FxpBackendEventType.Info,
+                                imdbNotes.Count > 0
+                                    ? $"[{LogColors.Magenta(siteName)}] [IMDB] ⚠ {string.Join("; ", imdbNotes)}"
+                                    : $"[{LogColors.Magenta(siteName)}] [IMDB] Passed ✓");
                         }
 
                         // TVMaze Check
@@ -931,7 +935,8 @@ public static class RaceHelper
                         {
                             LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Checking filters");
 
-                            var tvmazeBlock = await ValidateTVMaze(releaseName, tvmaze, siteName, metadata);
+                            var tvmazeNotes = new List<string>();
+                            var tvmazeBlock = await ValidateTVMaze(releaseName, tvmaze, siteName, metadata, tvmazeNotes);
                             if (tvmazeBlock != null)
                             {
                                 LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Filtered");
@@ -939,7 +944,10 @@ public static class RaceHelper
                                 continue;
                             }
 
-                            LogManager.LogFxpBackend(FxpBackendEventType.Info, $"[{LogColors.Magenta(siteName)}] [TVMaze] Passed ✓");
+                            LogManager.LogFxpBackend(FxpBackendEventType.Info,
+                                tvmazeNotes.Count > 0
+                                    ? $"[{LogColors.Magenta(siteName)}] [TVMaze] ⚠ {string.Join("; ", tvmazeNotes)}"
+                                    : $"[{LogColors.Magenta(siteName)}] [TVMaze] Passed ✓");
                         }
                     }
 
@@ -1532,7 +1540,8 @@ public static class RaceHelper
             // 4) IMDB filter (only when enabled on the section).
             if (configSection?["imdb"] is JObject imdb && imdb["enabled"]?.Value<bool>() == true)
             {
-                var imdbBlock = await ValidateIMDB(releaseName, imdb, ircSection);
+                var imdbNotes = new List<string>();
+                var imdbBlock = await ValidateIMDB(releaseName, imdb, ircSection, notes: imdbNotes);
                 if (imdbBlock != null)
                 {
                     Step("IMDB", false, imdbBlock);
@@ -1540,13 +1549,14 @@ public static class RaceHelper
                     result.Summary = "Blocked by the IMDB filter.";
                     return result;
                 }
-                Step("IMDB", true, "passed the IMDB filter");
+                Step("IMDB", true, imdbNotes.Count > 0 ? string.Join("; ", imdbNotes) : "passed the IMDB filter");
             }
 
             // 5) TVMaze filter (only when enabled on the section).
             if (configSection?["tvmaze"] is JObject tvmaze && tvmaze["enabled"]?.Value<bool>() == true)
             {
-                var tvmazeBlock = await ValidateTVMaze(releaseName, tvmaze, ircSection);
+                var tvmazeNotes = new List<string>();
+                var tvmazeBlock = await ValidateTVMaze(releaseName, tvmaze, ircSection, notes: tvmazeNotes);
                 if (tvmazeBlock != null)
                 {
                     Step("TVMaze", false, tvmazeBlock);
@@ -1554,7 +1564,7 @@ public static class RaceHelper
                     result.Summary = "Blocked by the TVMaze filter.";
                     return result;
                 }
-                Step("TVMaze", true, "passed the TVMaze filter");
+                Step("TVMaze", true, tvmazeNotes.Count > 0 ? string.Join("; ", tvmazeNotes) : "passed the TVMaze filter");
             }
 
             // 6) Section + mapping rules.
@@ -1919,8 +1929,13 @@ public static class RaceHelper
     /// Returns null when it passes, otherwise the reason it was blocked — the reason is
     /// what makes the skip feed useful, and a bare bool threw it away.
     /// </summary>
+    // "Race anyway" on lookup error. A missing key means ON, and the editor shows the
+    // checkbox the same way, so what the user sees is what the racer does.
+    private static bool FallbackOnError(JObject config) =>
+        config["fallback_on_error"]?.Value<bool>() ?? true;
+
     internal static async Task<string> ValidateIMDB(string releaseName, JObject config, string siteName,
-        ReleaseMetadataLookup metadata = null)
+        ReleaseMetadataLookup metadata = null, List<string> notes = null)
     {
         try
         {
@@ -1930,6 +1945,7 @@ public static class RaceHelper
             if (imdbBypass.Any(p => MatchesReleaseNamePattern(releaseName, p)))
             {
                 LogManager.Info($"[{siteName}] [IMDB] ✔ Release matches bypass pattern, skipping IMDB filter");
+                notes?.Add("IMDB: release matches a bypass pattern, filter skipped");
                 return null;
             }
 
@@ -1937,12 +1953,18 @@ public static class RaceHelper
 
             if (releaseInfo?.Movie == null)
             {
-                bool fallback = config["fallback_on_error"]?.Value<bool>() ?? true;
-                if (!fallback)
+                if (!FallbackOnError(config))
                 {
                     LogManager.Warning($"[{siteName}] [IMDB] ❌ No data found, blocking");
+                    return "no metadata found for this release";
                 }
-                return fallback ? null : "no metadata found for this release";
+
+                // Allowed without any data. Say so loudly: a release that "passed" the
+                // IMDB filter with no IMDB row in the database is exactly this case.
+                var note = "IMDB: no data found for this release, allowed only because 'Race anyway' (on lookup error) is on";
+                LogManager.Warning($"[{siteName}] [IMDB] ⚠ {note}");
+                notes?.Add(note);
+                return null;
             }
 
             var movie = releaseInfo.Movie;
@@ -2066,8 +2088,13 @@ public static class RaceHelper
         catch (Exception ex)
         {
             LogManager.Error($"[{siteName}] [IMDB] ERROR: {ex.Message}");
-            bool fallback = config["fallback_on_error"]?.Value<bool>() ?? true;
-            return fallback ? null : $"IMDB lookup failed: {ex.Message}";
+            if (!FallbackOnError(config))
+                return $"IMDB lookup failed: {ex.Message}";
+
+            var note = $"IMDB: lookup failed ({ex.Message}), allowed only because 'Race anyway' (on lookup error) is on";
+            LogManager.Warning($"[{siteName}] [IMDB] ⚠ {note}");
+            notes?.Add(note);
+            return null;
         }
     }
 
@@ -2076,7 +2103,7 @@ public static class RaceHelper
     /// Returns null when it passes, otherwise the reason it was blocked.
     /// </summary>
     internal static async Task<string> ValidateTVMaze(string releaseName, JObject config, string siteName,
-        ReleaseMetadataLookup metadata = null)
+        ReleaseMetadataLookup metadata = null, List<string> notes = null)
     {
         try
         {
@@ -2088,6 +2115,7 @@ public static class RaceHelper
             if (tvmazeBypass.Any(p => MatchesReleaseNamePattern(releaseName, p)))
             {
                 LogManager.Info($"[{siteName}] [TVMaze] ✔ Release matches bypass pattern, skipping TVMaze filter");
+                notes?.Add("TVMaze: release matches a bypass pattern, filter skipped");
                 return null;
             }
 
@@ -2098,12 +2126,16 @@ public static class RaceHelper
 
             if (releaseInfo?.Show == null)
             {
-                bool fallback = config["fallback_on_error"]?.Value<bool>() ?? true;
-                if (!fallback)
+                if (!FallbackOnError(config))
                 {
                     LogManager.Warning($"[{siteName}] [TVMaze] ❌ No data found, blocking");
+                    return "no metadata found for this release";
                 }
-                return fallback ? null : "no metadata found for this release";
+
+                var note = "TVMaze: no data found for this release, allowed only because 'Race on lookup error' is on";
+                LogManager.Warning($"[{siteName}] [TVMaze] ⚠ {note}");
+                notes?.Add(note);
+                return null;
             }
 
             var show = releaseInfo.Show;
@@ -2302,8 +2334,13 @@ public static class RaceHelper
         catch (Exception ex)
         {
             LogManager.Error($"[{siteName}] [TVMaze] ERROR: {ex.Message}");
-            bool fallback = config["fallback_on_error"]?.Value<bool>() ?? true;
-            return fallback ? null : $"TVMaze lookup failed: {ex.Message}";
+            if (!FallbackOnError(config))
+                return $"TVMaze lookup failed: {ex.Message}";
+
+            var note = $"TVMaze: lookup failed ({ex.Message}), allowed only because 'Race on lookup error' is on";
+            LogManager.Warning($"[{siteName}] [TVMaze] ⚠ {note}");
+            notes?.Add(note);
+            return null;
         }
     }
 

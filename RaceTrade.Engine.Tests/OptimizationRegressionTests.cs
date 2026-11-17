@@ -17,6 +17,7 @@ internal static class OptimizationRegressionTests
         JobMonitorsAreScopedToBackendReleaseAndSection();
         await MetadataIsSharedWithoutSharingSiteDecisions();
         await MetadataPreservesFallbackAndCacheDurations();
+        await LookupFallbackNotesMatchDecisions();
         await ExistingDatabaseGetsDuplicateIndex();
     }
 
@@ -117,6 +118,49 @@ internal static class OptimizationRegressionTests
         await lookup.GetShowAsync(7);
         await lookup.GetShowAsync(1);
         Check(showCalls.SequenceEqual(new[] { 7, 1 }), "Different TVMaze cache durations must not share results.");
+    }
+
+    private static async Task LookupFallbackNotesMatchDecisions()
+    {
+        var missing = new ReleaseMetadataLookup(() => Task.FromResult<MovieReleaseInfo>(null),
+            _ => Task.FromResult<TVShowReleaseInfo>(null));
+        var imdbNotes = new List<string>();
+        var tvNotes = new List<string>();
+        Check(await RaceHelper.ValidateIMDB("Example-GROUP", new JObject(), "TEST", missing, imdbNotes) == null &&
+            imdbNotes.Single().Contains("no data found"), "Default IMDb fallback must explicitly report missing data.");
+        Check(await RaceHelper.ValidateTVMaze("Example-GROUP", new JObject(), "TEST", missing, tvNotes) == null &&
+            tvNotes.Single().Contains("no data found"), "Default TVMaze fallback must explicitly report missing data.");
+
+        var strict = new JObject { ["fallback_on_error"] = false };
+        imdbNotes.Clear();
+        tvNotes.Clear();
+        Check(await RaceHelper.ValidateIMDB("Example-GROUP", strict, "TEST", missing, imdbNotes) != null && imdbNotes.Count == 0,
+            "Strict IMDb filtering must block missing data without an allowed-fallback note.");
+        Check(await RaceHelper.ValidateTVMaze("Example-GROUP", strict, "TEST", missing, tvNotes) != null && tvNotes.Count == 0,
+            "Strict TVMaze filtering must block missing data without an allowed-fallback note.");
+
+        var failed = new ReleaseMetadataLookup(() => Task.FromException<MovieReleaseInfo>(new InvalidOperationException("offline")),
+            _ => Task.FromException<TVShowReleaseInfo>(new InvalidOperationException("offline")));
+        Check(await RaceHelper.ValidateIMDB("Example-GROUP", new JObject(), "TEST", failed, imdbNotes) == null &&
+            imdbNotes.Single().Contains("lookup failed"), "IMDb lookup failures allowed by fallback must be explained.");
+        Check(await RaceHelper.ValidateTVMaze("Example-GROUP", new JObject(), "TEST", failed, tvNotes) == null &&
+            tvNotes.Single().Contains("lookup failed"), "TVMaze lookup failures allowed by fallback must be explained.");
+        Check(await RaceHelper.ValidateIMDB("Example-GROUP", strict, "TEST", failed) != null &&
+            await RaceHelper.ValidateTVMaze("Example-GROUP", strict, "TEST", failed) != null,
+            "Disabling fallback must still block provider exceptions.");
+
+        imdbNotes.Clear();
+        tvNotes.Clear();
+        var valid = new ReleaseMetadataLookup(() => Task.FromResult(new MovieReleaseInfo { Movie = new IMDBMovie { Title = "Example" } }),
+            _ => Task.FromResult(new TVShowReleaseInfo { Show = new TVMazeShow { Name = "Example" } }));
+        Check(await RaceHelper.ValidateIMDB("Example-GROUP", strict, "TEST", valid, imdbNotes) == null && imdbNotes.Count == 0 &&
+            await RaceHelper.ValidateTVMaze("Example-GROUP", strict, "TEST", valid, tvNotes) == null && tvNotes.Count == 0,
+            "A genuine metadata pass must not be labelled as fallback.");
+        var bypass = new JObject { ["fallback_on_error"] = false, ["bypass_if_matches"] = new JArray("Example*") };
+        Check(await RaceHelper.ValidateIMDB("Example-GROUP", bypass, "TEST", failed, imdbNotes) == null &&
+            imdbNotes.Single().Contains("bypass pattern"), "IMDb bypass must be reported as skipped, not as a metadata pass.");
+        Check(await RaceHelper.ValidateTVMaze("Example-GROUP", bypass, "TEST", failed, tvNotes) == null &&
+            tvNotes.Single().Contains("bypass pattern"), "TVMaze bypass must be reported as skipped, not as a metadata pass.");
     }
 
     private static async Task ExistingDatabaseGetsDuplicateIndex()

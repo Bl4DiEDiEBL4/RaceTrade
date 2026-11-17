@@ -1396,10 +1396,34 @@ public class IRCClient
                     return;
             }
 
-            // Start transfer
-            var targetSites = string.Join(",", filterResult.AllowedSites);
-            LogManager.LogRace(RaceStatus.Racing, releaseName, siteName, targetSite: targetSites, quality: section, ircChannel: channelName);
-            await FxpBackendRacer.HandleTransferJob(fxpBackendSection, releaseName, filterResult, siteName, channelName);
+            // Claim the release BEFORE logging Racing. The filter's in-flight guard is
+            // already released at this point and the processed marker is only written
+            // after the spreadjob(s) went out, so several prespam bots announcing within
+            // a second could all get here. First one sends; the rest are logged as
+            // Filtered (with their bot named) instead of each showing Racing and each
+            // posting a spreadjob.
+            if (!await FxpBackendRacer.TryBeginSendAsync(releaseName))
+            {
+                LogManager.LogRace(RaceStatus.Filtered, releaseName, siteName,
+                    filterReason: "Already being sent or processed by an earlier announce", ircChannel: channelName);
+                RaceDiagnostics.Report(releaseName, SkipReason.Duplicate,
+                    $"already being sent or processed by an earlier announce ({channelName})", null, section, siteName);
+                return;
+            }
+
+            try
+            {
+                // Start transfer
+                var targetSites = string.Join(",", filterResult.AllowedSites);
+                LogManager.LogRace(RaceStatus.Racing, releaseName, siteName, targetSite: targetSites, quality: section, ircChannel: channelName);
+                await FxpBackendRacer.HandleTransferJob(fxpBackendSection, releaseName, filterResult, siteName, channelName);
+            }
+            finally
+            {
+                // HandleTransferJob writes the processed marker before returning, so the
+                // DB check covers every later announce from here on.
+                FxpBackendRacer.EndSend(releaseName);
+            }
         }
         catch (Exception ex)
         {

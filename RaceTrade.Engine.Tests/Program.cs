@@ -11,6 +11,7 @@ internal static class Program
             XxxLanguageReleaseContinuesIntoXxxGroup();
             OptimizationRegressionTests.Run().GetAwaiter().GetResult();
             SiteTransferRegressionTests.Run();
+            ReleaseSendRegressionTests.Run().GetAwaiter().GetResult();
             Console.WriteLine("All RaceTrade.Engine regression tests passed.");
             return 0;
         }

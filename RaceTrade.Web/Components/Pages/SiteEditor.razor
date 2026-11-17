@@ -790,7 +790,7 @@
 
                                             <label>On lookup error</label>
                                             <div>
-                                                <label class="chk"><input type="checkbox" checked='@GetBool(selected.Imdb, "fallback_on_error")'
+                                                <label class="chk"><input type="checkbox" checked='@GetFallbackOnError(selected.Imdb)'
                                                     @onchange='e => SetBool(selected.Imdb, "fallback_on_error", e)' /> Race anyway</label>
                                                 <div class="fh">If IMDB is unreachable or slow: on = race it, off = skip it.</div>
                                             </div>
@@ -1009,7 +1009,7 @@
                                                     @onchange='e => SetBool(selected.Tvmaze, "only_english", e)' /> English only</label>
                                                 <label class="chk"><input type="checkbox" checked='@GetBool(selected.Tvmaze, "skip_ended_shows")'
                                                     @onchange='e => SetBool(selected.Tvmaze, "skip_ended_shows", e)' /> Skip ended shows</label>
-                                                <label class="chk"><input type="checkbox" checked='@GetBool(selected.Tvmaze, "fallback_on_error")'
+                                                <label class="chk"><input type="checkbox" checked='@GetFallbackOnError(selected.Tvmaze)'
                                                     @onchange='e => SetBool(selected.Tvmaze, "fallback_on_error", e)' /> Race on lookup error</label>
                                             </div>
                                         </div>
@@ -1362,7 +1362,7 @@
 
                                     <label>On lookup error</label>
                                     <div>
-                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Imdb, "fallback_on_error")'
+                                        <label class="chk"><input type="checkbox" checked='@GetFallbackOnError(selected.Imdb)'
                                             @onchange='e => SetBool(selected.Imdb, "fallback_on_error", e)' /> Race anyway</label>
                                         <div class="fh">If IMDB is unreachable or slow: on = race it, off = skip it.</div>
                                     </div>
@@ -1555,7 +1555,7 @@
                                     <div class="chk-row">
                                         <label class="chk"><input type="checkbox" checked='@GetBool(selected.Tvmaze, "skip_ended_shows")'
                                             @onchange='e => SetBool(selected.Tvmaze, "skip_ended_shows", e)' /> Skip ended shows</label>
-                                        <label class="chk"><input type="checkbox" checked='@GetBool(selected.Tvmaze, "fallback_on_error")'
+                                        <label class="chk"><input type="checkbox" checked='@GetFallbackOnError(selected.Tvmaze)'
                                             @onchange='e => SetBool(selected.Tvmaze, "fallback_on_error", e)' /> Race on lookup error</label>
                                     </div>
                                 </div>
@@ -2510,6 +2510,12 @@
     }
 
     private static bool GetBool(JObject? o, string key) => o?[key]?.Value<bool>() == true;
+
+    // "Race anyway" / "Race on lookup error": the engine treats a MISSING key as ON
+    // (RaceHelper.FallbackOnError), so the checkbox must show the same. Showing it off
+    // when the key was absent made releases race on failed lookups while the screen
+    // said they would not, and nobody clicked a box that already looked unticked.
+    private static bool GetFallbackOnError(JObject? o) => o?["fallback_on_error"]?.Value<bool>() ?? true;
 
     private static void SetBool(JObject? o, string key, ChangeEventArgs e)
     {

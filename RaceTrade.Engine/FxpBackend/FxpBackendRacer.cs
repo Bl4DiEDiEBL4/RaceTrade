@@ -47,6 +47,53 @@ public class FxpBackendRacer
     /// <summary>Number of spreadjobs currently being polled for progress.</summary>
     public static int ActiveJobMonitorCount => ActiveJobMonitors.Count;
 
+    // Releases currently being SENT. RaceHelper's in-flight guard only covers the
+    // filtering; it is released before the spreadjob goes out, and the "processed"
+    // marker is written only after every backend group has been posted. Four prespam
+    // bots announcing within a second all passed the filters (fast now that TVMaze is
+    // cached) and each sent its own spreadjob. This guard closes that window: the
+    // first announce sends, the others are turned away until the marker is written.
+    private static readonly ConcurrentDictionary<string, bool> SendingReleases =
+        new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Claims a release for sending. The announce path calls this BEFORE it logs
+    /// "Racing", so only the announce that actually sends shows as Racing and the
+    /// others are logged as Filtered. Must be paired with <see cref="EndSend"/>.
+    /// </summary>
+    public static async Task<bool> TryBeginSendAsync(string release)
+    {
+        if (string.IsNullOrWhiteSpace(release) || !SendingReleases.TryAdd(release, true))
+            return false;
+
+        try
+        {
+            // Another announce may have finished sending since this caller passed
+            // filtering. Check the marker again while owning the send claim.
+            if (!await SQLiteHelper.IsReleaseProcessedAsync(release))
+                return true;
+        }
+        catch
+        {
+            EndSend(release);
+            throw;
+        }
+
+        EndSend(release);
+        return false;
+    }
+
+    /// <summary>
+    /// Releases the claim. Call after <see cref="HandleTransferJob"/> has returned:
+    /// by then the processed marker is written (or the send failed, so a later
+    /// announce may retry), and the DB check takes over with no gap.
+    /// </summary>
+    public static void EndSend(string release)
+    {
+        if (!string.IsNullOrWhiteSpace(release))
+            SendingReleases.TryRemove(release, out _);
+    }
+
     /// <summary>
     /// Delay between status polls of a RUNNING spreadjob. Starts at the configured
     /// base interval and, when slowdown is on, stretches as more races run at once so
@@ -1427,6 +1474,10 @@ public class FxpBackendRacer
             }
             return;
         }
+
+        // The send claim (TryBeginSendAsync / EndSend) is held by the caller around this
+        // whole call, taken before the "Racing" log line. Taking it here instead let
+        // every racing announce log "Racing" first and only then be turned away.
 
         try
         {
